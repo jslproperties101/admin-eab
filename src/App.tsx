@@ -2,7 +2,7 @@
 // after Google, the app asks the database who this is; anyone else is signed out again at once.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conn, configured, loadConn } from './config';
-import { ApiError, Session, loadSession, rpc, saveSession, signOutRemote } from './api/session';
+import { ApiError, Session, loadSession, rpc, saveSession, signOutRemote, vaultUpload, vaultDownload } from './api/session';
 import { Me, api as makeApi } from './api/admin';
 import { deviceLabel } from './native/native';
 import { isIdle, lastUsed, watchIdle, markUsed } from './admin/idle';
@@ -25,7 +25,11 @@ export default function App() {
     if (!s) throw new ApiError('expired');
     return rpc<T>(conn, s, fn, args, ns => setSession(ns));
   }, [conn, setSession]);
-  const api = useMemo(() => makeApi(call, device), [call, device]);
+  const files = useMemo(() => ({
+    upload: async (path: string, blob: Blob) => { const s = session.current; if (!s) throw new ApiError('expired'); await vaultUpload(conn, s, path, blob, ns => setSession(ns)); },
+    download: async (path: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return vaultDownload(conn, s, path, ns => setSession(ns)); },
+  }), [conn, setSession]);
+  const api = useMemo(() => makeApi(call, device, files), [call, device, files]);
 
   const signOut = useCallback((why: 'idle' | 'manual' | 'expired' | 'not-admin' = 'manual') => {
     const s = session.current;

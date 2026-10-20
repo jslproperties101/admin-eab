@@ -1,8 +1,8 @@
 {
   "name": "admin-eab",
   "private": true,
-  "version": "0.2.0",
-  "releaseLabel": "AdminBatch002",
+  "version": "0.3.0",
+  "releaseLabel": "AdminBatch003",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

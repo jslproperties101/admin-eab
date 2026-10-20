@@ -70,16 +70,36 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const me = role ? { user_id: 'me', email: 'joe@example.com', role, expires_at: null } : null;
   const profile = baseProfile();
   let settings = { company_name: 'JSL Global Trading', support_email: null, business_address: null, updated_at: '2026-10-20T00:00:00Z', updated_by: null };
+  // AdminBatch003 fake state
+  const cases = new Map(); const packs = []; const objects = new Map(); let seq = 0;
+  const caseJson = c => ({ ...c, packs: packs.filter(p => p.case_id === c.id), ...(role === 'regulator' ? {} : { grants: c.grants }) });
+  if (role === 'regulator') cases.set('c-reg', { id: 'c-reg', case_no: 'CASE-2026-0009', requester_type: 'police', requester_name: 'IPD Dang Wangi', requester_ref: 'RPT/77',
+    requester_contact: null, received_on: '2026-10-18', deadline: '2026-10-30', description: 'Fraud report about listing P1002', status: 'open', outcome: null,
+    created_by: 'x', created_at: '2026-10-18T00:00:00Z', updated_at: '2026-10-18T00:00:00Z', closed_at: null,
+    agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', date_from: '2026-10-01', date_to: null, added_at: '2026-10-18T00:00:00Z', removed_at: null }], grants: [] });
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
   await page.route(`${SB}/**`, async route => {
     const url = route.request().url();
     const fn = url.split('/rpc/')[1];
-    const args = route.request().postDataJSON?.() ?? {};
+    let args = {};
+    if (fn) { try { args = route.request().postDataJSON() ?? {}; } catch { args = {}; } }
     calls.push({ fn: fn ?? url, args });
     if (url.includes('/auth/v1/authorize')) return route.fulfill({ status: 302, headers: { location: `${BASE}?code=fake-code` } });
     if (url.includes('/auth/v1/token')) return route.fulfill(ok({ access_token: 'tok2', refresh_token: 'ref2', expires_in: 3600, user: { id: 'me', email: 'joe@example.com' } }));
     if (url.includes('/auth/v1/logout')) return route.fulfill({ status: 204 });
+    if (url.includes('/storage/v1/object/')) {
+      const path = decodeURIComponent(url.split('/eab-vault/')[1]);
+      if (route.request().method() === 'POST') {
+        const pk = packs.find(p => `${p.id}/${p.sha256}` === path && !p.stored);
+        if (!pk || objects.has(path)) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'new row violates row-level security policy' }) });
+        objects.set(path, route.request().postDataBuffer());
+        calls.push({ fn: 'storage_upload', args: { path, bytes: route.request().postDataBuffer().length } });
+        return route.fulfill(ok({ Key: `eab-vault/${path}` }));
+      }
+      calls.push({ fn: 'storage_download', args: { path } });
+      return objects.has(path) ? route.fulfill({ status: 200, body: objects.get(path), contentType: 'application/octet-stream' }) : route.fulfill({ status: 400, body: '{}' });
+    }
     const staff = ['owner', 'admin', 'compliance', 'regulator'];
     switch (fn) {
       case 'eab_admin_me': return route.fulfill(ok(me));
@@ -127,6 +147,53 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         profile.licence_detail = { ...profile.licence_detail, verified: args.p_verified, verified_at: args.p_verified ? '2026-10-21T00:00:00Z' : null };
         profile.licence = `REN 31234 (${args.p_verified ? 'verified' : 'not verified'})`;
         return route.fulfill(ok(profile.licence_detail));
+      // AdminBatch003
+      case 'eab_admin_cases': return ['owner', 'compliance', 'regulator'].includes(role)
+        ? route.fulfill(ok([...cases.values()].filter(c => !args.p_status || c.status === args.p_status).map(c => ({ ...c, agents: c.agents.filter(a => !a.removed_at).length, packs: packs.filter(p => p.case_id === c.id && p.stored).length }))))
+        : route.fulfill(denied);
+      case 'eab_admin_case': return cases.has(args.p_case) ? route.fulfill(ok(caseJson(cases.get(args.p_case)))) : route.fulfill(denied);
+      case 'eab_admin_case_create': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const id = `c-${++seq}`;
+        cases.set(id, { id, case_no: `CASE-2026-000${seq}`, ...args.p, requester_ref: args.p.requester_ref || null, requester_contact: args.p.requester_contact || null,
+          deadline: args.p.deadline || null, status: 'open', outcome: null, created_by: 'me', created_at: '2026-10-21T00:00:00Z', updated_at: '2026-10-21T00:00:00Z', closed_at: null, agents: [], grants: [] });
+        return route.fulfill(ok(caseJson(cases.get(id))));
+      }
+      case 'eab_admin_case_add_agent': {
+        const c = cases.get(args.p_case);
+        c.agents.push({ user_id: args.p_agent, email: 'agent@example.com', name: 'Siti Agent', date_from: args.p_from, date_to: args.p_to, added_at: '2026-10-21T00:00:00Z', removed_at: null });
+        return route.fulfill(ok(caseJson(c)));
+      }
+      case 'eab_admin_case_remove_agent': {
+        const c = cases.get(args.p_case); c.agents.find(a => a.user_id === args.p_agent).removed_at = '2026-10-21T01:00:00Z';
+        return route.fulfill(ok(caseJson(c)));
+      }
+      case 'eab_admin_case_update': {
+        const c = cases.get(args.p_case); Object.assign(c, args.p, args.p.status === 'closed' ? { closed_at: '2026-10-21T02:00:00Z' } : {});
+        return route.fulfill(ok(caseJson(c)));
+      }
+      case 'eab_admin_case_grant': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const c = cases.get(args.p_case); c.grants = [{ admin_user: 'reg1', email: args.p_email, expires_at: args.p_expires_at, granted_at: '2026-10-21T00:00:00Z', active: true }];
+        return route.fulfill(ok(caseJson(c)));
+      }
+      case 'eab_admin_case_revoke': {
+        const c = cases.get(args.p_case); c.grants = c.grants.map(g => ({ ...g, active: false }));
+        return route.fulfill(ok(caseJson(c)));
+      }
+      case 'eab_admin_pack_register': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const pk = { id: `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`, ...args.p, stored: false, created_by: 'me', created_at: '2026-10-21T03:00:00Z', created_by_email: 'joe@example.com' };
+        packs.push(pk); return route.fulfill(ok(pk));
+      }
+      case 'eab_admin_pack_stored': {
+        const pk = packs.find(p => p.id === args.p_pack);
+        if (!objects.has(`${pk.id}/${pk.sha256}`)) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'P0002', message: 'the file is not in the vault yet' }) });
+        pk.stored = true; return route.fulfill(ok(pk));
+      }
+      case 'eab_admin_vault': return route.fulfill(ok(packs.filter(p => p.stored).map(p => ({ ...p, case_no: p.case_id ? cases.get(p.case_id)?.case_no : null, agent_email: p.agent_user ? 'agent@example.com' : null }))));
+      case 'eab_admin_pack_download': { const pk = packs.find(p => p.id === args.p_pack); return route.fulfill(ok({ path: `${pk.id}/${pk.sha256}`, file_name: pk.file_name, format: pk.format, sha256: pk.sha256 })); }
+      case 'eab_admin_check_file': return route.fulfill(ok(packs.find(p => p.sha256 === args.p_sha256 && p.stored) ?? null));
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -382,4 +449,114 @@ test('System Settings: owner changes the support email with a reason; viewer can
   assert.equal(await v.page.getByTestId('settings-edit').count(), 0);
   assert.equal(await v.page.getByTestId('tile-45').count(), 0, 'viewer has no Login Security');
   await v.ctx.close();
+});
+
+// ---------------- AdminBatch003 ----------------
+
+test('owner: new JPPH case → add agent → give regulator access → build Excel pack → stored in vault → download + check file', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-72').click();
+  await page.getByTestId('case-new').click();
+  await page.getByTestId('case-name').fill('Pn. Aminah, JPPH Kuala Lumpur');
+  await page.getByTestId('case-ref').fill('JPPH/KL/2026/77');
+  await page.getByTestId('case-desc').fill('All listings by Siti Agent from 1 Oct 2026, complaint about P1002');
+  await page.getByTestId('case-deadline').fill('2026-11-03');
+  await page.getByTestId('case-create').click();
+  await page.getByText('No agents on this case yet.').waitFor();
+  const created = calls.find(c => c.fn === 'eab_admin_case_create').args.p;
+  assert.equal(created.requester_type, 'jpph'); assert.equal(created.deadline, '2026-11-03');
+  assert.equal(await page.getByTestId('pack-pdf').isDisabled(), true, 'no pack without agents');
+  // add agent
+  await page.getByTestId('add-agent-q').fill('siti');
+  await page.getByRole('button', { name: 'Find' }).click();
+  await page.getByTestId('add-agent-hit').click();
+  await page.getByTestId('add-agent-go').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Named in the JPPH complaint');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByText('agent@example.com · period start to today').waitFor();
+  // regulator access (owner only)
+  await page.getByTestId('grant-email').fill('aminah.jpph@gmail.com');
+  await page.getByTestId('grant-give').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Officer asked to view records herself');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('grant-revoke').waitFor();
+  const grant = calls.find(c => c.fn === 'eab_admin_case_grant').args;
+  assert.equal(grant.p_email, 'aminah.jpph@gmail.com');
+  assert.ok(new Date(grant.p_expires_at) > new Date(), 'expiry in the future');
+  // build Excel pack
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('pack-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^CASE-2026-0001-EAB-20261021-000007\.xlsx$/);
+  await page.getByTestId('case-msg').waitFor();
+  assert.match(await page.getByTestId('case-msg').innerText(), /kept in the Document Vault · fingerprint/);
+  const reg = calls.find(c => c.fn === 'eab_admin_pack_register').args.p;
+  const bytes = await (await import('node:fs/promises')).readFile(await dl.path());
+  const sha = (await import('node:crypto')).createHash('sha256').update(bytes).digest('hex');
+  assert.equal(reg.sha256, sha, 'registered fingerprint = the downloaded file');
+  assert.match(reg.content_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(reg.kind, 'case_pack');
+  const up = calls.find(c => c.fn === 'storage_upload');
+  assert.ok(up.args.path.endsWith(`/${sha}`), 'uploaded to <pack id>/<sha256>');
+  assert.equal(up.args.bytes, bytes.length);
+  assert.ok(calls.findIndex(c => c.fn === 'storage_upload') < calls.findIndex(c => c.fn === 'eab_admin_pack_stored'), 'marked stored after upload');
+  const text = bytes.toString('latin1');
+  assert.ok(text.includes('name="Case"') && text.includes('CASE-2026-0001') && text.includes(reg.content_sha256), 'cover sheet with case and content fingerprint');
+  await page.screenshot({ path: `${SHOTS}/12-case-laptop.png`, fullPage: true });
+  // vault: list, download (fingerprint checked), check file genuine and changed
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-19').click();
+  await page.getByTestId('packs-table').waitFor();
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.getByTestId('pack-download').click()]);
+  assert.equal(dl2.suggestedFilename(), dl.suggestedFilename());
+  assert.match(await page.getByTestId('pack-msg').innerText(), /fingerprint checked/);
+  await page.getByTestId('check-file-input').setInputFiles({ name: 'copy.xlsx', mimeType: 'application/octet-stream', buffer: bytes });
+  await page.getByTestId('check-file-ok').waitFor();
+  assert.match(await page.getByTestId('check-file-ok').innerText(), /Genuine and unchanged/);
+  const changed = Buffer.from(bytes); changed[changed.length - 30] ^= 1;
+  await page.getByTestId('check-file-input').setInputFiles({ name: 'edited.xlsx', mimeType: 'application/octet-stream', buffer: changed });
+  await page.getByTestId('check-file-bad').waitFor();
+  await page.screenshot({ path: `${SHOTS}/13-vault-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('compliance: can build packs but cannot give regulator access; closing a case needs a reason', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 390 });
+  await page.getByTestId('tile-72').click();
+  await page.getByTestId('case-new').click();
+  await page.getByTestId('case-type').selectOption('pdpa');
+  await page.getByTestId('case-name').fill('Siti Agent');
+  await page.getByTestId('case-desc').fill('Agent wrote in asking for a copy of all her data');
+  await page.getByTestId('case-create').click();
+  await page.getByTestId('pack-box').waitFor();
+  assert.equal(await page.getByTestId('grant-box').count(), 0, 'compliance cannot give regulator access');
+  assert.match(await page.getByTestId('pack-box').innerText(), /agent’s data copy/);
+  await page.getByTestId('case-mark-closed').click();
+  assert.ok(await page.getByRole('button', { name: 'Continue' }).isDisabled());
+  await page.getByPlaceholder(/At least 5 characters/).fill('Copy sent to the agent by email');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByText('Closed', { exact: true }).first().waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_case_update').args.p.status, 'closed');
+  await page.screenshot({ path: `${SHOTS}/14-pdpa-case-closed-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('regulator: sees only "My case", read-only, no export, no tiles for staff', async () => {
+  const { page, ctx } = await open({ role: 'regulator', width: 390 });
+  await page.getByTestId('tile-my-case').waitFor();
+  assert.equal(await page.getByTestId('tile-14').count(), 0);
+  await page.getByTestId('tile-my-case').click();
+  await page.getByTestId('case-row').click();
+  await page.getByTestId('case-agents').waitFor();
+  assert.equal(await page.getByTestId('pack-box').count(), 0, 'no pack building');
+  assert.equal(await page.getByTestId('grant-box').count(), 0);
+  assert.equal(await page.getByTestId('add-agent').count(), 0);
+  assert.equal(await page.getByTestId('case-remove-agent').count(), 0);
+  await page.getByRole('button', { name: 'Siti Agent' }).click();
+  await page.getByTestId('agent-status').first().waitFor();
+  assert.equal(await page.getByTestId('export-pdf').count(), 0, 'regulator cannot export');
+  assert.equal(await page.getByTestId('account-box').count(), 0);
+  await page.screenshot({ path: `${SHOTS}/15-regulator-agent-phone.png`, fullPage: true });
+  await ctx.close();
 });

@@ -81,3 +81,57 @@ export async function rpc<T>(c: Conn, s: Session, fn: string, args: Record<strin
 export async function signOutRemote(c: Conn, s: Session, fetchFn: FetchFn = fetch): Promise<void> {
   try { await fetchFn(`${c.supabaseUrl}/auth/v1/logout`, { method: 'POST', headers: headers(c, s.accessToken) }); } catch { /* offline */ }
 }
+
+// ---------- Storage (AdminBatch003: Document Vault, bucket 'eab-vault') ----------
+// The database decides what may be uploaded or read (storage rules eab_vault_can_upload / eab_vault_can_read):
+// only the file of a pack registered by this admin, at <pack id>/<sha256>, once; no overwrite, no delete.
+export const VAULT_BUCKET = 'eab-vault';
+const objectUrl = (c: Conn, path: string, read = false) =>
+  `${c.supabaseUrl}/storage/v1/object/${read ? 'authenticated/' : ''}${VAULT_BUCKET}/${path.split('/').map(encodeURIComponent).join('/')}`;
+
+async function withSession(c: Conn, s: Session, onSession: (s: Session | null) => void, fetchFn: FetchFn,
+  go: (token: string) => Promise<Response>): Promise<Response> {
+  let session = s;
+  if (session.expiresAt - Date.now() < 60_000) {
+    try { session = await refresh(c, session, fetchFn); onSession(session); }
+    catch (e) { if (e instanceof ApiError && e.code === 'expired') onSession(null); throw e; }
+  }
+  let r: Response;
+  try { r = await go(session.accessToken); } catch { throw new ApiError('network'); }
+  if (r.status === 401) {
+    try { session = await refresh(c, session, fetchFn); onSession(session); } catch (e) { onSession(null); throw e; }
+    try { r = await go(session.accessToken); } catch { throw new ApiError('network'); }
+  }
+  return r;
+}
+
+export async function vaultUpload(c: Conn, s: Session, path: string, blob: Blob, onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<void> {
+  if (!/^[0-9a-f-]{36}\/[0-9a-f]{64}$/.test(path)) throw new ApiError('server', 'bad vault path');
+  const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(objectUrl(c, path), {
+    method: 'POST',
+    headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'application/octet-stream', 'x-upsert': 'false', 'cache-control': 'no-store' },
+    body: blob,
+  }));
+  if (!r.ok) {
+    let msg = '';
+    try { msg = ((await r.json()) as { message?: string }).message ?? ''; } catch { /* no body */ }
+    throw r.status === 403 || /row-level security|Unauthorized/i.test(msg) ? new ApiError('not-allowed', msg) : new ApiError('server', msg || `upload HTTP ${r.status}`);
+  }
+}
+
+export async function vaultDownload(c: Conn, s: Session, path: string, onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<Blob> {
+  const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(objectUrl(c, path, true), {
+    headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}` },
+  }));
+  if (r.status === 400 || r.status === 404) throw new ApiError('not-found', 'file not in the vault');
+  if (r.status === 403) throw new ApiError('not-allowed');
+  if (!r.ok) throw new ApiError('server', `download HTTP ${r.status}`);
+  return r.blob();
+}
+
+/** Hex sha256 of a file — the fingerprint recorded in the vault. */
+export async function sha256Hex(data: Blob | ArrayBuffer | Uint8Array): Promise<string> {
+  const buf = data instanceof Blob ? await data.arrayBuffer() : data instanceof Uint8Array ? data.slice().buffer : data;
+  const d = await crypto.subtle.digest('SHA-256', buf as ArrayBuffer);
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}

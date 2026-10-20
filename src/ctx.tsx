@@ -10,7 +10,10 @@ export type View =
   | { k: 'logs'; tab: 'actions' | 'access'; target?: string }
   | { k: 'admins' }
   | { k: 'agents'; filter: 'all' | 'not_active' | 'licence' | 'security' }
-  | { k: 'settings' };
+  | { k: 'settings' }
+  | { k: 'cases' }
+  | { k: 'case'; id: string }
+  | { k: 'vault' };
 
 export interface AdminCtx {
   conn: Conn;

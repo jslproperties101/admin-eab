@@ -4,8 +4,8 @@ import { Api, AgentProfile, AgentRecord, Version } from '../api/admin';
 import { buildProfileDoc, buildProfileSheets, exportFileName, sortCollections } from './reports';
 import { buildXlsx, XLSX_MIME } from './xlsx';
 import { layoutDocument } from '../lib/pdf';
-import { canvasMeasure, renderPagesToPdf, saveFile, download } from '../lib/pdfRender';
-import { isNative } from '../native/native';
+import { canvasMeasure, renderPagesToPdf } from '../lib/pdfRender';
+import { contentFingerprint, saveLocally, storeInVault } from './pack';
 
 const PAGE = 1000;
 
@@ -49,11 +49,15 @@ export async function exportAgentProfile(api: Api, adminEmail: string, profile: 
   } else {
     blob = new Blob([buildXlsx(buildProfileSheets(input), { title: `Agent compliance record ${reg.reference}`, author: adminEmail }) as BlobPart], { type: XLSX_MIME });
   }
-  if (isNative()) {
-    const r = await saveFile(blob, name);
-    if (!r.ok) throw new Error(r.reason === 'needApk' ? 'This app version cannot save files. Install the newest APK.' : 'Could not save the file.');
-    return { reference: reg.reference, how: `saved ${name}${r.where ? ` to ${r.where}` : ''}` };
+  // AdminBatch003: every export is also kept in the Document Vault with its fingerprints. If the vault is not
+  // available, the copy is still saved on this device and the message says so.
+  let vaulted = '';
+  try {
+    const contentSha = await contentFingerprint({ profile, records, histories, loginLog, termsLog });
+    await storeInVault(api, { blob, reference: reg.reference, kind: 'agent_profile', format, fileName: name, caseId: null, agentUser: profile.user_id, contentSha });
+    vaulted = ' · kept in the Document Vault';
+  } catch {
+    vaulted = ' · NOT stored in the Document Vault (try again or tell the Owner)';
   }
-  if (!download(blob, name)) throw new Error('The browser blocked the download.');
-  return { reference: reg.reference, how: `downloaded ${name}` };
+  return { reference: reg.reference, how: `${await saveLocally(blob, name)}${vaulted}` };
 }

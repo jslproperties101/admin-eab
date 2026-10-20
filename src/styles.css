@@ -43,7 +43,7 @@ small, .small { font-size: .875rem; }
 /* fields */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { color: #DAD3C3; font-size: .9rem; }
-input[type=text], input[type=search], input[type=email], input[type=datetime-local], input[type=url], select, textarea {
+input[type=text], input[type=search], input[type=email], input[type=datetime-local], input[type=date], input[type=url], input[type=file], select, textarea {
   width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: #0E0E10; }
 input:focus, select:focus, textarea:focus { border-color: var(--gold); outline: none; }
 textarea { min-height: 90px; resize: vertical; }

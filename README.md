@@ -46,6 +46,12 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch003: Regulator Request case files (JPPH / police / court / board / PDPA), agents per case with periods,
+Owner-only temporary regulator access per case (max 90 days, ends at once on revoke), case packs (PDF / Excel) with a
+cover page, reference number and content fingerprint, the Document Vault (private bucket `eab-vault`; files can never be
+changed or deleted; downloads re-check the fingerprint) and "Check a file". Every agent-profile export is vaulted too.
+Needs `20261021130000_admin_batch_003_cases.sql` in the database.
+
 AdminBatch002: Agents list (overview, login security, not active, licence), account status actions (suspend / ban / close /
 re-activate, force sign-out) with reason + confirmation, licence verification, sign-in history and Terms tabs, System
 Settings (company name, support email, address), exports include sign-ins, Terms and the company name. Needs

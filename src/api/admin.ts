@@ -54,9 +54,28 @@ export interface AccessRow {
 export interface ChainCheck { ok: boolean; checked: number; first_bad_seq: number | null }
 export interface AdminRow { user_id: string; email: string; role: Role; active: boolean; expires_at: string | null; added_at: string; added_by: string | null }
 
+// ---------- AdminBatch003: case files and the Document Vault ----------
+export type RequesterType = 'jpph' | 'police' | 'court' | 'board' | 'pdpa' | 'other';
+export type CaseStatus = 'open' | 'supplied' | 'closed';
+export interface CaseAgent { user_id: string; email: string; name: string | null; date_from: string | null; date_to: string | null; added_at: string; removed_at: string | null }
+export interface CaseGrant { admin_user: string; email: string; expires_at: string; granted_at: string; active: boolean }
+export interface Pack {
+  id: string; case_id: string | null; agent_user: string | null; reference: string; kind: 'case_pack' | 'agent_profile' | 'pdpa_access';
+  format: 'pdf' | 'xlsx'; file_name: string; sha256: string; content_sha256: string | null; bytes: number; stored: boolean;
+  created_by: string; created_at: string; case_no?: string | null; agent_email?: string | null; created_by_email?: string | null;
+}
+export interface CaseFile {
+  id: string; case_no: string; requester_type: RequesterType; requester_name: string; requester_ref: string | null; requester_contact: string | null;
+  received_on: string; deadline: string | null; description: string; status: CaseStatus; outcome: string | null;
+  created_by: string; created_at: string; updated_at: string; closed_at: string | null;
+  agents: CaseAgent[] | number; packs: Pack[] | number; grants?: CaseGrant[];
+}
+export interface NewCase { requester_type: RequesterType; requester_name: string; requester_ref?: string; requester_contact?: string; received_on: string; deadline?: string; description: string }
+export interface Files { upload: (path: string, blob: Blob) => Promise<void>; download: (path: string) => Promise<Blob> }
+
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
 
-export const api = (call: Call, device: string) => ({
+export const api = (call: Call, device: string, files: Files = { upload: async () => { throw new Error('no storage'); }, download: async () => { throw new Error('no storage'); } }) => ({
   me: () => call<Me | null>('eab_admin_me'),
   signedIn: () => call<Me>('eab_admin_signed_in', { p_device: device }),
   search: (q: string) => call<SearchHit[]>('eab_admin_search', { p_q: q, p_device: device }),
@@ -82,6 +101,26 @@ export const api = (call: Call, device: string) => ({
   verifyLicence: (id: string, verified: boolean, reason: string) =>
     call<unknown>('eab_admin_verify_licence', { p_user: id, p_verified: verified, p_reason: reason, p_device: device }),
   settings: () => call<Settings>('eab_admin_settings'),
+  // AdminBatch003
+  cases: (status: CaseStatus | null = null, q: string | null = null) => call<CaseFile[]>('eab_admin_cases', { p_status: status, p_q: q, p_device: device }),
+  caseGet: (id: string) => call<CaseFile>('eab_admin_case', { p_case: id, p_device: device }),
+  caseCreate: (p: NewCase) => call<CaseFile>('eab_admin_case_create', { p, p_device: device }),
+  caseUpdate: (id: string, p: Partial<Pick<CaseFile, 'status' | 'outcome' | 'deadline' | 'description' | 'requester_ref'>>, reason: string) =>
+    call<CaseFile>('eab_admin_case_update', { p_case: id, p, p_reason: reason, p_device: device }),
+  caseAddAgent: (id: string, agent: string, from: string | null, to: string | null, reason: string) =>
+    call<CaseFile>('eab_admin_case_add_agent', { p_case: id, p_agent: agent, p_from: from, p_to: to, p_reason: reason, p_device: device }),
+  caseRemoveAgent: (id: string, agent: string, reason: string) =>
+    call<CaseFile>('eab_admin_case_remove_agent', { p_case: id, p_agent: agent, p_reason: reason, p_device: device }),
+  caseGrant: (id: string, email: string, expiresAt: string, reason: string) =>
+    call<CaseFile>('eab_admin_case_grant', { p_case: id, p_email: email, p_expires_at: expiresAt, p_reason: reason, p_device: device }),
+  caseRevoke: (id: string, admin: string, reason: string) =>
+    call<CaseFile>('eab_admin_case_revoke', { p_case: id, p_admin: admin, p_reason: reason, p_device: device }),
+  packRegister: (p: Omit<Pack, 'id' | 'stored' | 'created_by' | 'created_at'>) => call<Pack>('eab_admin_pack_register', { p, p_device: device }),
+  packStored: (id: string) => call<Pack>('eab_admin_pack_stored', { p_pack: id }),
+  vault: (caseId: string | null = null, agent: string | null = null) => call<Pack[]>('eab_admin_vault', { p_case: caseId, p_agent: agent, p_device: device }),
+  packDownload: (id: string) => call<{ path: string; file_name: string; format: 'pdf' | 'xlsx'; sha256: string }>('eab_admin_pack_download', { p_pack: id, p_device: device }),
+  checkFile: (sha: string) => call<Pack | null>('eab_admin_check_file', { p_sha256: sha, p_device: device }),
+  files,
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

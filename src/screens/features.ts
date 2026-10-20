@@ -1,0 +1,102 @@
+// Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
+// `open` = built and usable now (AdminBatch001). The rest show "Coming soon" so the whole plan is visible.
+import { Ability } from '../admin/roles';
+import { View } from '../ctx';
+
+export interface Feature { n: number | string; name: string; open?: View; needs?: Ability; note?: string; blocked?: string }
+export interface Section { title: string; items: Feature[] }
+
+const SEARCH: View = { k: 'search' };
+
+export const SECTIONS: Section[] = [
+  { title: 'Compliance', items: [
+    { n: 14, name: 'Agent Profile Viewer', open: SEARCH, needs: 'viewAgent', note: 'Find an agent, see every listing' },
+    { n: 48, name: 'Data Change History', open: SEARCH, needs: 'viewAgent', note: 'Inside each listing' },
+    { n: 49, name: 'Deleted Records', open: SEARCH, needs: 'viewAgent', note: 'Shown in each profile' },
+    { n: 18, name: 'Master Audit Log', open: { k: 'logs', tab: 'actions' }, needs: 'viewLogs' },
+    { n: 74, name: 'Who Viewed What', open: { k: 'logs', tab: 'access' }, needs: 'viewLogs' },
+    { n: 73, name: 'Log Integrity Check', open: { k: 'logs', tab: 'actions' }, needs: 'viewLogs' },
+    { n: 72, name: 'Regulator Request Case Files' },
+    { n: 75, name: 'Temporary Regulator Login' },
+    { n: 78, name: 'Agent Data Export (PDPA)' },
+    { n: 19, name: 'Document Vault' },
+    { n: 50, name: 'PDPA & Deletion Requests' },
+    { n: 51, name: 'Retention Policy (7 years)' },
+    { n: 52, name: 'Licence Verification' },
+    { n: 53, name: 'Terms Acceptance Log' },
+    { n: 16, name: 'Content Moderation' },
+    { n: 57, name: 'Photo Moderation' },
+  ] },
+  { title: 'Security', items: [
+    { n: 17, name: 'Admins & Roles', open: { k: 'admins' }, needs: 'manageAdmins' },
+    { n: 45, name: 'Login Security' },
+    { n: 46, name: 'Active Sessions & Force Logout' },
+    { n: 47, name: 'Suspend / Ban Agent' },
+  ] },
+  { title: 'Communication & Operations', items: [
+    { n: 'N', name: 'Market News & Intelligence' },
+    { n: 63, name: 'Announcements & Banners' },
+    { n: 15, name: 'Broadcast Push' },
+    { n: 64, name: 'Email & WhatsApp Broadcast' },
+    { n: 65, name: 'Support Tickets & Feedback' },
+    { n: 66, name: 'App Release Manager' },
+    { n: 68, name: 'Maintenance Mode' },
+    { n: 67, name: 'Feature Flags' },
+    { n: 11, name: 'System Settings' },
+    { n: 69, name: 'Team Workspaces' },
+    { n: 70, name: 'Scheduled Reports' },
+    { n: 13, name: 'To-Do & Calendar' },
+    { n: 71, name: 'Master Dashboard' },
+  ] },
+  { title: 'Users & Growth', items: [
+    { n: 1, name: 'Agents Overview' },
+    { n: 22, name: 'Live Users Now' },
+    { n: 23, name: 'Sign-ups & Growth' },
+    { n: 24, name: 'Active Users' },
+    { n: 25, name: 'Retention & Churn' },
+    { n: 26, name: 'Inactive Agents' },
+    { n: 20, name: 'App Version Tracking' },
+    { n: 27, name: 'Device & OS Breakdown' },
+    { n: 28, name: 'Geography Map' },
+    { n: 29, name: 'Language Usage' },
+  ] },
+  { title: 'Content & Business', items: [
+    { n: 7, name: 'Listings Analytics' },
+    { n: 59, name: 'Deal Pipeline (Sale & Rent)' },
+    { n: 8, name: 'Buyer & Vendor Analytics' },
+    { n: 54, name: 'Listings Map' },
+    { n: 55, name: 'Price Trends by Area' },
+    { n: 56, name: 'Duplicate Listings' },
+    { n: 58, name: 'Top Agents' },
+    { n: 6, name: 'User Activity' },
+    { n: 62, name: 'Feature Usage' },
+    { n: 60, name: 'AI Command Usage' },
+    { n: 61, name: 'Marketing Studio Usage' },
+  ] },
+  { title: 'System Health', items: [
+    { n: 4, name: 'Database Health' },
+    { n: 3, name: 'Backup Status' },
+    { n: 42, name: 'Backup Restore Tests' },
+    { n: 41, name: 'Storage Forecast' },
+    { n: 5, name: 'Error Logs & Crashes' },
+    { n: 39, name: 'App Performance' },
+    { n: 38, name: 'Uptime & Outages' },
+    { n: 9, name: 'Notifications & Sync' },
+    { n: 43, name: 'Sync Failures' },
+    { n: 44, name: 'Push Delivery Rates' },
+  ] },
+  { title: 'Money', items: [
+    { n: 2, name: 'Google API Usage & Cost' },
+    { n: 40, name: 'API Quota Alerts' },
+    { n: 10, name: 'Billing & Expenses' },
+    { n: 34, name: 'Cost per User' },
+    { n: 33, name: 'Profit & Loss' },
+    { n: 30, name: 'Revenue', blocked: 'Needs subscriptions in the main app' },
+    { n: 31, name: 'Failed & Overdue Payments', blocked: 'Needs subscriptions in the main app' },
+    { n: 32, name: 'Refunds & Disputes', blocked: 'Needs subscriptions in the main app' },
+    { n: 35, name: 'Invoices & Receipts (SST)', blocked: 'Needs subscriptions in the main app' },
+    { n: 36, name: 'Promo Codes', blocked: 'Needs subscriptions in the main app' },
+    { n: 37, name: 'Plan Tiers', blocked: 'Needs subscriptions in the main app' },
+    { n: 21, name: 'Subscription Ledger', blocked: 'Needs subscriptions in the main app' },
+  ] },
+];

@@ -1,0 +1,8 @@
+node_modules
+dist/
+.test-out/
+android/
+ios/
+.env
+tests/screens/
+*.log

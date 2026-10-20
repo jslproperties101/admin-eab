@@ -1,0 +1,100 @@
+# Admin EAB — test and build on every push.
+#  test     type check, unit tests, browser screen tests (fake database; no keys needed)
+#  android  debug APK (Capacitor) attached to a GitHub Release "admin-<commit>" for download on the phone
+#
+# Settings → Secrets and variables → Actions → Repository secrets (none are written in the code):
+#   EAB_SUPABASE_URL       the Supabase project shared with the main app (the TEST project while building)
+#   EAB_SUPABASE_ANON_KEY  its PUBLIC anon / publishable key. Never the service-role key (the build refuses it).
+# Without them the app asks for the connection on its sign-in screen.
+name: Build
+
+on:
+  push:
+    branches: [main, 'feature/**', 'admin/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - name: Install (without the Android packages)
+        run: npm install --omit=optional --no-audit --no-fund
+      - name: Browser for screen tests
+        run: npx playwright install --with-deps chromium
+      - name: Tests
+        run: npm test
+      - name: Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: screens, path: tests/screens, if-no-files-found: ignore }
+
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      EAB_SUPABASE_URL: ${{ secrets.EAB_SUPABASE_URL }}
+      EAB_SUPABASE_ANON_KEY: ${{ secrets.EAB_SUPABASE_ANON_KEY }}
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}' }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - name: Install (Android packages as regular dependencies)
+        run: |
+          node -e "const f='package.json',p=require('./'+f);p.dependencies={...p.dependencies,...p.optionalDependencies};delete p.optionalDependencies;require('fs').writeFileSync(f,JSON.stringify(p,null,2))"
+          npm install --no-audit --no-fund
+      - name: Build the app
+        run: npm run build && rm -f dist/*.map
+      - name: Android project
+        run: |
+          npx cap add android
+          npx @capacitor/assets generate --android --iconBackgroundColor '#08080A' --iconBackgroundColorDark '#08080A' --splashBackgroundColor '#08080A' --splashBackgroundColorDark '#08080A'
+          npx cap sync android
+          node scripts/android-setup.mjs
+      - name: Build the APK
+        run: |
+          for P in '"@capacitor/app"' '"@capacitor/browser"' '"@capacitor/filesystem"' '"@capacitor/share"'; do
+            grep -q "$P" android/app/src/main/assets/capacitor.plugins.json || { echo "Native plugin missing: $P"; exit 1; }
+          done
+          cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Check the APK (package name and signing key)
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          AAPT=$(ls $ANDROID_HOME/build-tools/*/aapt2 | tail -1)
+          $AAPT dump badging "$APK" | grep -q "package: name='com.jslproperties.admineab'" || { echo "wrong package"; exit 1; }
+          SHA1=$(keytool -printcert -jarfile "$APK" | grep -m1 'SHA1:' | awk '{print $2}')
+          echo "APK SHA1 $SHA1"
+          test "$SHA1" = "79:F6:77:F7:40:64:F0:ED:22:CB:20:CE:44:67:07:23:C5:FC:FD:A0"
+      - name: Release with the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT=${GITHUB_SHA::7}
+          OUT="AdminEAB-${SHORT}-debug.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$OUT"
+          TAG="admin-$SHORT"
+          {
+            echo "**Admin EAB** debug APK for commit ${GITHUB_SHA} (${GITHUB_REF_NAME}), build ${GITHUB_RUN_NUMBER}."
+            echo
+            echo "Package com.jslproperties.admineab (installs beside Estate Agent AI Buddy, never over it)."
+            echo "Database connection built in: $([ -n "$EAB_SUPABASE_URL" ] && [ -n "$EAB_SUPABASE_ANON_KEY" ] && echo yes || echo 'no - type it on the sign-in screen')"
+          } > notes.md
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "$OUT" --prerelease --target "$GITHUB_SHA" --title "Admin EAB ${TAG}" --notes-file notes.md
+      - uses: actions/upload-artifact@v4
+        with: { name: apk, path: 'AdminEAB-*.apk' }

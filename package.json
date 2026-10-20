@@ -1,0 +1,37 @@
+{
+  "name": "admin-eab",
+  "private": true,
+  "version": "0.1.0",
+  "releaseLabel": "AdminBatch001",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test:unit": "node scripts/test-unit.mjs",
+    "build": "node scripts/build.mjs",
+    "test:ui": "node --test tests/ui.test.mjs",
+    "test": "npm run typecheck && npm run test:unit && node scripts/build.mjs --no-env && npm run test:ui",
+    "serve": "node scripts/serve.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.56.0",
+    "typescript": "6.0.3"
+  },
+  "optionalDependencies": {
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/browser": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
+    "@capacitor/assets": "^3.0.5"
+  },
+  "nativeVersion": 1
+}

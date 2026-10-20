@@ -9,6 +9,8 @@ import { SearchScreen } from './Search';
 import { AgentScreen } from './Agent';
 import { LogsScreen } from './Logs';
 import { AdminsScreen } from './Admins';
+import { AgentsScreen } from './Agents';
+import { SettingsScreen } from './Settings';
 
 export function Shell() {
   const { me, view, go, back, canBack, signOut, conn } = useAdmin();
@@ -44,6 +46,8 @@ export function Shell() {
         {view.k === 'agent' && <AgentScreen key={view.id} id={view.id} openCollection={view.collection} openRecord={view.record} />}
         {view.k === 'logs' && <LogsScreen key={view.tab + (view.target ?? '')} tab={view.tab} target={view.target} />}
         {view.k === 'admins' && <AdminsScreen />}
+        {view.k === 'agents' && <AgentsScreen key={view.filter} filter={view.filter} />}
+        {view.k === 'settings' && <SettingsScreen />}
         <footer className="small muted" style={{ marginTop: 32 }}>
           Admin EAB {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>

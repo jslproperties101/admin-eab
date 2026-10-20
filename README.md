@@ -46,6 +46,11 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch002: Agents list (overview, login security, not active, licence), account status actions (suspend / ban / close /
+re-activate, force sign-out) with reason + confirmation, licence verification, sign-in history and Terms tabs, System
+Settings (company name, support email, address), exports include sign-ins, Terms and the company name. Needs
+MainForAdmin-B + `20261021120000_admin_batch_002_reads.sql` in the database.
+
 AdminBatch001: shell, Google sign-in with allow-list and roles, idle sign-out, sectioned home with every planned feature,
 global search, Agent Profile Viewer (all records including deleted, full change history), PDF/Excel export with reference
 numbers, Master Audit Log, access log, integrity check, Admins & Roles. Requirements: Dropbox `/Admin EAB/`.

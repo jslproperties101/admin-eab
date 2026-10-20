@@ -33,9 +33,14 @@ export async function exportAgentProfile(api: Api, adminEmail: string, profile: 
     const changed = Object.values(records).flat().filter(r => r.rev > 1);
     await pool(changed, 4, async r => { histories[`${r.collection}/${r.id}`] = await api.history(r.workspace_id, r.collection, r.id); });
   }
+  const [loginLog, termsLog, companyName] = await Promise.all([
+    api.loginLog(profile.user_id, 1000),
+    api.termsLog(profile.user_id),
+    api.settings().then(s => s.company_name).catch(() => undefined),   // shown on the export; never hard-coded
+  ]);
   const total = Object.values(records).reduce((n, l) => n + l.length, 0);
-  const reg = await api.startExport('agent_profile', format, profile.user_id, { records: total, with_history: opts.withHistory });
-  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, profile, records, histories };
+  const reg = await api.startExport('agent_profile', format, profile.user_id, { records: total, with_history: opts.withHistory, sign_ins: loginLog.length });
+  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, companyName, profile, records, histories, loginLog, termsLog };
   const name = exportFileName(reg.reference, profile.email, format);
   let blob: Blob;
   if (format === 'pdf') {

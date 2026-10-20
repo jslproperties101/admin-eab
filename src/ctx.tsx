@@ -8,7 +8,9 @@ export type View =
   | { k: 'search'; q?: string }
   | { k: 'agent'; id: string; collection?: string; record?: string }
   | { k: 'logs'; tab: 'actions' | 'access'; target?: string }
-  | { k: 'admins' };
+  | { k: 'admins' }
+  | { k: 'agents'; filter: 'all' | 'not_active' | 'licence' | 'security' }
+  | { k: 'settings' };
 
 export interface AdminCtx {
   conn: Conn;

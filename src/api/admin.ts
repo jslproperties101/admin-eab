@@ -7,12 +7,37 @@ export interface SearchHit {
   kind: 'agent' | 'record'; user_id: string; email: string; name?: string | null; label: string;
   collection?: string; record_id?: string; workspace_id?: string; deleted?: boolean; sub?: string;
 }
+export type AccountStatus = 'active' | 'suspended' | 'banned' | 'closed';
+export interface LicenceDetail { type: string | null; number: string; verified: boolean; verified_at: string | null }
+export interface LastLogin { at: string; event?: string; platform: string | null; app_version: string | null }
 export interface AgentProfile {
   user_id: string; email: string; name: string | null; joined_at: string; last_sign_in_at: string | null;
-  banned_until: string | null; deleted_at: string | null; status: 'active' | 'banned' | 'closed'; licence: string | null;
+  banned_until: string | null; deleted_at: string | null; status: AccountStatus;
+  /** One line, e.g. "REN 12345 (verified)"; null = not provided. Parts are in licence_detail (MainForAdmin-B). */
+  licence: string | null;
+  status_reason?: string | null; force_logout_after?: string | null;
+  licence_detail?: LicenceDetail | null;
+  terms?: { version: string | null; at: string } | null;
+  marketing?: boolean | null;
+  last_login?: LastLogin | null;
   workspaces: { id: string; name: string; role: string }[];
   counts: Record<string, { total: number; deleted: number }>;
 }
+/** One row of the all-agents list (eab_admin_agents, AdminBatch002). */
+export interface AgentRow {
+  user_id: string; email: string; name: string | null; joined_at: string; status: AccountStatus;
+  status_reason: string | null; status_changed_at: string | null; force_logout_after: string | null;
+  licence: LicenceDetail | null; last_login: LastLogin | null;
+  failed_30d: number; lockouts_30d: number; blocked_30d: number; terms_version: string | null; records: number;
+}
+export type AgentFilter = 'all' | 'not_active' | 'licence' | 'security';
+/** eab_login_log row (MainForAdmin-B): kept 7 years, never changed. */
+export interface LoginRow {
+  seq: number; happened_at: string; received_at: string; event: string; device_id: string | null; device: string | null;
+  platform: string | null; app_version: string | null; lat: number | null; lng: number | null; acc: number | null; detail: string | null;
+}
+export interface TermsRow { seq: number; at: string; kind: 'terms' | 'marketing'; terms_version: string | null; accepted: boolean; device_id: string | null }
+export interface Settings { company_name: string; support_email: string | null; business_address: string | null; updated_at: string; updated_by: string | null }
 export interface AgentRecord {
   workspace_id: string; collection: string; id: string; data: Record<string, unknown> | null; deleted: boolean;
   rev: number; written_at: string | null; written_by: string | null;
@@ -46,6 +71,19 @@ export const api = (call: Call, device: string) => ({
     call<(ActionRow | AccessRow)[]>('eab_admin_list_log', { p_log: which, p_target: target, p_limit: limit, p_before_seq: beforeSeq, p_device: device }),
   verify: () => call<{ actions: ChainCheck; access: ChainCheck }>('eab_admin_verify_chain', { p_device: device }),
   admins: () => call<AdminRow[]>('eab_admin_list_admins'),
+  // AdminBatch002 (MainForAdmin-B functions + eab_admin_agents / eab_admin_settings)
+  agents: (filter: AgentFilter = 'all', q: string | null = null, limit = 100, offset = 0) =>
+    call<AgentRow[]>('eab_admin_agents', { p_filter: filter, p_q: q, p_limit: limit, p_offset: offset, p_device: device }),
+  loginLog: (id: string, limit = 200) => call<LoginRow[]>('eab_admin_login_log', { p_user: id, p_limit: limit, p_device: device }),
+  termsLog: (id: string) => call<TermsRow[]>('eab_admin_terms_log', { p_user: id, p_device: device }),
+  setStatus: (id: string, status: AccountStatus, reason: string, forceLogout = false) =>
+    call<unknown>('eab_admin_set_account_status', { p_user: id, p_status: status, p_reason: reason, p_force_logout: forceLogout, p_device: device }),
+  forceLogout: (id: string, reason: string) => call<unknown>('eab_admin_force_logout', { p_user: id, p_reason: reason, p_device: device }),
+  verifyLicence: (id: string, verified: boolean, reason: string) =>
+    call<unknown>('eab_admin_verify_licence', { p_user: id, p_verified: verified, p_reason: reason, p_device: device }),
+  settings: () => call<Settings>('eab_admin_settings'),
+  setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
+    call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>
     call<AdminRow>('eab_admin_set_admin', { p_email: email, p_role: role, p_active: active, p_expires_at: expiresAt, p_reason: reason, p_device: device }),
 });

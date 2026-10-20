@@ -13,13 +13,20 @@ export const ROLE_HELP: Record<Role, string> = {
   regulator: 'Read-only, limited to the agents and dates of one case, until the expiry date.',
 };
 
-export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAdmins';
+export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAdmins'
+  | 'listAgents' | 'accountActions' | 'verifyLicence' | 'viewSettings' | 'editSettings';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
   export: ['owner', 'compliance'],
   viewLogs: ['owner', 'compliance'],
   manageAdmins: ['owner'],
+  // AdminBatch002 — same rules as the MainForAdmin-B / AdminBatch002 database functions
+  listAgents: ['owner', 'admin', 'compliance', 'regulator'],
+  accountActions: ['owner', 'admin'],          // suspend / ban / close / re-activate / force logout
+  verifyLicence: ['owner', 'admin', 'compliance'],
+  viewSettings: ['owner', 'admin', 'compliance', 'viewer'],
+  editSettings: ['owner', 'admin'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

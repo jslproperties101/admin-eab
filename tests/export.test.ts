@@ -84,3 +84,28 @@ test('reports: PDF and Excel include deleted records, reference and history', ()
   assert.ok(sheets[3].rows.some(r => r[5] === 'Deleted' && r[6] === 'No' && r[7] === 'Yes'));
   assert.equal(exportFileName('EAB-1', 'Ali.Bin@x.com', 'xlsx'), 'EAB-1-Ali-Bin.xlsx');
 });
+
+test('AdminBatch002: export shows account status with reason, licence, Terms, and adds sign-in and Terms sheets', () => {
+  const p = { ...profile, status: 'suspended' as const, status_reason: 'Misleading listing', licence: 'REN 31234 (verified)',
+    terms: { version: '1.1-draft', at: '2026-10-19T02:00:00Z' }, marketing: true,
+    last_login: { at: '2026-10-20T06:00:00Z', platform: 'android', app_version: '2.2.0' } };
+  const loginLog = [
+    { seq: 2, happened_at: '2026-10-20T06:00:00Z', received_at: '', event: 'sign_in', device_id: null, device: null, platform: 'android', app_version: '2.2.0', lat: 3.15791, lng: 101.71162, acc: 5, detail: null },
+    { seq: 1, happened_at: '2026-10-20T05:00:00Z', received_at: '', event: 'locked_out', device_id: null, device: null, platform: 'android', app_version: null, lat: null, lng: null, acc: null, detail: null },
+  ];
+  const termsLog = [{ seq: 1, at: '2026-10-19T02:00:00Z', kind: 'terms' as const, terms_version: '1.1-draft', accepted: true, device_id: null }];
+  const input = { reference: 'EAB-1', createdAt: '2026-10-20T18:00:00Z', adminEmail: 'joe@example.com', companyName: 'JSL Global Trading',
+    profile: p, records: {}, loginLog, termsLog };
+  const doc = buildProfileDoc(input);
+  const t = JSON.stringify(doc.blocks);
+  assert.ok(t.includes('Suspended — Misleading listing'));
+  assert.ok(t.includes('REN 31234 (verified)'));
+  assert.ok(t.includes('Version 1.1-draft on 2026-10-19 10:00 MYT'));
+  assert.ok(t.includes('JSL Global Trading · Reference EAB-1'));
+  assert.ok(t.includes('2026-10-20 14:00 MYT · Signed in · android · v2.2.0 · 3.1579, 101.7116'));
+  assert.ok(t.includes('Locked out (30 tries)'));
+  const sheets = buildProfileSheets(input);
+  assert.deepEqual(sheets.map(s => s.name), ['Agent', 'Sign-in history', 'Terms and consent']);
+  assert.deepEqual(sheets[1].rows[2].slice(0, 2), ['2026-10-20 13:00 MYT', 'Locked out (30 tries)']);
+  assert.equal(sheets[1].rows[1][5], 3.15791, 'coordinates stay numbers in Excel');
+});

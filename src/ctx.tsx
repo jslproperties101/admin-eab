@@ -13,7 +13,10 @@ export type View =
   | { k: 'settings' }
   | { k: 'cases' }
   | { k: 'case'; id: string }
-  | { k: 'vault' };
+  | { k: 'vault' }
+  | { k: 'health'; tab: HealthTab };
+
+export type HealthTab = 'db' | 'storage' | 'backups' | 'sync' | 'push' | 'performance' | 'errors';
 
 export interface AdminCtx {
   conn: Conn;

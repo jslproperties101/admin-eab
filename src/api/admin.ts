@@ -73,6 +73,74 @@ export interface CaseFile {
 export interface NewCase { requester_type: RequesterType; requester_name: string; requester_ref?: string; requester_contact?: string; received_on: string; deadline?: string; description: string }
 export interface Files { upload: (path: string, blob: Blob) => Promise<void>; download: (path: string) => Promise<Blob> }
 
+// ---------- AdminBatch004: System Health ----------
+export interface HealthLimits { db_limit_mb: number; storage_limit_mb: number; aws_backup: 'not_set_up' | 'set_up'; aws_note: string | null; updated_at: string; updated_by: string | null }
+export interface TableHealth {
+  name: string; total_bytes: number; data_bytes: number; rows: number; dead_rows: number;
+  last_vacuum: string | null; last_analyze: string | null; seq_scans: number; index_scans: number;
+}
+export interface DbHealth {
+  checked_at: string; db_bytes: number; postgres: string;
+  connections: { total: number; active: number; idle: number; idle_in_transaction: number; max: number };
+  longest_query_s: number; slow_queries: number;
+  stats: { cache_hit_pct: number | null; commits: number; rollbacks: number; deadlocks: number; temp_bytes: number; since: string | null } | null;
+  tables: TableHealth[]; limits: HealthLimits;
+}
+export type BackupTarget = 'supabase' | 'aws' | 'other';
+export type BackupKind = 'restore_test' | 'backup_check';
+export type BackupResult = 'pass' | 'partial' | 'fail';
+export interface BackupTest {
+  id: string; ref: string; tested_on: string; target: BackupTarget; kind: BackupKind; result: BackupResult; what: string;
+  duration_minutes: number | null; notes: string | null; recorded_by: string; recorded_by_email: string | null; recorded_at: string;
+}
+export interface NewBackupTest { tested_on: string; target: BackupTarget; kind: BackupKind; result: BackupResult; what: string; duration_minutes?: number | null; notes?: string }
+export interface StorageHealth {
+  checked_at: string;
+  today: { day: string; db_bytes: number; storage_bytes: number; storage_files: number };
+  buckets: { bucket: string; files: number; bytes: number; first_at: string | null; last_at: string | null }[];
+  uploads: { day: string; files: number; bytes: number }[];
+  daily: { day: string; db_bytes: number; storage_bytes: number; storage_files: number }[];
+  limits: HealthLimits;
+  backup_tests: { count: number; last: BackupTest | null; last_restore_pass: BackupTest | null };
+}
+export interface SyncAgent {
+  user_id: string; email: string; name: string | null; runs: number; fails: number; last_run: string; last_fail: string | null; last_ok: string | null;
+  pending: number | null; local_bytes: number | null; app_version: string | null; platform: string | null; phones: number;
+}
+export interface SyncHealth {
+  days: number; checked_at: string;
+  totals: { runs: number; fails: number; agents: number; agents_failing: number };
+  by_day: { day: string; runs: number; fails: number }[];
+  agents: SyncAgent[];
+}
+export interface PushBroadcast {
+  item_id: string; title: string | null; status: 'queued' | 'sending' | 'done'; queued_at: string; finished_at: string | null;
+  targeted: number | null; sent: number | null; failed: number | null; no_phone: number | null; received: number; opened: number;
+  errors: Record<string, number>;
+}
+export interface PushHealth {
+  checked_at: string; agents: number; agents_with_phone: number;
+  phones: { platform: string; phones: number; agents: number }[];
+  broadcasts: PushBroadcast[]; other_pushes_30d: Record<string, number>;
+}
+export interface Performance {
+  days: number; checked_at: string;
+  startup: { app_version: string; platform: string; opens: number; avg_ms: number; p50_ms: number; p90_ms: number; max_ms: number }[];
+  startup_all: { opens: number; avg_ms: number | null; p50_ms: number | null; p90_ms: number | null };
+  sessions_by_day: { day: string; sessions: number; agents: number }[];
+  versions: { app_version: string; agents: number }[];
+  google_calls: { calls: number; failed: number };
+}
+export type ReportStatus = 'new' | 'seen' | 'fixed' | 'closed';
+export interface ProblemReport {
+  id: string; user_id: string; email: string | null; description: string; has_screenshot: boolean; app_version: string | null;
+  platform: string | null; language: string | null; screen: string | null; status: ReportStatus; created_at: string;
+}
+export interface ErrorReports {
+  checked_at: string; counts: Partial<Record<ReportStatus, number>>; reports: ProblemReport[];
+  failures_7d: { kind: string; name: string; failed: number; total: number; agents: number; last_at: string | null }[];
+}
+
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
 
 export const api = (call: Call, device: string, files: Files = { upload: async () => { throw new Error('no storage'); }, download: async () => { throw new Error('no storage'); } }) => ({
@@ -121,6 +189,18 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   packDownload: (id: string) => call<{ path: string; file_name: string; format: 'pdf' | 'xlsx'; sha256: string }>('eab_admin_pack_download', { p_pack: id, p_device: device }),
   checkFile: (sha: string) => call<Pack | null>('eab_admin_check_file', { p_sha256: sha, p_device: device }),
   files,
+  // AdminBatch004 — System Health
+  healthDb: () => call<DbHealth>('eab_admin_health_db'),
+  healthStorage: () => call<StorageHealth>('eab_admin_health_storage'),
+  setHealthLimits: (patch: Partial<Pick<HealthLimits, 'db_limit_mb' | 'storage_limit_mb' | 'aws_backup' | 'aws_note'>>, reason: string) =>
+    call<HealthLimits>('eab_admin_set_health_limits', { p_patch: patch, p_reason: reason, p_device: device }),
+  backupTests: (limit = 200) => call<BackupTest[]>('eab_admin_backup_tests', { p_limit: limit }),
+  backupTestAdd: (p: NewBackupTest) => call<BackupTest>('eab_admin_backup_test_add', { p, p_device: device }),
+  syncHealth: (days = 30) => call<SyncHealth>('eab_admin_sync_health', { p_days: days, p_device: device }),
+  pushHealth: () => call<PushHealth>('eab_admin_push_health'),
+  performance: (days = 30) => call<Performance>('eab_admin_performance', { p_days: days }),
+  errorReports: (status: ReportStatus | null = null, limit = 200) =>
+    call<ErrorReports>('eab_admin_error_reports', { p_status: status, p_limit: limit, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

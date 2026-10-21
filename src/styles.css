@@ -114,6 +114,23 @@ th { color: var(--gold-hi); background: var(--card-2); position: sticky; top: 0;
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem; }
 .history li { margin-bottom: 6px; }
 
+/* AdminBatch004: health numbers, meters, charts */
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+.stat .l { color: var(--muted); font-size: .85rem; }
+.stat .v { font-size: 1.35rem; color: var(--gold-hi); }
+.stat.ok { border-color: #2f5e44; } .stat.amber { border-color: var(--amber); } .stat.red { border-color: var(--red); }
+.stat.red .v { color: var(--red); } .stat.amber .v { color: var(--amber); }
+.grid2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.meter { display: flex; flex-direction: column; gap: 8px; }
+.meter .bar { height: 18px; border-radius: 999px; background: #0E0E10; border: 1px solid var(--line-2); overflow: hidden; }
+.meter .bar span { display: block; height: 100%; background: var(--gold-grad); min-width: 2px; }
+.meter.amber .bar span { background: var(--amber); } .meter.red .bar span { background: var(--red); }
+.chart { margin: 0; }
+.chart svg { width: 100%; height: 140px; display: block; }
+.chart .b { fill: var(--gold); } .chart .r { fill: var(--red); }
+h1.spacer, h2.spacer, h3.spacer, b.spacer { min-width: 11ch; }
+
 /* dialog */
 .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.7); display: grid; place-items: center; padding: 16px; }
 .dialog { width: 100%; max-width: 520px; max-height: 90dvh; overflow: auto; }
@@ -124,4 +141,5 @@ th { color: var(--gold-hi); background: var(--card-2); position: sticky; top: 0;
   .split { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
   .split > .side { position: sticky; top: 76px; }
   .tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+  .grid2 { grid-template-columns: 1fr 1fr; }
 }

@@ -46,6 +46,14 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch004: System Health — Database Health (sizes, connections, cache hit rate, slow queries, tables), Storage
+Forecast (used vs free boxes for the database and stored files; full-by date from a daily reading and upload dates),
+Backup Status (Supabase and AWS boxes; plan limits and AWS state set by Owner/Admin with a reason), Backup Restore Test
+log (kept for good, cannot be changed or deleted), Sync per day and per agent, Push delivery (sent / delivered / opened),
+App Performance (start time by version, opens per day, versions in use), Problems (agents' problem reports and recorded
+failures), and a System Health report (PDF / Excel, reference number) for Owner/Compliance. Uptime needs an outside
+monitor; crash-free rate needs crash reporting in the main app. Needs `20261022000000_admin_batch_004_health.sql`.
+
 AdminBatch003: Regulator Request case files (JPPH / police / court / board / PDPA), agents per case with periods,
 Owner-only temporary regulator access per case (max 90 days, ends at once on revoke), case packs (PDF / Excel) with a
 cover page, reference number and content fingerprint, the Document Vault (private bucket `eab-vault`; files can never be

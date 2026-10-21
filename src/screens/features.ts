@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-004). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -74,16 +74,16 @@ export const SECTIONS: Section[] = [
     { n: 61, name: 'Marketing Studio Usage' },
   ] },
   { title: 'System Health', items: [
-    { n: 4, name: 'Database Health' },
-    { n: 3, name: 'Backup Status' },
-    { n: 42, name: 'Backup Restore Tests' },
-    { n: 41, name: 'Storage Forecast' },
-    { n: 5, name: 'Error Logs & Crashes' },
-    { n: 39, name: 'App Performance' },
-    { n: 38, name: 'Uptime & Outages' },
-    { n: 9, name: 'Notifications & Sync' },
-    { n: 43, name: 'Sync Failures' },
-    { n: 44, name: 'Push Delivery Rates' },
+    { n: 4, name: 'Database Health', open: { k: 'health', tab: 'db' }, needs: 'viewHealth', note: 'Tables, connections, slow queries' },
+    { n: 3, name: 'Backup Status', open: { k: 'health', tab: 'backups' }, needs: 'viewHealth', note: 'Supabase and AWS boxes' },
+    { n: 42, name: 'Backup Restore Tests', open: { k: 'health', tab: 'backups' }, needs: 'viewHealth', note: 'Proof for auditors, kept for good' },
+    { n: 41, name: 'Storage Forecast', open: { k: 'health', tab: 'storage' }, needs: 'viewHealth', note: 'Used vs free, when it fills up' },
+    { n: 5, name: 'Error Logs & Crashes', open: { k: 'health', tab: 'errors' }, needs: 'viewHealthAgents', note: 'Problem reports and failures' },
+    { n: 39, name: 'App Performance', open: { k: 'health', tab: 'performance' }, needs: 'viewHealth', note: 'Start time by version' },
+    { n: 38, name: 'Uptime & Outages', blocked: 'Needs an outside uptime monitor' },
+    { n: 9, name: 'Notifications & Sync', open: { k: 'health', tab: 'sync' }, needs: 'viewHealthAgents', note: 'Sync runs and failures' },
+    { n: 43, name: 'Sync Failures', open: { k: 'health', tab: 'sync' }, needs: 'viewHealthAgents', note: 'Per agent, most failures first' },
+    { n: 44, name: 'Push Delivery Rates', open: { k: 'health', tab: 'push' }, needs: 'viewHealth', note: 'Sent, delivered, opened' },
   ] },
   { title: 'Money', items: [
     { n: 2, name: 'Google API Usage & Cost' },

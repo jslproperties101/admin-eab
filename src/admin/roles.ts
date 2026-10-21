@@ -15,7 +15,8 @@ export const ROLE_HELP: Record<Role, string> = {
 
 export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAdmins'
   | 'listAgents' | 'accountActions' | 'verifyLicence' | 'viewSettings' | 'editSettings'
-  | 'viewCases' | 'editCases' | 'grantRegulator' | 'vault';
+  | 'viewCases' | 'editCases' | 'grantRegulator' | 'vault'
+  | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -33,6 +34,11 @@ const RULES: Record<Ability, Role[]> = {
   editCases: ['owner', 'compliance'],
   grantRegulator: ['owner'],
   vault: ['owner', 'compliance', 'regulator'],
+  // AdminBatch004 — same rules as the System Health database functions
+  viewHealth: ['owner', 'admin', 'compliance', 'viewer'],       // counts and sizes only
+  viewHealthAgents: ['owner', 'admin', 'compliance'],           // lists that name agents (sync failures, problem reports)
+  recordBackupTest: ['owner', 'admin', 'compliance'],
+  editHealthLimits: ['owner', 'admin'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

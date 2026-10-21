@@ -53,6 +53,41 @@ const history = [
   { rev: 1, data: { ref: 'P1001', askingPrice: 500000, status: 'Available' }, deleted: false, saved_by: AGENT, saved_at: '2026-10-19T07:00:00Z', current: false },
 ];
 
+/** AdminBatch004 fake System Health data (counts only, like the real functions). */
+function healthFake() {
+  const MB = 1024 * 1024;
+  const limits = { db_limit_mb: 500, storage_limit_mb: 1024, aws_backup: 'not_set_up', aws_note: null, updated_at: '2026-10-21T00:00:00Z', updated_by: null };
+  const days = n => Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 9, 22 - (n - 1 - i))).toISOString().slice(0, 10));
+  const h = {
+    dash: ['owner', 'admin', 'compliance', 'viewer'], staff: ['owner', 'admin', 'compliance'], limits, tests: [],
+    db: () => ({ checked_at: '2026-10-22T01:00:00Z', db_bytes: 17 * MB, postgres: '17.11', connections: { total: 13, active: 1, idle: 12, idle_in_transaction: 0, max: 60 },
+      longest_query_s: 0, slow_queries: 0, stats: { cache_hit_pct: 99.87, commits: 52000, rollbacks: 40, deadlocks: 0, temp_bytes: 0, since: '2026-10-15T10:52:00Z' },
+      tables: [
+        { name: 'eab_usage_events', total_bytes: 1.2 * MB, data_bytes: 0.8 * MB, rows: 1380, dead_rows: 12, last_vacuum: '2026-10-21T03:00:00Z', last_analyze: '2026-10-21T03:00:00Z', seq_scans: 40, index_scans: 900 },
+        { name: 'eab_records', total_bytes: 0.4 * MB, data_bytes: 0.2 * MB, rows: 28, dead_rows: 30, last_vacuum: null, last_analyze: null, seq_scans: 10, index_scans: 90 },
+      ], limits }),
+    storage: () => ({ checked_at: '2026-10-22T01:00:00Z', today: { day: '2026-10-22', db_bytes: 17 * MB, storage_bytes: 26 * MB, storage_files: 94 },
+      buckets: [{ bucket: 'eab-files', files: 90, bytes: 25 * MB, first_at: '2026-10-17T09:41:00Z', last_at: '2026-10-21T08:00:00Z' }, { bucket: 'eab-vault', files: 4, bytes: 1 * MB, first_at: null, last_at: '2026-10-21T08:00:00Z' }],
+      uploads: [{ day: '2026-10-17', files: 40, bytes: 10 * MB }, { day: '2026-10-19', files: 30, bytes: 8 * MB }, { day: '2026-10-21', files: 24, bytes: 8 * MB }],
+      daily: days(5).map((d, i) => ({ day: d, db_bytes: (13 + i) * MB, storage_bytes: (22 + i) * MB, storage_files: 80 + i })),
+      limits, backup_tests: { count: h.tests.length, last: h.tests[0] ?? null, last_restore_pass: h.tests.find(t => t.kind === 'restore_test' && t.result === 'pass') ?? null } }),
+    push: { checked_at: '2026-10-22T01:00:00Z', agents: 6, agents_with_phone: 4, phones: [{ platform: 'android', phones: 5, agents: 4 }],
+      broadcasts: [{ item_id: 'f1', title: 'OPR cut: what it means', status: 'done', queued_at: '2026-10-21T02:00:00Z', finished_at: '2026-10-21T02:01:00Z',
+        targeted: 6, sent: 4, failed: 1, no_phone: 2, received: 3, opened: 2, errors: { 'token.expired': 1 } }], other_pushes_30d: { team_invite: 2 } },
+    perf: { days: 30, checked_at: '2026-10-22T01:00:00Z', startup: [{ app_version: '2.2.0', platform: 'android', opens: 3, avg_ms: 9584, p50_ms: 9100, p90_ms: 11800, max_ms: 12000 }],
+      startup_all: { opens: 3, avg_ms: 9584, p50_ms: 9100, p90_ms: 11800 }, sessions_by_day: days(7).map((d, i) => ({ day: d, sessions: 4 + i, agents: 2 })),
+      versions: [{ app_version: '2.2.0', agents: 3 }, { app_version: '2.1.4', agents: 1 }], google_calls: { calls: 41, failed: 0 } },
+    sync: { days: 30, checked_at: '2026-10-22T01:00:00Z', totals: { runs: 98, fails: 11, agents: 3, agents_failing: 1 },
+      by_day: days(7).map((d, i) => ({ day: d, runs: 10 + i, fails: i === 3 ? 6 : 0 })),
+      agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', runs: 60, fails: 11, last_run: '2026-10-21T09:00:00Z', last_fail: '2026-10-20T09:00:00Z',
+        last_ok: '2026-10-21T09:00:00Z', pending: 3, local_bytes: 15000000, app_version: '2.2.0', platform: 'android', phones: 2 }] },
+    errors: { checked_at: '2026-10-22T01:00:00Z', counts: { new: 1 },
+      reports: [{ id: 'r1', user_id: AGENT, email: 'agent@example.com', description: 'Photo upload stuck at 90%', has_screenshot: true, app_version: '2.2.0', platform: 'android', language: 'en', screen: 'listing-form', status: 'new', created_at: '2026-10-21T05:00:00Z' }],
+      failures_7d: [{ kind: 'sync', name: 'sync.run', failed: 11, total: 98, agents: 1, last_at: '2026-10-20T09:00:00Z' }] },
+  };
+  return h;
+}
+
 /** A page with the fake database. `role` null = Google account not on the admin list. */
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
@@ -77,6 +112,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
     requester_contact: null, received_on: '2026-10-18', deadline: '2026-10-30', description: 'Fraud report about listing P1002', status: 'open', outcome: null,
     created_by: 'x', created_at: '2026-10-18T00:00:00Z', updated_at: '2026-10-18T00:00:00Z', closed_at: null,
     agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', date_from: '2026-10-01', date_to: null, added_at: '2026-10-18T00:00:00Z', removed_at: null }], grants: [] });
+  const health = healthFake();
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
   await page.route(`${SB}/**`, async route => {
@@ -194,6 +230,24 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_vault': return route.fulfill(ok(packs.filter(p => p.stored).map(p => ({ ...p, case_no: p.case_id ? cases.get(p.case_id)?.case_no : null, agent_email: p.agent_user ? 'agent@example.com' : null }))));
       case 'eab_admin_pack_download': { const pk = packs.find(p => p.id === args.p_pack); return route.fulfill(ok({ path: `${pk.id}/${pk.sha256}`, file_name: pk.file_name, format: pk.format, sha256: pk.sha256 })); }
       case 'eab_admin_check_file': return route.fulfill(ok(packs.find(p => p.sha256 === args.p_sha256 && p.stored) ?? null));
+      // AdminBatch004 — System Health
+      case 'eab_admin_health_db': return health.dash.includes(role) ? route.fulfill(ok(health.db())) : route.fulfill(denied);
+      case 'eab_admin_health_storage': return health.dash.includes(role) ? route.fulfill(ok(health.storage())) : route.fulfill(denied);
+      case 'eab_admin_backup_tests': return health.dash.includes(role) ? route.fulfill(ok(health.tests)) : route.fulfill(denied);
+      case 'eab_admin_push_health': return health.dash.includes(role) ? route.fulfill(ok(health.push)) : route.fulfill(denied);
+      case 'eab_admin_performance': return health.dash.includes(role) ? route.fulfill(ok(health.perf)) : route.fulfill(denied);
+      case 'eab_admin_sync_health': return health.staff.includes(role) ? route.fulfill(ok(health.sync)) : route.fulfill(denied);
+      case 'eab_admin_error_reports': return health.staff.includes(role) ? route.fulfill(ok(health.errors)) : route.fulfill(denied);
+      case 'eab_admin_set_health_limits':
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        Object.assign(health.limits, args.p_patch, { updated_at: '2026-10-22T02:00:00Z' });
+        return route.fulfill(ok(health.limits));
+      case 'eab_admin_backup_test_add': {
+        if (!health.staff.includes(role)) return route.fulfill(denied);
+        const r = { id: `bt-${++seq}`, ref: `BKT-2026-000${health.tests.length + 1}`, ...args.p, notes: args.p.notes ?? null, duration_minutes: args.p.duration_minutes ?? null,
+          recorded_by: 'me', recorded_by_email: 'joe@example.com', recorded_at: '2026-10-22T02:00:00Z' };
+        health.tests.unshift(r); return route.fulfill(ok(r));
+      }
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -558,5 +612,117 @@ test('regulator: sees only "My case", read-only, no export, no tiles for staff',
   assert.equal(await page.getByTestId('export-pdf').count(), 0, 'regulator cannot export');
   assert.equal(await page.getByTestId('account-box').count(), 0);
   await page.screenshot({ path: `${SHOTS}/15-regulator-agent-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+// ---------------- AdminBatch004: System Health ----------------
+
+test('owner: System Health — database, storage boxes with forecast, plan limits change needs a reason', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-4').click();
+  await page.getByTestId('db-tables').waitFor();
+  assert.match(await page.getByTestId('health-db').innerText(), /13 \/ 60/);
+  assert.match(await page.getByTestId('health-db').innerText(), /99\.87%/);
+  await page.screenshot({ path: `${SHOTS}/16-health-db-laptop.png`, fullPage: true });
+  await page.getByTestId('htab-storage').click();
+  await page.getByTestId('meter-db').waitFor();
+  assert.match(await page.getByTestId('meter-db').innerText(), /17\.0 MB/);
+  assert.match(await page.getByTestId('meter-db').getByTestId('forecast').innerText(), /Growing about 1\.00 MB a day — full in about 483 days/);
+  assert.match(await page.getByTestId('meter-files').getByTestId('forecast').innerText(), /Growing about/);
+  await page.getByTestId('limits-edit').click();
+  await page.getByTestId('limit-db').fill('8192');
+  await page.getByTestId('limit-aws').selectOption('set_up');
+  await page.getByTestId('limits-save').click();
+  assert.ok(await page.getByRole('button', { name: 'Continue' }).isDisabled(), 'a reason is required');
+  await page.getByPlaceholder(/At least 5 characters/).fill('Moved to the Supabase Pro plan');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByText('Limits saved.').waitFor();
+  const set = calls.find(c => c.fn === 'eab_admin_set_health_limits');
+  assert.deepEqual(set.args.p_patch, { db_limit_mb: 8192, aws_backup: 'set_up' });
+  assert.equal(set.args.p_reason, 'Moved to the Supabase Pro plan');
+  assert.match(await page.getByTestId('limits').innerText(), /8,192 MB/);
+  await page.screenshot({ path: `${SHOTS}/17-health-storage-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('owner: backups — no restore test warning, record a test (kept for good), export the health report', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 390 });
+  await page.getByTestId('tile-42').click();
+  await page.getByTestId('box-supabase').waitFor();
+  assert.match(await page.getByTestId('box-aws').innerText(), /Not set up yet/);
+  assert.match(await page.getByTestId('restore-due').innerText(), /No restore test has been recorded yet/);
+  await page.getByTestId('bt-add').click();
+  assert.ok(await page.getByTestId('bt-save').isDisabled(), 'needs "what was checked"');
+  await page.getByTestId('bt-what').fill('Restored the 21 Oct backup into a scratch project; opened 10 listings');
+  await page.getByTestId('bt-mins').fill('40');
+  await page.getByTestId('bt-save').click();
+  await page.getByText(/cannot be changed or deleted afterwards/).waitFor();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('bt-list').waitFor();
+  assert.match(await page.getByTestId('bt-list').innerText(), /BKT-2026-0001/);
+  const add = calls.find(c => c.fn === 'eab_admin_backup_test_add');
+  assert.equal(add.args.p.kind, 'restore_test'); assert.equal(add.args.p.result, 'pass'); assert.equal(add.args.p.duration_minutes, 40);
+  await page.getByText(/Last restore test that passed/).waitFor();
+  await page.screenshot({ path: `${SHOTS}/18-health-backups-phone.png`, fullPage: true });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('health-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^System-Health-EAB-20261021-000007\.xlsx$/);
+  const exp = calls.find(c => c.fn === 'eab_admin_export');
+  assert.equal(exp.args.p_kind, 'health_report'); assert.equal(exp.args.p_target, null);
+  await ctx.close();
+});
+
+test('admin: sync failures per agent, push delivery, performance, problem reports; no export', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 1366 });
+  await page.getByTestId('tile-43').click();
+  await page.getByTestId('sync-agents').waitFor();
+  assert.match(await page.getByTestId('health-sync').innerText(), /11 \(18%\)/);
+  assert.equal(await page.getByTestId('health-pdf').count(), 0, 'admin cannot export');
+  await page.screenshot({ path: `${SHOTS}/19-health-sync-laptop.png`, fullPage: true });
+  await page.getByTestId('days').selectOption('7');
+  await page.waitForFunction(() => true);
+  await page.getByTestId('sync-agents').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_sync_health' && c.args.p_days === 7));
+  await page.getByTestId('htab-push').click();
+  await page.getByTestId('broadcasts').waitFor();
+  assert.match(await page.getByTestId('broadcasts').innerText(), /OPR cut/);
+  assert.match(await page.getByTestId('health-push').innerText(), /4 of 6/);
+  await page.getByTestId('htab-performance').click();
+  await page.getByTestId('startup').waitFor();
+  assert.match(await page.getByTestId('health-performance').innerText(), /9\.1 s/);
+  await page.getByTestId('htab-errors').click();
+  await page.getByTestId('reports').waitFor();
+  assert.match(await page.getByTestId('reports').innerText(), /Photo upload stuck/);
+  assert.match(await page.getByTestId('failures').innerText(), /sync\.run/);
+  await page.screenshot({ path: `${SHOTS}/20-health-errors-laptop.png`, fullPage: true });
+  // the agent link opens the profile
+  await page.getByRole('button', { name: 'agent@example.com' }).click();
+  await page.getByTestId('agent-status').first().waitFor();
+  await ctx.close();
+});
+
+test('viewer: health dashboards yes; agent lists, recording tests and changing limits no', async () => {
+  const { page, ctx, calls } = await open({ role: 'viewer', width: 390 });
+  await page.getByTestId('tile-4').waitFor();
+  assert.equal(await page.getByTestId('tile-43').count(), 0, 'sync failures name agents');
+  assert.equal(await page.getByTestId('tile-5').count(), 0, 'problem reports name agents');
+  await page.getByTestId('tile-41').click();
+  await page.getByTestId('meter-db').waitFor();
+  assert.equal(await page.getByTestId('limits-edit').count(), 0);
+  await page.getByTestId('htab-backups').click();
+  await page.getByTestId('box-aws').waitFor();
+  assert.equal(await page.getByTestId('bt-add').count(), 0);
+  await page.getByTestId('htab-sync').click();
+  await page.getByText(/shown to the Owner, Admin and Compliance only/).waitFor();
+  assert.ok(!calls.some(c => c.fn === 'eab_admin_sync_health'), 'the agent list is not even asked for');
+  await page.screenshot({ path: `${SHOTS}/21-health-viewer-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('regulator: no System Health at all', async () => {
+  const { page, ctx } = await open({ role: 'regulator', width: 390 });
+  await page.getByTestId('tile-my-case').waitFor();
+  assert.equal(await page.getByTestId('tile-4').count(), 0);
+  assert.equal(await page.getByTestId('tile-42').count(), 0);
   await ctx.close();
 });

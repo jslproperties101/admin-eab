@@ -141,6 +141,61 @@ export interface ErrorReports {
   failures_7d: { kind: string; name: string; failed: number; total: number; agents: number; last_at: string | null }[];
 }
 
+// ---------- AdminBatch005: Dashboards (eab_admin_dash_*) ----------
+export type Bucket = 'day' | 'week' | 'month';
+export interface DashGrowth { from: string; to: string; bucket: Bucket; total: number; before: number; new: number; buckets: { start: string; new: number; running: number }[] }
+export interface DashActiveDay { day: string; dau: number; wau: number; mau: number }
+export interface DashActive {
+  from: string; to: string; agents: number; active_in_range: number; avg_dau: number | null; avg_wau: number | null; avg_mau: number | null;
+  stickiness_pct: number | null; last: DashActiveDay | null; by_day: DashActiveDay[];
+}
+export interface AtRiskAgent { user_id: string; email: string; name: string | null; last_day: string; days_since: number; recent_days: number; prior_days: number; reason: 'no_activity_14d' | 'activity_halved' }
+export interface DashRetention {
+  from: string; to: string; joined: number; names_hidden: boolean;
+  retention: { days: 7 | 30 | 90; eligible: number; kept: number; pct: number | null }[];
+  cohorts: { month: string; joined: number; kept7: number; eligible7: number; kept30: number; eligible30: number; kept90: number; eligible90: number }[];
+  at_risk: { count: number; agents: AtRiskAgent[] | null };
+}
+export interface InactiveAgent {
+  user_id: string; email: string; name: string | null; joined: string; last_open: string | null; last_sign_in: string | null; last_seen: string | null;
+  days_since: number; app_version: string | null; platform: string | null; status: AccountStatus | null;
+}
+export interface DashInactive { days: 30 | 60 | 90; checked_at: string; agents: number; counts: Record<'30' | '60' | '90', number>; never_opened: number; names_hidden: boolean; list: InactiveAgent[] | null }
+export interface DashDevices {
+  from: string; to: string; agents: number;
+  versions: { app_version: string; agents: number; last_seen: string }[];
+  platforms: { platform: string; agents: number }[];
+  devices: { device: string; platform: string; agents: number }[];
+  languages: { language: string; agents: number }[];
+  language_events: Record<string, number>;
+  version_agents: { user_id: string; email: string; name: string | null; platform: string; device: string; last_seen: string }[] | null;
+}
+export interface PipelineStage { stage: string; listings: number; parts?: Record<string, number> }
+export interface StaleListing {
+  user_id: string; email: string | null; name: string | null; id: string; ref: string | null; headline: string | null; type: string | null;
+  state: string | null; city: string | null; updated_at: string; days: number;
+}
+export interface DashListings {
+  from: string; to: string; stale_days: number; checked_at: string; total: number; deleted: number; agents_with_listings: number;
+  by_status: Record<string, number>; by_purpose: Record<string, number>;
+  by_type: { type: string; listings: number }[]; by_state: { state: string; listings: number }[];
+  new_by_month: { month: string; new: number }[];
+  pipeline: { sale: PipelineStage[]; rent: PipelineStage[] };
+  stale_count: number; names_hidden: boolean; stale: StaleListing[] | null;
+}
+export interface DashUsage {
+  from: string; to: string; detail_from: string;
+  ranking: { kind: string; name: string; events: number; agents: number; failures: number }[];
+  not_used: { kind: string; name: string }[];
+  heatmap: { dow: number; hour: number; events: number }[];
+  by_day: { day: string; events: number; agents: number }[];
+}
+export interface UsageEvent {
+  at: string; user_id: string; email: string | null; name: string | null; screen: string | null; ok: boolean; n: number | null; value: number | null;
+  app_version: string | null; platform: string | null; device: string | null;
+}
+export interface DashEvents { kind: string; name: string; from: string; to: string; total: number; events: UsageEvent[] }
+
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
 
 export const api = (call: Call, device: string, files: Files = { upload: async () => { throw new Error('no storage'); }, download: async () => { throw new Error('no storage'); } }) => ({
@@ -201,6 +256,18 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   performance: (days = 30) => call<Performance>('eab_admin_performance', { p_days: days }),
   errorReports: (status: ReportStatus | null = null, limit = 200) =>
     call<ErrorReports>('eab_admin_error_reports', { p_status: status, p_limit: limit, p_device: device }),
+  // AdminBatch005 — Dashboards
+  dashGrowth: (from: string, to: string, bucket: Bucket) => call<DashGrowth>('eab_admin_dash_growth', { p_from: from, p_to: to, p_bucket: bucket }),
+  dashActive: (from: string, to: string) => call<DashActive>('eab_admin_dash_active', { p_from: from, p_to: to }),
+  dashRetention: (from: string, to: string) => call<DashRetention>('eab_admin_dash_retention', { p_from: from, p_to: to, p_device: device }),
+  dashInactive: (days: 30 | 60 | 90) => call<DashInactive>('eab_admin_dash_inactive', { p_days: days, p_device: device }),
+  dashDevices: (from: string, to: string, version: string | null = null) =>
+    call<DashDevices>('eab_admin_dash_devices', { p_from: from, p_to: to, p_version: version, p_device: device }),
+  dashListings: (from: string, to: string, staleDays = 60) =>
+    call<DashListings>('eab_admin_dash_listings', { p_from: from, p_to: to, p_stale_days: staleDays, p_device: device }),
+  dashUsage: (from: string, to: string) => call<DashUsage>('eab_admin_dash_usage', { p_from: from, p_to: to }),
+  dashEvents: (kind: string, name: string, from: string, to: string, limit = 200) =>
+    call<DashEvents>('eab_admin_dash_events', { p_kind: kind, p_name: name, p_from: from, p_to: to, p_limit: limit, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

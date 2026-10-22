@@ -143,3 +143,38 @@ h1.spacer, h2.spacer, h3.spacer, b.spacer { min-width: 11ch; }
   .tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
   .grid2 { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---------- AdminBatch005: Dashboards ---------- */
+.rangebar { padding: 10px 12px; }
+.field.inline { flex-direction: row; align-items: center; gap: 8px; }
+.field.inline input { width: auto; min-height: 40px; }
+.chart.lines svg { height: 160px; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart polyline { stroke-width: 2.5; }
+.chart .l1 { stroke: var(--gold-hi); fill: var(--gold-hi); } .chart polyline.l1 { fill: none; }
+.chart .l2 { stroke: var(--gold); fill: var(--gold); } .chart polyline.l2 { fill: none; }
+.chart .l3 { stroke: var(--gold-lo); fill: var(--gold-lo); } .chart polyline.l3 { fill: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.legend .sw { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.legend .sw.l1 { background: var(--gold-hi); } .legend .sw.l2 { background: var(--gold); } .legend .sw.l3 { background: var(--gold-lo); }
+.hbars { display: flex; flex-direction: column; gap: 4px; }
+.hrow { display: grid; grid-template-columns: minmax(110px, 38%) 1fr auto; gap: 10px; align-items: center; min-height: 36px;
+  padding: 4px 6px; border-radius: 8px; border: 1px solid transparent; background: none; color: inherit; text-align: left; font: inherit; width: 100%; }
+.hrow.pick { cursor: pointer; } .hrow.pick:hover { border-color: var(--gold); }
+.hrow .hl { overflow-wrap: anywhere; }
+.hrow .hb { height: 12px; background: var(--card-2); border-radius: 6px; overflow: hidden; }
+.hrow .hb span { display: block; height: 100%; background: var(--gold-grad); border-radius: 6px; min-width: 2px; }
+.hrow .hv { white-space: nowrap; font-weight: 700; }
+.lane { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 8px; counter-reset: st; }
+.lane li { position: relative; background: var(--card-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.lane li .l { color: var(--muted); font-size: .85rem; }
+.lane li .v { font-size: 1.5rem; color: var(--gold-hi); }
+.heat table { border-collapse: separate; border-spacing: 2px; min-width: 560px; }
+.dash-table th, .dash-table .tag { white-space: nowrap; }
+.dash-table td .linkbtn { white-space: nowrap; text-align: left; }
+.heat td { width: 18px; min-width: 14px; height: 18px; border-radius: 3px; background: var(--card-2); padding: 0; }
+.heat th { padding: 0 4px; font-weight: 500; color: var(--muted); text-align: right; white-space: nowrap; }
+@media (min-width: 760px) {
+  .lane { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .lane li:not(:last-child)::after { content: '›'; position: absolute; right: -9px; top: 50%; transform: translateY(-50%); color: var(--gold); font-size: 1.4rem; }
+}

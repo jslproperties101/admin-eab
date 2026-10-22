@@ -89,6 +89,55 @@ function healthFake() {
 }
 
 /** A page with the fake database. `role` null = Google account not on the admin list. */
+// AdminBatch005 — Dashboards: answers like the eab_admin_dash_* functions. Viewer gets totals only (lists are null).
+function dashFake() {
+  const days = n => Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 9, 22 - (n - 1 - i))).toISOString().slice(0, 10));
+  const staff = ['owner', 'admin', 'compliance'], dash = [...staff, 'viewer'];
+  const named = (role, v) => (staff.includes(role) ? v : null);
+  const siti = { user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent' };
+  return {
+    dash, staff,
+    growth: a => ({ from: a.p_from, to: a.p_to, bucket: a.p_bucket, total: 6, before: 0, new: 6,
+      buckets: days(30).map((d, i) => ({ start: d, new: i === 25 ? 2 : i === 26 ? 3 : i === 28 ? 1 : 0, running: i < 25 ? 0 : i === 25 ? 2 : i < 28 ? 5 : 6 })) }),
+    active: a => { const by = days(30).map((d, i) => ({ day: d, dau: i >= 25 ? (i % 2) + 1 : 0, wau: i >= 25 ? 3 : 0, mau: i >= 25 ? 4 : 0 }));
+      return { from: a.p_from, to: a.p_to, agents: 6, active_in_range: 4, avg_dau: 0.27, avg_wau: 0.5, avg_mau: 0.67, stickiness_pct: 40.3, last: by[29], by_day: by }; },
+    retention: (a, role) => ({ from: a.p_from, to: a.p_to, joined: 6, names_hidden: !staff.includes(role),
+      retention: [{ days: 7, eligible: 0, kept: 0, pct: null }, { days: 30, eligible: 0, kept: 0, pct: null }, { days: 90, eligible: 0, kept: 0, pct: null }],
+      cohorts: [{ month: '2026-10-01', joined: 6, kept7: 0, eligible7: 0, kept30: 0, eligible30: 0, kept90: 0, eligible90: 0 }],
+      at_risk: { count: 1, agents: named(role, [{ ...siti, last_day: '2026-10-05', days_since: 17, recent_days: 0, prior_days: 3, reason: 'no_activity_14d' }]) } }),
+    inactive: (a, role) => ({ days: a.p_days, checked_at: '2026-10-22T04:00:00Z', agents: 6, counts: { 30: 2, 60: 1, 90: 0 }, never_opened: 2, names_hidden: !staff.includes(role),
+      list: named(role, a.p_days === 30
+        ? [{ ...siti, joined: '2026-08-01', last_open: '2026-09-10', last_sign_in: '2026-09-10', last_seen: '2026-09-10', days_since: 42, app_version: '2.1.0', platform: 'android', status: 'active' },
+           { user_id: 'b2', email: 'old@example.com', name: null, joined: '2026-07-01', last_open: null, last_sign_in: null, last_seen: null, days_since: 113, app_version: null, platform: null, status: 'suspended' }]
+        : [{ user_id: 'b2', email: 'old@example.com', name: null, joined: '2026-07-01', last_open: null, last_sign_in: null, last_seen: null, days_since: 113, app_version: null, platform: null, status: 'suspended' }]) }),
+    devices: (a, role) => ({ from: a.p_from, to: a.p_to, agents: 4,
+      versions: [{ app_version: '2.2.0', agents: 3, last_seen: '2026-10-22T03:00:00Z' }, { app_version: '2.10.0', agents: 1, last_seen: '2026-10-22T02:00:00Z' }],
+      platforms: [{ platform: 'android', agents: 3 }, { platform: 'web', agents: 1 }],
+      devices: [{ device: 'SM-S918B', platform: 'android', agents: 2 }, { device: '25078RA3EY', platform: 'android', agents: 1 }, { device: 'unknown', platform: 'web', agents: 1 }],
+      languages: [{ language: 'en', agents: 2 }, { language: 'ms', agents: 1 }, { language: 'unknown', agents: 1 }], language_events: { en: 5, ms: 1 },
+      version_agents: a.p_version ? [{ ...siti, platform: 'android', device: 'SM-S918B', last_seen: '2026-10-22T02:00:00Z' }] : null }),
+    listings: (a, role) => ({ from: a.p_from, to: a.p_to, stale_days: a.p_stale_days, checked_at: '2026-10-22T04:00:00Z', total: 9, deleted: 1, agents_with_listings: 3,
+      by_status: { available: 4, booked_pending_loan: 1, booked_pending_spa: 1, rented_pending_ta: 1, sold: 1, needs_check: 1 }, by_purpose: { sale: 6, rent: 2, none: 1 },
+      by_type: [{ type: 'Terrace house', listings: 4 }, { type: 'Condo / apartment', listings: 3 }, { type: 'Not set', listings: 2 }],
+      by_state: [{ state: 'Selangor', listings: 5 }, { state: 'Kuala Lumpur', listings: 4 }], new_by_month: [{ month: '2026-10-01', new: 9 }],
+      pipeline: { sale: [{ stage: 'booked', listings: 1, parts: { booked: 0, booked_pending_spa: 1, booked_other_agent: 0, booked_pending_consent: 0 } },
+        { stage: 'booked_pending_loan', listings: 1 }, { stage: 'booked_spa_signed', listings: 0 }, { stage: 'sold', listings: 1 }],
+        rent: [{ stage: 'rented_pending_ta', listings: 1 }, { stage: 'rented', listings: 0 }] },
+      stale_count: 1, names_hidden: !staff.includes(role),
+      stale: named(role, [{ ...siti, id: 'p1', ref: 'P1001', headline: 'Corner terrace, Shah Alam', type: 'Terrace house', state: 'Selangor', city: 'Shah Alam', updated_at: '2026-07-01T00:00:00Z', days: 113 }]) }),
+    usage: a => ({ from: a.p_from, to: a.p_to, detail_from: '2026-10-18',
+      ranking: [{ kind: 'screen', name: 'home', events: 234, agents: 4, failures: 0 }, { kind: 'sync', name: 'sync.run', events: 105, agents: 3, failures: 3 },
+        { kind: 'screen', name: 'listing', events: 61, agents: 3, failures: 0 }, { kind: 'feature', name: 'properties.create', events: 4, agents: 2, failures: 0 },
+        { kind: 'google', name: 'geocoding.reverse', events: 20, agents: 2, failures: 1 }],
+      not_used: [{ kind: 'screen', name: 'dev-dashboard' }],
+      heatmap: [{ dow: 1, hour: 9, events: 30 }, { dow: 3, hour: 21, events: 80 }, { dow: 6, hour: 14, events: 12 }],
+      by_day: days(5).map((d, i) => ({ day: d, events: 40 + i * 10, agents: 2 })) }),
+    events: a => ({ kind: a.p_kind, name: a.p_name, from: a.p_from, to: a.p_to, total: 2,
+      events: [{ at: '2026-10-21T08:00:00Z', ...siti, screen: null, ok: true, n: null, value: null, app_version: '2.2.0', platform: 'android', device: 'SM-S918B' },
+        { at: '2026-10-20T08:00:00Z', ...siti, screen: null, ok: false, n: null, value: null, app_version: '2.2.0', platform: 'android', device: 'SM-S918B' }] }),
+  };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -113,6 +162,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
     created_by: 'x', created_at: '2026-10-18T00:00:00Z', updated_at: '2026-10-18T00:00:00Z', closed_at: null,
     agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', date_from: '2026-10-01', date_to: null, added_at: '2026-10-18T00:00:00Z', removed_at: null }], grants: [] });
   const health = healthFake();
+  const dash = dashFake();
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
   await page.route(`${SB}/**`, async route => {
@@ -248,6 +298,17 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
           recorded_by: 'me', recorded_by_email: 'joe@example.com', recorded_at: '2026-10-22T02:00:00Z' };
         health.tests.unshift(r); return route.fulfill(ok(r));
       }
+      // AdminBatch005 — Dashboards
+      case 'eab_admin_dash_growth': return dash.dash.includes(role) ? route.fulfill(ok(dash.growth(args))) : route.fulfill(denied);
+      case 'eab_admin_dash_active': return dash.dash.includes(role) ? route.fulfill(ok(dash.active(args))) : route.fulfill(denied);
+      case 'eab_admin_dash_retention': return dash.dash.includes(role) ? route.fulfill(ok(dash.retention(args, role))) : route.fulfill(denied);
+      case 'eab_admin_dash_inactive': return dash.dash.includes(role) ? route.fulfill(ok(dash.inactive(args, role))) : route.fulfill(denied);
+      case 'eab_admin_dash_devices':
+        if (!dash.dash.includes(role) || (args.p_version && !dash.staff.includes(role))) return route.fulfill(denied);
+        return route.fulfill(ok(dash.devices(args, role)));
+      case 'eab_admin_dash_listings': return dash.dash.includes(role) ? route.fulfill(ok(dash.listings(args, role))) : route.fulfill(denied);
+      case 'eab_admin_dash_usage': return dash.dash.includes(role) ? route.fulfill(ok(dash.usage(args))) : route.fulfill(denied);
+      case 'eab_admin_dash_events': return dash.staff.includes(role) ? route.fulfill(ok(dash.events(args))) : route.fulfill(denied);
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -724,5 +785,126 @@ test('regulator: no System Health at all', async () => {
   await page.getByTestId('tile-my-case').waitFor();
   assert.equal(await page.getByTestId('tile-4').count(), 0);
   assert.equal(await page.getByTestId('tile-42').count(), 0);
+  await ctx.close();
+});
+
+// ---------------- AdminBatch005: Dashboards ----------------
+
+test('owner: dashboards — sign-ups, active users, retention with at-risk agents, period filter, Excel report (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  for (const n of [23, 24, 25, 26, 20, 27, 29, 7, 59, 6, 62]) assert.ok(await page.getByTestId(`tile-${n}`).isEnabled(), `tile ${n}`);
+  await page.getByTestId('tile-23').click();
+  await page.getByTestId('growth-bars').waitFor();
+  assert.match(await page.getByTestId('dash-growth').innerText(), /Agents now\s*6/);
+  const g = calls.find(c => c.fn === 'eab_admin_dash_growth');
+  assert.equal(g.args.p_bucket, 'day'); assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(g.args.p_from));
+  await page.screenshot({ path: `${SHOTS}/22-dash-growth-laptop.png`, fullPage: true });
+  await page.getByTestId('range-365').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="range-text"]')?.textContent?.includes('365 days'));
+  await page.getByTestId('growth-bars').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_growth' && c.args.p_bucket === 'month'), '12 months shows months');
+  // custom range: a reversed period is refused before asking the database
+  await page.getByTestId('range-custom').click();
+  await page.getByTestId('range-from').fill('2026-10-20');
+  await page.getByTestId('range-to').fill('2026-10-10');
+  assert.ok(await page.getByTestId('range-apply').isDisabled());
+  await page.getByText('The start date is after the end date.').waitFor();
+  await page.getByTestId('range-to').fill('2026-10-21');
+  await page.getByTestId('range-apply').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="range-text"]')?.textContent?.includes('2026-10-20 to 2026-10-21'));
+  await page.getByTestId('dtab-active').click();
+  await page.getByTestId('active-lines').waitFor();
+  assert.match(await page.getByTestId('dash-active').innerText(), /Stickiness\s*40%/);
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_active' && c.args.p_from === '2026-10-20' && c.args.p_to === '2026-10-21'));
+  await page.screenshot({ path: `${SHOTS}/23-dash-active-laptop.png`, fullPage: true });
+  await page.getByTestId('dtab-retention').click();
+  await page.getByTestId('at-risk').waitFor();
+  assert.match(await page.getByTestId('at-risk').innerText(), /Siti Agent[\s\S]*Nothing for 14\+ days/);
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_retention' && c.args.p_device), 'the at-risk list call carries the device for the access log');
+  await page.screenshot({ path: `${SHOTS}/24-dash-retention-laptop.png`, fullPage: true });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('dash-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^Dashboards-EAB-20261021-000007\.xlsx$/);
+  const exp = calls.find(c => c.fn === 'eab_admin_export');
+  assert.equal(exp.args.p_kind, 'dashboards'); assert.equal(exp.args.p_target, null);
+  assert.deepEqual(exp.args.p_detail, { from: '2026-10-20', to: '2026-10-21' });
+  await ctx.close();
+});
+
+test('admin: inactive agents 30/60/90, versions with their agents, listings with stale list, pipeline lanes, feature usage drill-down; no export (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  await page.getByTestId('tile-26').click();
+  await page.getByTestId('inactive-list').waitFor();
+  assert.match(await page.getByTestId('inactive-list').innerText(), /Siti Agent[\s\S]*old@example\.com[\s\S]*Suspended/);
+  assert.equal(await page.getByTestId('dash-xlsx').count(), 0, 'admin cannot export');
+  assert.equal(await page.getByTestId('range').count(), 0, 'inactive has no period filter');
+  await page.getByTestId('inactive-60').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="inactive-list"]')?.textContent?.includes('Siti Agent'));
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_inactive' && c.args.p_days === 60));
+  await page.screenshot({ path: `${SHOTS}/25-dash-inactive-phone.png`, fullPage: true });
+  await page.getByTestId('dtab-versions').click();
+  await page.getByTestId('versions').waitFor();
+  const v = await page.getByTestId('versions').innerText();
+  assert.ok(v.indexOf('2.10.0') < v.indexOf('2.2.0'), 'newest version first');
+  assert.match(await page.getByTestId('languages').innerText(), /Bahasa Melayu/);
+  await page.getByTestId('versions').getByRole('listitem').first().click();
+  await page.getByTestId('version-agents').getByText('Siti Agent').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_devices' && c.args.p_version === '2.10.0'));
+  await page.screenshot({ path: `${SHOTS}/26-dash-versions-phone.png`, fullPage: true });
+  await page.getByTestId('dtab-listings').click();
+  await page.getByTestId('stale').waitFor();
+  assert.match(await page.getByTestId('by-status').innerText(), /Rented - Pending TA Signing/);
+  assert.match(await page.getByTestId('by-status').innerText(), /Booked - Pending Loan/);
+  assert.match(await page.getByTestId('stale').innerText(), /P1001[\s\S]*113/);
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_listings' && c.args.p_stale_days === 60), '60 days (Joe)');
+  await page.getByTestId('dtab-pipeline').click();
+  await page.getByTestId('lane-rent').waitFor();
+  assert.match(await page.getByTestId('lane-sale').innerText(), /Booked[\s\S]*Pending loan[\s\S]*SPA signed[\s\S]*Sold/);
+  assert.match(await page.getByTestId('lane-rent').innerText(), /Rented - Pending TA Signing\s*1[\s\S]*Rented\s*0/);
+  await page.screenshot({ path: `${SHOTS}/27-dash-pipeline-phone.png`, fullPage: true });
+  await page.getByTestId('dtab-usage').click();
+  await page.getByTestId('ranking').waitFor();
+  assert.match(await page.getByTestId('ranking').innerText(), /Home[\s\S]*Listings/);
+  assert.doesNotMatch(await page.getByTestId('ranking').innerText(), /Sync/, 'screens only by default');
+  assert.match(await page.getByTestId('not-used').innerText(), /Developer dashboard/);
+  await page.getByTestId('heatmap').waitFor();
+  await page.getByTestId('ranking').getByRole('listitem').first().click();
+  await page.getByTestId('events').getByText('Failed').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_dash_events' && c.args.p_kind === 'screen' && c.args.p_name === 'home' && c.args.p_device));
+  await page.screenshot({ path: `${SHOTS}/28-dash-usage-phone.png`, fullPage: true });
+  // an agent name opens the Agent Profile
+  await page.getByTestId('events').getByRole('button', { name: 'Siti Agent' }).first().click();
+  await page.getByTestId('agent-status').first().waitFor();
+  await ctx.close();
+});
+
+test('viewer: dashboards with totals and charts only — no agent lists, no drill-down, nothing asked for by version', async () => {
+  const { page, ctx, calls } = await open({ role: 'viewer', width: 390 });
+  await page.getByTestId('tile-25').click();
+  await page.getByTestId('dash-retention').waitFor();
+  assert.match(await page.getByTestId('dash-retention').innerText(), /At risk of leaving\s*1/);
+  assert.equal(await page.getByTestId('at-risk').count(), 0);
+  await page.getByTestId('names-hidden').waitFor();
+  await page.getByTestId('dtab-inactive').click();
+  await page.getByTestId('dash-inactive').getByText(/No activity 30\+ days/).waitFor();
+  assert.equal(await page.getByTestId('inactive-list').count(), 0);
+  await page.getByTestId('dtab-versions').click();
+  await page.getByTestId('versions').waitFor();
+  assert.equal(await page.getByTestId('versions').locator('button').count(), 0, 'versions cannot be opened');
+  await page.getByTestId('dtab-listings').click();
+  await page.getByTestId('by-status').waitFor();
+  assert.equal(await page.getByTestId('stale').count(), 0);
+  await page.getByTestId('dtab-usage').click();
+  await page.getByTestId('ranking').waitFor();
+  assert.equal(await page.getByTestId('ranking').locator('button').count(), 0, 'no drill-down');
+  assert.equal(await page.getByTestId('dash-pdf').count(), 0);
+  assert.ok(!calls.some(c => c.fn === 'eab_admin_dash_events' || (c.fn === 'eab_admin_dash_devices' && c.args.p_version)));
+  await page.screenshot({ path: `${SHOTS}/29-dash-viewer-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('regulator: no dashboards', async () => {
+  const { page, ctx } = await open({ role: 'regulator', width: 390 });
+  await page.getByTestId('tile-my-case').waitFor();
+  for (const n of [23, 24, 26, 7, 62]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
   await ctx.close();
 });

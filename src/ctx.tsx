@@ -14,8 +14,11 @@ export type View =
   | { k: 'cases' }
   | { k: 'case'; id: string }
   | { k: 'vault' }
-  | { k: 'health'; tab: HealthTab };
+  | { k: 'health'; tab: HealthTab }
+  | { k: 'dash'; tab: DashTab };
 
+/** AdminBatch005 dashboard tabs. */
+export type DashTab = 'growth' | 'active' | 'retention' | 'inactive' | 'versions' | 'listings' | 'pipeline' | 'usage';
 export type HealthTab = 'db' | 'storage' | 'backups' | 'sync' | 'push' | 'performance' | 'errors';
 
 export interface AdminCtx {

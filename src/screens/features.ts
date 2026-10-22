@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-004). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-005). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -51,25 +51,25 @@ export const SECTIONS: Section[] = [
   { title: 'Users & Growth', items: [
     { n: 1, name: 'Agents Overview', open: { k: 'agents', filter: 'all' }, needs: 'listAgents', note: 'Status, licence, last sign-in' },
     { n: 22, name: 'Live Users Now' },
-    { n: 23, name: 'Sign-ups & Growth' },
-    { n: 24, name: 'Active Users' },
-    { n: 25, name: 'Retention & Churn' },
-    { n: 26, name: 'Inactive Agents' },
-    { n: 20, name: 'App Version Tracking' },
-    { n: 27, name: 'Device & OS Breakdown' },
+    { n: 23, name: 'Sign-ups & Growth', open: { k: 'dash', tab: 'growth' }, needs: 'viewDash', note: 'New agents per day, week, month' },
+    { n: 24, name: 'Active Users', open: { k: 'dash', tab: 'active' }, needs: 'viewDash', note: 'Daily, weekly, monthly; stickiness' },
+    { n: 25, name: 'Retention & Churn', open: { k: 'dash', tab: 'retention' }, needs: 'viewDash', note: 'Still using after 7/30/90 days; at risk' },
+    { n: 26, name: 'Inactive Agents', open: { k: 'dash', tab: 'inactive' }, needs: 'viewDash', note: 'No activity 30/60/90 days' },
+    { n: 20, name: 'App Version Tracking', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'Agents per version' },
+    { n: 27, name: 'Device & OS Breakdown', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'Platforms and phone models' },
     { n: 28, name: 'Geography Map' },
-    { n: 29, name: 'Language Usage' },
+    { n: 29, name: 'Language Usage', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'English, BM, Chinese' },
   ] },
   { title: 'Content & Business', items: [
-    { n: 7, name: 'Listings Analytics' },
-    { n: 59, name: 'Deal Pipeline (Sale & Rent)' },
+    { n: 7, name: 'Listings Analytics', open: { k: 'dash', tab: 'listings' }, needs: 'viewDash', note: 'By status; stale listings' },
+    { n: 59, name: 'Deal Pipeline (Sale & Rent)', open: { k: 'dash', tab: 'pipeline' }, needs: 'viewDash', note: 'Sale lane and rent lane' },
     { n: 8, name: 'Buyer & Vendor Analytics' },
     { n: 54, name: 'Listings Map' },
     { n: 55, name: 'Price Trends by Area' },
     { n: 56, name: 'Duplicate Listings' },
     { n: 58, name: 'Top Agents' },
-    { n: 6, name: 'User Activity' },
-    { n: 62, name: 'Feature Usage' },
+    { n: 6, name: 'User Activity', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'When agents use the app' },
+    { n: 62, name: 'Feature Usage', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'Most used and not used' },
     { n: 60, name: 'AI Command Usage' },
     { n: 61, name: 'Marketing Studio Usage' },
   ] },

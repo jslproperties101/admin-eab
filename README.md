@@ -46,6 +46,14 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch005: Dashboards — one screen with tabs and a period filter (7 / 30 / 90 days, 12 months, custom): Sign-ups &
+Growth, Active Users (daily / weekly / monthly, stickiness), Retention & Churn (7 / 30 / 90 days after joining, at-risk
+agents), Inactive Agents (30 / 60 / 90 days), App Versions, Phones & Platforms, Language, Listings Analytics (each status
+incl. every Booked stage and Rented - Pending TA Signing; stale = Available with no change for 60 days), Deal Pipeline
+(sale lane and rent lane), Feature Usage & User Activity (most used, not used, day x hour heatmap, the events behind each
+line). Viewer sees totals and charts only; lists naming agents are Owner / Admin / Compliance and go to the access log.
+Dashboards report PDF / Excel (Owner / Compliance). Needs `20261023000000_admin_batch_005_dashboards.sql`.
+
 AdminBatch004: System Health — Database Health (sizes, connections, cache hit rate, slow queries, tables), Storage
 Forecast (used vs free boxes for the database and stored files; full-by date from a daily reading and upload dates),
 Backup Status (Supabase and AWS boxes; plan limits and AWS state set by Owner/Admin with a reason), Backup Restore Test

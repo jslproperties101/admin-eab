@@ -16,7 +16,8 @@ export const ROLE_HELP: Record<Role, string> = {
 export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAdmins'
   | 'listAgents' | 'accountActions' | 'verifyLicence' | 'viewSettings' | 'editSettings'
   | 'viewCases' | 'editCases' | 'grantRegulator' | 'vault'
-  | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits';
+  | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits'
+  | 'viewDash' | 'viewDashAgents';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -39,6 +40,9 @@ const RULES: Record<Ability, Role[]> = {
   viewHealthAgents: ['owner', 'admin', 'compliance'],           // lists that name agents (sync failures, problem reports)
   recordBackupTest: ['owner', 'admin', 'compliance'],
   editHealthLimits: ['owner', 'admin'],
+  // AdminBatch005 — same rules as the eab_admin_dash_* database functions
+  viewDash: ['owner', 'admin', 'compliance', 'viewer'],         // totals and charts
+  viewDashAgents: ['owner', 'admin', 'compliance'],             // lists that name agents (inactive, at-risk, per version, events, stale)
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

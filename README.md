@@ -51,7 +51,7 @@ cases, admin actions; compared with the month before; PDF / Excel kept in the Do
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,
 retention reviews, plus a PDF summary naming the workbook; both vaulted), Custom report builder (8 sources, fixed column
 list, filters, grouping with counts / totals / averages, chart, saved reports shared with every admin; Viewers build totals
-only, never names; exports Owner / Compliance). Needs `20261025000000_admin_batch_008_reports.sql`.
+only, never names; exports Owner / Compliance). Needs `20261026000000_admin_batch_008_reports.sql` (main repo branch feature/admin-batch-008-reports-db; apply AdminBatch007 first).
 
 AdminBatch008: Email & WhatsApp broadcast (service notice to everyone chosen / news & offers only to agents who said yes;
 email through Resend, WhatsApp tap-to-send plus the WhatsApp Business sender switched off until Meta keys exist; the list of

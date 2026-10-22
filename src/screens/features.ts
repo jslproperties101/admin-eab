@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-005). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-006). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -34,23 +34,25 @@ export const SECTIONS: Section[] = [
     { n: 47, name: 'Suspend / Ban / Close', open: { k: 'agents', filter: 'not_active' }, needs: 'listAgents', note: 'Accounts not active' },
   ] },
   { title: 'Communication & Operations', items: [
-    { n: 'N', name: 'Market News & Intelligence' },
-    { n: 63, name: 'Announcements & Banners' },
-    { n: 15, name: 'Broadcast Push' },
+    { n: 71, name: 'Master Dashboard', open: { k: 'master' }, needs: 'viewDash', note: 'Key numbers and red alerts' },
+    { n: 'N', name: 'Market News & Intelligence', open: { k: 'news', tab: 'news' }, needs: 'viewContent', note: 'EN / BM / ZH, audience, order' },
+    { n: 'P', name: 'Pushed Projects & Codes', open: { k: 'news', tab: 'project' }, needs: 'viewContent', note: 'Projects and invitation codes' },
+    { n: 63, name: 'Announcements & Banners', open: { k: 'news', tab: 'announcement' }, needs: 'viewContent', note: 'Banner or pop-up' },
+    { n: 'G', name: 'Audience Groups', open: { k: 'news', tab: 'groups' }, needs: 'viewContent', note: 'Saved, ranked filters' },
+    { n: 15, name: 'Broadcast Push', open: { k: 'news', tab: 'push' }, needs: 'viewContent', note: 'Send waiting alerts' },
     { n: 64, name: 'Email & WhatsApp Broadcast' },
-    { n: 65, name: 'Support Tickets & Feedback' },
-    { n: 66, name: 'App Release Manager' },
-    { n: 68, name: 'Maintenance Mode' },
-    { n: 67, name: 'Feature Flags' },
+    { n: 65, name: 'Support Tickets & Feedback', open: { k: 'tickets' }, needs: 'viewTickets', note: 'Problem reports, status, notes' },
+    { n: 66, name: 'App Release Manager', open: { k: 'ops', tab: 'release' }, needs: 'viewOps', note: 'Minimum version, soft / hard' },
+    { n: 68, name: 'Maintenance Mode', open: { k: 'ops', tab: 'maintenance' }, needs: 'viewOps', note: 'Block the app, 3 languages' },
+    { n: 67, name: 'Feature Flags', open: { k: 'ops', tab: 'flags' }, needs: 'viewOps', note: 'Switch features per group' },
     { n: 11, name: 'System Settings', open: { k: 'settings' }, needs: 'viewSettings', note: 'Company name, support contact' },
     { n: 69, name: 'Team Workspaces' },
     { n: 70, name: 'Scheduled Reports' },
     { n: 13, name: 'To-Do & Calendar' },
-    { n: 71, name: 'Master Dashboard' },
   ] },
   { title: 'Users & Growth', items: [
     { n: 1, name: 'Agents Overview', open: { k: 'agents', filter: 'all' }, needs: 'listAgents', note: 'Status, licence, last sign-in' },
-    { n: 22, name: 'Live Users Now' },
+    { n: 22, name: 'Live Users Now', open: { k: 'live' }, needs: 'viewDash', note: 'Who is using the app now' },
     { n: 23, name: 'Sign-ups & Growth', open: { k: 'dash', tab: 'growth' }, needs: 'viewDash', note: 'New agents per day, week, month' },
     { n: 24, name: 'Active Users', open: { k: 'dash', tab: 'active' }, needs: 'viewDash', note: 'Daily, weekly, monthly; stickiness' },
     { n: 25, name: 'Retention & Churn', open: { k: 'dash', tab: 'retention' }, needs: 'viewDash', note: 'Still using after 7/30/90 days; at risk' },
@@ -67,7 +69,7 @@ export const SECTIONS: Section[] = [
     { n: 54, name: 'Listings Map' },
     { n: 55, name: 'Price Trends by Area' },
     { n: 56, name: 'Duplicate Listings' },
-    { n: 58, name: 'Top Agents' },
+    { n: 58, name: 'Top Agents', open: { k: 'top' }, needs: 'viewDashAgents', note: 'Sold, rented, new listings' },
     { n: 6, name: 'User Activity', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'When agents use the app' },
     { n: 62, name: 'Feature Usage', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'Most used and not used' },
     { n: 60, name: 'AI Command Usage' },

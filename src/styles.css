@@ -43,7 +43,7 @@ small, .small { font-size: .875rem; }
 /* fields */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { color: #DAD3C3; font-size: .9rem; }
-input[type=text], input[type=search], input[type=email], input[type=datetime-local], input[type=date], input[type=url], input[type=file], select, textarea {
+input:not([type]), input[type=text], input[type=search], input[type=email], input[type=datetime-local], input[type=date], input[type=url], input[type=file], select, textarea {
   width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: #0E0E10; }
 input:focus, select:focus, textarea:focus { border-color: var(--gold); outline: none; }
 textarea { min-height: 90px; resize: vertical; }
@@ -178,3 +178,37 @@ h1.spacer, h2.spacer, h3.spacer, b.spacer { min-width: 11ch; }
   .lane { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
   .lane li:not(:last-child)::after { content: '›'; position: absolute; right: -9px; top: 50%; transform: translateY(-50%); color: var(--gold); font-size: 1.4rem; }
 }
+
+/* ---------- AdminBatch006: News, tickets, operations, overview ---------- */
+.post { display: flex; flex-direction: column; gap: 6px; }
+.post .ptitle { font-size: 1.05rem; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 0; }
+.choice { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+.choice input { width: auto; min-height: 0; }
+.switch { align-self: end; }
+fieldset.field { border: none; padding: 0; margin: 0; }
+.checks { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 12px; }
+.thumb { max-width: 220px; max-height: 140px; border-radius: 10px; border: 1px solid var(--line); object-fit: cover; }
+.phone { max-width: 360px; border: 1px solid var(--line-2); border-radius: 22px; padding: 14px; background: #0E0E10; }
+.phone.popup { box-shadow: 0 0 0 9999px rgba(0, 0, 0, .0) inset; }
+.pv-banner { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; background: var(--gold-grad); color: var(--on-gold); border-radius: 12px; padding: 10px 12px; }
+.pv-banner .small { grid-column: 1; } .pv-banner .x { grid-row: 1; grid-column: 2; font-weight: 800; }
+.pv-card { display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.pv-card img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 10px; }
+.pv-card p { white-space: pre-wrap; margin: 0; }
+.orderlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.orderlist li { display: flex; align-items: center; gap: 8px; background: var(--card-2); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px 8px; }
+.orderlist li.dragging { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.orderlist .handle { cursor: grab; touch-action: none; user-select: none; font-size: 1.3rem; padding: 6px 8px; color: var(--gold); }
+.orderlist .pos { width: 56px !important; min-height: 40px; text-align: center; padding: 6px; }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em; color: var(--gold-hi); }
+.item.ticket { display: flex; flex-direction: column; gap: 4px; }
+.shot { max-width: 100%; max-height: 520px; border-radius: 12px; border: 1px solid var(--line); align-self: flex-start; }
+.history { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.alerts li { border-left: 4px solid var(--amber); padding: 4px 10px; background: var(--card-2); border-radius: 6px; }
+.alerts li.red { border-left-color: var(--red); }
+.alerts li .linkbtn { text-align: left; }
+.alert-red { border-color: var(--red) !important; }
+button.stat.pick { text-align: left; color: inherit; font: inherit; cursor: pointer; }
+button.stat.pick:hover { border-color: var(--gold); }

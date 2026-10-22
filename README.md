@@ -46,6 +46,16 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch006: News & Announcements (Market News, pushed Projects, Announcements: EN / BM / ZH, picture and PDF upload
+to the public folder `eab-feed-media` or a pasted link, audience everyone / groups / invitation code, end date, push alert,
+preview, publish / withdraw, order per audience group by drag or typed position), Audience Groups (ranked, with how many
+agents match before saving), Invitation Codes (create, disable, who used it, remove access), Push alerts (send waiting
+alerts through `send-push`; sent / at least delivered / opened). Support Tickets (status history and internal notes,
+screenshot, email the agent). Operations: Maintenance Mode (3 languages, back time), App Release Manager (minimum version,
+soft / hard, update link), Feature Flags (per group; the main app reads them with `eab_my_flags()` once it is updated).
+Overview: Master Dashboard with red / amber alerts, Top Agents, Live Users Now. Needs MainForAdmin-D, the push counts
+migration and `20261023100000_admin_batch_006_ops.sql`.
+
 AdminBatch005: Dashboards — one screen with tabs and a period filter (7 / 30 / 90 days, 12 months, custom): Sign-ups &
 Growth, Active Users (daily / weekly / monthly, stickiness), Retention & Churn (7 / 30 / 90 days after joining, at-risk
 agents), Inactive Agents (30 / 60 / 90 days), App Versions, Phones & Platforms, Language, Listings Analytics (each status

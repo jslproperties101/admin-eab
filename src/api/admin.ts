@@ -1,6 +1,8 @@
 // Typed calls to the eab_admin_* database functions (supabase/migrations/20261021000000_admin_eab_foundation.sql in the
 // estate-agent-buddy repo). Every call passes a short device description for the access log.
 import { Role } from '../admin/roles';
+import { PushSendItem } from './session';
+export type { PushSendItem };
 
 export interface Me { user_id: string; email: string; role: Role; expires_at: string | null }
 export interface SearchHit {
@@ -71,7 +73,15 @@ export interface CaseFile {
   agents: CaseAgent[] | number; packs: Pack[] | number; grants?: CaseGrant[];
 }
 export interface NewCase { requester_type: RequesterType; requester_name: string; requester_ref?: string; requester_contact?: string; received_on: string; deadline?: string; description: string }
-export interface Files { upload: (path: string, blob: Blob) => Promise<void>; download: (path: string) => Promise<Blob> }
+export interface Files {
+  upload: (path: string, blob: Blob) => Promise<void>; download: (path: string) => Promise<Blob>;
+  /** AdminBatch006: post picture / PDF into the public folder; returns the public link. */
+  media?: (path: string, blob: Blob) => Promise<string>;
+  /** AdminBatch006: a problem report's screenshot. */
+  screenshot?: (path: string) => Promise<Blob>;
+  /** AdminBatch006: send waiting push alerts (one post, or all when null). */
+  sendPush?: (itemId: string | null) => Promise<PushSendItem[]>;
+}
 
 // ---------- AdminBatch004: System Health ----------
 export interface HealthLimits { db_limit_mb: number; storage_limit_mb: number; aws_backup: 'not_set_up' | 'set_up'; aws_note: string | null; updated_at: string; updated_by: string | null }
@@ -196,6 +206,60 @@ export interface UsageEvent {
 }
 export interface DashEvents { kind: string; name: string; from: string; to: string; total: number; events: UsageEvent[] }
 
+// ---------- AdminBatch006: news (MainForAdmin-D functions), tickets, flags, overview ----------
+export type FeedKind = 'news' | 'project' | 'announcement';
+export type FeedStatus = 'draft' | 'published' | 'withdrawn';
+export type Audience = 'all' | 'groups' | 'codes';
+export interface ProjectInfo { developer?: string; location?: string; price_from?: number | null; price_to?: number | null; launch?: string; status?: string }
+export interface FeedItem {
+  id: string; kind: FeedKind; title_en: string; title_bm: string | null; title_zh: string | null;
+  body_en: string | null; body_bm: string | null; body_zh: string | null;
+  image_url: string | null; link_url: string | null; pdf_url: string | null; push_alert: boolean;
+  display: 'banner' | 'popup' | null; project: ProjectInfo | null; audience: Audience; status: FeedStatus;
+  published_at: string | null; expires_at: string | null; created_by: string | null; created_at: string; updated_at: string;
+  group_ids: string[]; opened?: number; acknowledged?: number; dismissed?: number; code_grants?: number;
+}
+export type FeedDraft = Partial<Omit<FeedItem, 'created_by' | 'created_at' | 'updated_at' | 'opened' | 'acknowledged' | 'dismissed' | 'code_grants' | 'status' | 'published_at'>> & { kind: FeedKind; title_en: string };
+export interface GroupFilters {
+  user_ids?: string[]; emails?: string[]; countries?: string[]; licence_types?: string[]; languages?: string[]; platforms?: string[]; app_versions?: string[];
+  joined_from?: string; joined_to?: string; last_login_from?: string; last_login_to?: string; min_logins?: number;
+}
+export interface AudienceGroup { id: string; name: string; filters: GroupFilters; priority: number; active: boolean; created_at: string; updated_at: string; agents?: number }
+export const EVERYONE = '00000000-0000-0000-0000-000000000000';
+export interface InviteCode { code: string; label: string | null; item_ids: string[]; active: boolean; expires_at: string | null; max_uses: number | null; uses: number; created_at: string; agents: number }
+export interface CodeGrant { user_id: string; email: string; name: string | null; item_id: string; title: string | null; granted_at: string }
+export interface PushReport {
+  item_id: string; status: 'queued' | 'sending' | 'done'; queued_at: string; started_at: string | null; finished_at: string | null;
+  targeted: number | null; sent: number | null; failed: number | null; no_phone: number | null; delivered: number; opened: number;
+  kind?: FeedKind; title_en?: string;
+}
+export type TicketStatus = 'new' | 'seen' | 'fixed' | 'closed';
+export interface TicketRow {
+  id: string; user_id: string; email: string | null; name: string | null; description: string; has_screenshot: boolean;
+  app_version: string | null; platform: string | null; language: string | null; screen: string | null; status: TicketStatus;
+  created_at: string; notes: number; last_activity: string;
+}
+export interface TicketNote { id: number; report_id: string; kind: 'note' | 'status'; body: string | null; from_status: TicketStatus | null; to_status: TicketStatus | null; by_user: string; by_email: string | null; at: string }
+export interface Ticket extends Omit<TicketRow, 'has_screenshot' | 'notes' | 'last_activity'> { screenshot_path: string | null; history: TicketNote[] }
+export interface FeatureFlag { key: string; label: string; description: string | null; enabled: boolean; audience: 'all' | 'groups'; group_ids: string[]; created_at: string; updated_at: string; updated_by: string | null }
+export interface MasterDash {
+  checked_at: string; today: string; agents: number; new_7d: number; active_today: number; active_7d: number; active_30d: number; at_risk: number; live_now: number;
+  listings: number; stale: number; closed_30d: number; db_bytes: number; db_limit_bytes: number; files_bytes: number; files_limit_bytes: number;
+  aws_backup: 'not_set_up' | 'set_up'; last_restore_pass: string | null; sync_runs_7d: number; sync_fails_7d: number;
+  tickets_new: number; tickets_open: number; pushes_waiting: number; posts_live: number; maintenance_on: boolean; maintenance_back_at: string | null;
+  min_version: string | null; min_version_mode: 'soft' | 'hard' | null; flags_on: number; licences_unverified: number; accounts_not_active: number;
+  active_by_day: { day: string; agents: number }[];
+}
+export interface TopAgent { user_id: string; email: string; name: string | null; listings: number; new_listings: number; sold: number; rented: number; closed: number; active_days: number; actions: number }
+export interface LiveUsers {
+  minutes: number; checked_at: string; count: number; names_hidden: boolean; by_screen: { screen: string; agents: number }[];
+  agents: { user_id: string; email: string; name: string | null; last_at: string; screen: string | null; app_version: string | null; platform: string | null; device: string | null }[] | null;
+}
+export interface OpsSettings extends Settings {
+  min_version: string | null; min_version_mode: 'soft' | 'hard'; update_url: string | null; maintenance_on: boolean;
+  maintenance_message_en: string | null; maintenance_message_bm: string | null; maintenance_message_zh: string | null; maintenance_back_at: string | null;
+}
+
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
 
 export const api = (call: Call, device: string, files: Files = { upload: async () => { throw new Error('no storage'); }, download: async () => { throw new Error('no storage'); } }) => ({
@@ -268,6 +332,37 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   dashUsage: (from: string, to: string) => call<DashUsage>('eab_admin_dash_usage', { p_from: from, p_to: to }),
   dashEvents: (kind: string, name: string, from: string, to: string, limit = 200) =>
     call<DashEvents>('eab_admin_dash_events', { p_kind: kind, p_name: name, p_from: from, p_to: to, p_limit: limit, p_device: device }),
+  // AdminBatch006 — News & Announcements (MainForAdmin-D functions + 006 helpers)
+  feedList: (kind: FeedKind | null = null) => call<FeedItem[]>('eab_admin_feed_list', { p_kind: kind }),
+  feedSave: (item: FeedDraft, reason: string) => call<FeedItem>('eab_admin_feed_save', { p_item: item, p_reason: reason, p_device: device }),
+  feedSetStatus: (id: string, status: FeedStatus, reason: string) => call<FeedItem>('eab_admin_feed_set_status', { p_item: id, p_status: status, p_reason: reason, p_device: device }),
+  groups: () => call<AudienceGroup[]>('eab_admin_group_list'),
+  groupSave: (g: Partial<AudienceGroup>, reason: string) => call<AudienceGroup>('eab_admin_group_save', { p_group: g, p_reason: reason, p_device: device }),
+  groupPreview: (filters: GroupFilters) => call<{ agents: number; of: number }>('eab_admin_group_preview', { p_filters: filters }),
+  orderGet: (group: string) => call<{ item_id: string; position: number }[]>('eab_admin_feed_order_get', { p_group: group }),
+  orderSet: (group: string, items: string[], reason: string) => call<number>('eab_admin_feed_order_set', { p_group: group, p_items: items, p_reason: reason, p_device: device }),
+  codes: () => call<InviteCode[]>('eab_admin_code_list'),
+  codeCreate: (label: string, items: string[], expiresAt: string | null, maxUses: number | null, reason: string) =>
+    call<InviteCode>('eab_admin_code_create', { p_label: label, p_items: items, p_expires_at: expiresAt, p_max_uses: maxUses, p_reason: reason, p_device: device }),
+  codeDisable: (code: string, reason: string) => call<InviteCode>('eab_admin_code_disable', { p_code: code, p_reason: reason, p_device: device }),
+  codeGrants: (code: string) => call<CodeGrant[]>('eab_admin_code_grants', { p_code: code, p_device: device }),
+  codeRevoke: (user: string, item: string, reason: string) => call<boolean>('eab_admin_code_revoke', { p_user: user, p_item: item, p_reason: reason, p_device: device }),
+  pushList: () => call<PushReport[]>('eab_admin_push_list'),
+  // AdminBatch006 — Support & operations
+  tickets: (status: TicketStatus | 'open' | null = null, q: string | null = null, limit = 200) =>
+    call<{ counts: Partial<Record<TicketStatus, number>>; tickets: TicketRow[] }>('eab_admin_tickets', { p_status: status, p_q: q, p_limit: limit, p_device: device }),
+  ticket: (id: string) => call<Ticket>('eab_admin_ticket', { p_id: id, p_device: device }),
+  ticketStatus: (id: string, status: TicketStatus, note: string) => call<Ticket>('eab_admin_ticket_set_status', { p_id: id, p_status: status, p_note: note, p_device: device }),
+  ticketNote: (id: string, note: string) => call<Ticket>('eab_admin_ticket_note', { p_id: id, p_note: note, p_device: device }),
+  flags: () => call<FeatureFlag[]>('eab_admin_flags'),
+  flagSave: (f: Partial<FeatureFlag> & { key: string }, reason: string) => call<FeatureFlag>('eab_admin_flag_save', { p_flag: f, p_reason: reason, p_device: device }),
+  opsSettings: () => call<OpsSettings>('eab_admin_settings'),
+  setOps: (patch: Partial<Pick<OpsSettings, 'min_version' | 'min_version_mode' | 'update_url' | 'maintenance_on' | 'maintenance_message_en' | 'maintenance_message_bm' | 'maintenance_message_zh' | 'maintenance_back_at'>>, reason: string) =>
+    call<OpsSettings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
+  // AdminBatch006 — Overview
+  master: () => call<MasterDash>('eab_admin_dash_master'),
+  topAgents: (from: string, to: string, limit = 50) => call<{ from: string; to: string; agents: TopAgent[] }>('eab_admin_dash_top_agents', { p_from: from, p_to: to, p_limit: limit, p_device: device }),
+  liveUsers: (minutes = 5) => call<LiveUsers>('eab_admin_live_users', { p_minutes: minutes, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

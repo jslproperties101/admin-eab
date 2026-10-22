@@ -135,3 +135,57 @@ export async function sha256Hex(data: Blob | ArrayBuffer | Uint8Array): Promise<
   const d = await crypto.subtle.digest('SHA-256', buf as ArrayBuffer);
   return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+// ---------- AdminBatch006: post files, ticket screenshots, sending push alerts ----------
+// Post pictures and PDFs go in the PUBLIC folder 'eab-feed-media' at <year>/<random id>.<ext> (storage rule
+// eab_feed_media_can_upload: Owner / Admin only, no overwrite, no delete); the main app opens them by their public link.
+export const MEDIA_BUCKET = 'eab-feed-media';
+export const MEDIA_PATH = /^[0-9]{4}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|pdf)$/;
+export const mediaPublicUrl = (c: Conn, path: string) => `${c.supabaseUrl}/storage/v1/object/public/${MEDIA_BUCKET}/${path}`;
+
+export async function mediaUpload(c: Conn, s: Session, path: string, blob: Blob, onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<string> {
+  if (!MEDIA_PATH.test(path)) throw new ApiError('server', 'bad file name');
+  const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(`${c.supabaseUrl}/storage/v1/object/${MEDIA_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'application/octet-stream', 'x-upsert': 'false', 'cache-control': 'max-age=31536000' },
+    body: blob,
+  }));
+  if (!r.ok) {
+    let msg = '';
+    try { msg = ((await r.json()) as { message?: string }).message ?? ''; } catch { /* no body */ }
+    if (r.status === 413 || /size/i.test(msg)) throw new ApiError('server', 'the file is larger than 10 MB');
+    if (/mime|type/i.test(msg)) throw new ApiError('server', 'only JPG, PNG, WEBP pictures and PDF files');
+    throw r.status === 403 || /row-level security|Unauthorized/i.test(msg) ? new ApiError('not-allowed', msg) : new ApiError('server', msg || `upload HTTP ${r.status}`);
+  }
+  return mediaPublicUrl(c, path);
+}
+
+/** A problem report's screenshot (private folder 'bug-reports'; storage rule eab_ticket_can_read). */
+export async function screenshotDownload(c: Conn, s: Session, path: string, onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<Blob> {
+  const url = `${c.supabaseUrl}/storage/v1/object/authenticated/bug-reports/${path.split('/').map(encodeURIComponent).join('/')}`;
+  const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(url, { headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}` } }));
+  if (r.status === 400 || r.status === 404) throw new ApiError('not-found', 'screenshot not found');
+  if (r.status === 403) throw new ApiError('not-allowed');
+  if (!r.ok) throw new ApiError('server', `download HTTP ${r.status}`);
+  return r.blob();
+}
+
+export interface PushSendItem { item_id: string; targeted?: number; sent?: number; failed?: number; no_phone?: number; skipped?: string }
+/**
+ * Sends waiting push alerts through the main app's server function send-push (JoyChange010-03). The function checks
+ * the role (Owner / Admin) and writes "push_broadcast_started" to the Master Audit Log. 503 = Firebase not set up.
+ */
+export async function sendPush(c: Conn, s: Session, itemId: string | null, onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<PushSendItem[]> {
+  const body = itemId ? { kind: 'feed', item_id: itemId } : { kind: 'feed' };
+  const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(`${c.supabaseUrl}/functions/v1/send-push`, {
+    method: 'POST', headers: headers(c, token), body: JSON.stringify(body),
+  }));
+  let data: { items?: PushSendItem[]; item_id?: string; skipped?: string; error?: string; message?: string } | null = null;
+  try { data = await r.json(); } catch { data = null; }
+  if (r.status === 403) throw new ApiError('not-allowed', data?.error ?? data?.message);
+  if (r.status === 503) throw new ApiError('server', 'push is not set up on the server yet (Firebase)');
+  if (!r.ok) throw new ApiError('server', data?.error ?? data?.message ?? `send HTTP ${r.status}`);
+  if (data?.items) return data.items;
+  if (data?.item_id) return [{ item_id: data.item_id, skipped: data.skipped }];
+  return [];
+}

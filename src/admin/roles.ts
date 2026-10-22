@@ -17,7 +17,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'listAgents' | 'accountActions' | 'verifyLicence' | 'viewSettings' | 'editSettings'
   | 'viewCases' | 'editCases' | 'grantRegulator' | 'vault'
   | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits'
-  | 'viewDash' | 'viewDashAgents';
+  | 'viewDash' | 'viewDashAgents'
+  | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -43,6 +44,13 @@ const RULES: Record<Ability, Role[]> = {
   // AdminBatch005 — same rules as the eab_admin_dash_* database functions
   viewDash: ['owner', 'admin', 'compliance', 'viewer'],         // totals and charts
   viewDashAgents: ['owner', 'admin', 'compliance'],             // lists that name agents (inactive, at-risk, per version, events, stale)
+  // AdminBatch006 — same rules as the MainForAdmin-D and AdminBatch006 database functions
+  viewContent: ['owner', 'admin', 'compliance', 'viewer'],      // posts, groups, codes, push counts
+  editContent: ['owner', 'admin'],                               // write / publish / withdraw / order / codes / send push / upload files
+  viewTickets: ['owner', 'admin', 'compliance'],                 // problem reports name agents
+  editTickets: ['owner', 'admin'],                               // status and internal notes
+  viewOps: ['owner', 'admin', 'compliance', 'viewer'],           // maintenance, minimum version, feature flags
+  editOps: ['owner', 'admin'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

@@ -138,6 +138,40 @@ function dashFake() {
   };
 }
 
+// AdminBatch006 — News (MainForAdmin-D functions), tickets, flags, overview: a small in-memory fake.
+function opsFake() {
+  const EVERY = '00000000-0000-0000-0000-000000000000';
+  const staff = ['owner', 'admin', 'compliance'], view = [...staff, 'viewer'], edit = ['owner', 'admin'];
+  let n = 0; const id = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+  const now = '2026-10-22T04:00:00Z';
+  const item = (p) => ({ id: id(), title_bm: null, title_zh: null, body_en: null, body_bm: null, body_zh: null, image_url: null, link_url: null, pdf_url: null,
+    push_alert: false, display: null, project: null, audience: 'all', status: 'draft', published_at: null, expires_at: null, created_by: 'me',
+    created_at: now, updated_at: now, group_ids: [], opened: 0, acknowledged: 0, dismissed: 0, code_grants: 0, ...p });
+  const items = [
+    item({ kind: 'news', title_en: 'OPR cut to 2.75%', body_en: 'Bank Negara cut the OPR.', status: 'published', published_at: '2026-10-20T01:00:00Z', created_at: '2026-10-20T00:00:00Z', opened: 3, push_alert: true }),
+    item({ kind: 'news', title_en: 'New stamp duty rules', status: 'published', published_at: '2026-10-21T01:00:00Z', created_at: '2026-10-21T00:00:00Z' }),
+    item({ kind: 'project', title_en: 'Residensi Gold', audience: 'codes', status: 'published', project: { developer: 'JSL Dev', location: 'Shah Alam' } }),
+    item({ kind: 'announcement', title_en: 'Office closed on Deepavali', display: 'banner', status: 'draft' }),
+  ];
+  const groups = [{ id: EVERY, name: 'Everyone', filters: {}, priority: 1000, active: true, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', agents: 6 },
+    { id: id(), name: 'BM speakers', filters: { languages: ['bm'] }, priority: 5, active: true, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', agents: 2 }];
+  const order = new Map([[EVERY, [{ item_id: items[2].id, position: 1 }]]]);
+  const codes = [{ code: 'ABCD234XYZ', label: 'Team Selangor', item_ids: [items[2].id], active: true, expires_at: null, max_uses: 10, uses: 1, created_at: now, agents: 1 }];
+  const grants = [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', item_id: items[2].id, title: 'Residensi Gold', granted_at: now, code: 'ABCD234XYZ' }];
+  const pushes = [{ item_id: items[0].id, status: 'queued', queued_at: now, started_at: null, finished_at: null, targeted: null, sent: null, failed: null, no_phone: null, delivered: 0, opened: 0, kind: 'news', title_en: items[0].title_en }];
+  const tickets = [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', description: 'Photo upload stuck at 90%',
+    screenshot_path: `${AGENT}/aaaaaaaa-0000-4000-8000-000000000001.jpg`, app_version: '2.2.0', platform: 'android', language: 'en', screen: 'listing-form', status: 'new', created_at: '2026-10-21T08:00:00Z', history: [] }];
+  const flags = [];
+  const master = () => ({ checked_at: now, today: '2026-10-22', agents: 6, new_7d: 2, active_today: 2, active_7d: 4, active_30d: 4, at_risk: 1, live_now: 1,
+    listings: 9, stale: 0, closed_30d: 1, db_bytes: 17 * 1048576, db_limit_bytes: 500 * 1048576, files_bytes: 26 * 1048576, files_limit_bytes: 1024 * 1048576,
+    aws_backup: 'not_set_up', last_restore_pass: null, sync_runs_7d: 98, sync_fails_7d: 11, tickets_new: tickets.filter(t => t.status === 'new').length,
+    tickets_open: tickets.filter(t => ['new', 'seen'].includes(t.status)).length, pushes_waiting: pushes.filter(p => p.status === 'queued').length, posts_live: 3,
+    maintenance_on: false, maintenance_back_at: null, min_version: null, min_version_mode: 'soft', flags_on: flags.filter(f => f.enabled).length, licences_unverified: 0,
+    accounts_not_active: 1, active_by_day: Array.from({ length: 14 }, (_, i) => ({ day: `2026-10-${String(9 + i).padStart(2, '0')}`, agents: i > 9 ? 2 : 0 })) });
+  const row = t => ({ ...t, has_screenshot: !!t.screenshot_path, notes: t.history.filter(h => h.kind === 'note').length, last_activity: t.created_at });
+  return { EVERY, staff, view, edit, items, groups, order, codes, grants, pushes, tickets, flags, master, row, id, now, uploads: [], sends: [] };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -163,6 +197,8 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
     agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', date_from: '2026-10-01', date_to: null, added_at: '2026-10-18T00:00:00Z', removed_at: null }], grants: [] });
   const health = healthFake();
   const dash = dashFake();
+  const ops = opsFake();
+  settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
   await page.route(`${SB}/**`, async route => {
@@ -174,6 +210,25 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
     if (url.includes('/auth/v1/authorize')) return route.fulfill({ status: 302, headers: { location: `${BASE}?code=fake-code` } });
     if (url.includes('/auth/v1/token')) return route.fulfill(ok({ access_token: 'tok2', refresh_token: 'ref2', expires_in: 3600, user: { id: 'me', email: 'joe@example.com' } }));
     if (url.includes('/auth/v1/logout')) return route.fulfill({ status: 204 });
+    if (url.includes('/storage/v1/object/eab-feed-media/')) {
+      if (!ops.edit.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ message: 'new row violates row-level security policy' }) });
+      const path = url.split('/eab-feed-media/')[1];
+      ops.uploads.push({ path, type: route.request().headers()['content-type'], bytes: route.request().postDataBuffer()?.length ?? 0 });
+      return route.fulfill(ok({ Key: `eab-feed-media/${path}` }));
+    }
+    if (url.includes('/storage/v1/object/public/eab-feed-media/')) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    if (url.includes('/storage/v1/object/authenticated/bug-reports/')) {
+      if (!ops.staff.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
+      return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    }
+    if (url.includes('/functions/v1/send-push')) {
+      if (!ops.edit.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'not allowed' }) });
+      const body = route.request().postDataJSON() ?? {};
+      ops.sends.push(body);
+      const todo = ops.pushes.filter(p => p.status === 'queued' && (!body.item_id || p.item_id === body.item_id));
+      for (const p of todo) Object.assign(p, { status: 'done', started_at: ops.now, finished_at: ops.now, targeted: 6, sent: 4, failed: 0, no_phone: 2, delivered: 2, opened: 1 });
+      return route.fulfill(ok({ items: todo.map(p => ({ item_id: p.item_id, targeted: 6, sent: 4, failed: 0, no_phone: 2 })) }));
+    }
     if (url.includes('/storage/v1/object/')) {
       const path = decodeURIComponent(url.split('/eab-vault/')[1]);
       if (route.request().method() === 'POST') {
@@ -309,6 +364,81 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_dash_listings': return dash.dash.includes(role) ? route.fulfill(ok(dash.listings(args, role))) : route.fulfill(denied);
       case 'eab_admin_dash_usage': return dash.dash.includes(role) ? route.fulfill(ok(dash.usage(args))) : route.fulfill(denied);
       case 'eab_admin_dash_events': return dash.staff.includes(role) ? route.fulfill(ok(dash.events(args))) : route.fulfill(denied);
+      // AdminBatch006 — News (MainForAdmin-D), tickets, flags, overview
+      case 'eab_admin_feed_list': return ops.view.includes(role) ? route.fulfill(ok(ops.items.filter(i => !args.p_kind || i.kind === args.p_kind))) : route.fulfill(denied);
+      case 'eab_admin_feed_save': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        if (!args.p_reason) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'a reason is required' }) });
+        const p = args.p_item; let it = ops.items.find(i => i.id === p.id);
+        if (!it) { it = { id: ops.id(), status: 'draft', published_at: null, created_by: 'me', created_at: ops.now, opened: 0, acknowledged: 0, dismissed: 0, code_grants: 0 }; ops.items.unshift(it); }
+        Object.assign(it, p, { id: it.id, updated_at: ops.now });
+        return route.fulfill(ok(it));
+      }
+      case 'eab_admin_feed_set_status': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        const it = ops.items.find(i => i.id === args.p_item);
+        Object.assign(it, { status: args.p_status, published_at: args.p_status === 'published' ? (it.published_at ?? ops.now) : it.published_at });
+        if (args.p_status === 'published' && it.push_alert && !ops.pushes.some(p => p.item_id === it.id))
+          ops.pushes.unshift({ item_id: it.id, status: 'queued', queued_at: ops.now, started_at: null, finished_at: null, targeted: null, sent: null, failed: null, no_phone: null, delivered: 0, opened: 0, kind: it.kind, title_en: it.title_en });
+        return route.fulfill(ok(it));
+      }
+      case 'eab_admin_group_list': return ops.view.includes(role) ? route.fulfill(ok(ops.groups)) : route.fulfill(denied);
+      case 'eab_admin_group_preview': return ops.view.includes(role) ? route.fulfill(ok({ agents: (args.p_filters?.emails?.length ?? 0) + (args.p_filters?.languages?.length ? 2 : 0) || 6, of: 6 })) : route.fulfill(denied);
+      case 'eab_admin_group_save': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        let g = ops.groups.find(x => x.id === args.p_group.id);
+        if (!g) { g = { id: ops.id(), created_at: ops.now, active: true, agents: 1 }; ops.groups.push(g); }
+        Object.assign(g, args.p_group, { updated_at: ops.now });
+        return route.fulfill(ok(g));
+      }
+      case 'eab_admin_feed_order_get': return ops.view.includes(role) ? route.fulfill(ok(ops.order.get(args.p_group) ?? [])) : route.fulfill(denied);
+      case 'eab_admin_feed_order_set':
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        ops.order.set(args.p_group, args.p_items.map((x, i) => ({ item_id: x, position: i + 1 })));
+        return route.fulfill(ok(args.p_items.length));
+      case 'eab_admin_code_list': return ops.view.includes(role) ? route.fulfill(ok(ops.codes)) : route.fulfill(denied);
+      case 'eab_admin_code_create': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        const c = { code: 'NEWC0DE234', label: args.p_label || null, item_ids: args.p_items, active: true, expires_at: args.p_expires_at, max_uses: args.p_max_uses, uses: 0, created_at: ops.now, agents: 0 };
+        ops.codes.unshift(c); return route.fulfill(ok(c));
+      }
+      case 'eab_admin_code_disable': { if (!ops.edit.includes(role)) return route.fulfill(denied); const c = ops.codes.find(x => x.code === args.p_code); c.active = false; return route.fulfill(ok(c)); }
+      case 'eab_admin_code_grants': return ops.staff.includes(role) ? route.fulfill(ok(ops.grants.filter(g => g.code === args.p_code))) : route.fulfill(denied);
+      case 'eab_admin_code_revoke': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        const i = ops.grants.findIndex(g => g.user_id === args.p_user && g.item_id === args.p_item); if (i >= 0) ops.grants.splice(i, 1);
+        return route.fulfill(ok(i >= 0));
+      }
+      case 'eab_admin_push_list': return ops.view.includes(role) ? route.fulfill(ok(ops.pushes)) : route.fulfill(denied);
+      case 'eab_admin_tickets': {
+        if (!ops.staff.includes(role)) return route.fulfill(denied);
+        const st = args.p_status;
+        const list = ops.tickets.filter(t => !st || t.status === st || (st === 'open' && ['new', 'seen'].includes(t.status)));
+        const counts = {}; for (const t of ops.tickets) counts[t.status] = (counts[t.status] ?? 0) + 1;
+        return route.fulfill(ok({ counts, tickets: list.map(ops.row) }));
+      }
+      case 'eab_admin_ticket': return ops.staff.includes(role) ? route.fulfill(ok(ops.tickets.find(t => t.id === args.p_id))) : route.fulfill(denied);
+      case 'eab_admin_ticket_set_status': case 'eab_admin_ticket_note': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        const t = ops.tickets.find(x => x.id === args.p_id);
+        if (fn === 'eab_admin_ticket_set_status') { t.history.push({ id: t.history.length + 1, report_id: t.id, kind: 'status', body: args.p_note, from_status: t.status, to_status: args.p_status, by_user: 'me', by_email: 'joe@example.com', at: ops.now }); t.status = args.p_status; }
+        else t.history.push({ id: t.history.length + 1, report_id: t.id, kind: 'note', body: args.p_note, from_status: null, to_status: null, by_user: 'me', by_email: 'joe@example.com', at: ops.now });
+        return route.fulfill(ok(t));
+      }
+      case 'eab_admin_flags': return ops.view.includes(role) ? route.fulfill(ok(ops.flags)) : route.fulfill(denied);
+      case 'eab_admin_flag_save': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        let f = ops.flags.find(x => x.key === args.p_flag.key);
+        if (!f) { f = { key: args.p_flag.key, enabled: false, audience: 'all', group_ids: [], description: null, created_at: ops.now, updated_by: 'me' }; ops.flags.push(f); }
+        Object.assign(f, args.p_flag, { updated_at: ops.now }); return route.fulfill(ok(f));
+      }
+      case 'eab_admin_dash_master': return ops.view.includes(role) ? route.fulfill(ok(ops.master())) : route.fulfill(denied);
+      case 'eab_admin_dash_top_agents': return ops.staff.includes(role) ? route.fulfill(ok({ from: args.p_from, to: args.p_to, agents: [
+        { user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', listings: 5, new_listings: 2, sold: 1, rented: 1, closed: 2, active_days: 4, actions: 180 },
+        { user_id: 'b2', email: 'ali@example.com', name: 'Ali', listings: 3, new_listings: 1, sold: 0, rented: 0, closed: 0, active_days: 2, actions: 40 }] })) : route.fulfill(denied);
+      case 'eab_admin_live_users': return ops.view.includes(role) ? route.fulfill(ok({ minutes: args.p_minutes, checked_at: ops.now, count: 1, names_hidden: !ops.staff.includes(role),
+        by_screen: [{ screen: 'listing-form', agents: 1 }],
+        agents: ops.staff.includes(role) ? [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', last_at: ops.now, screen: 'listing-form', app_version: '2.2.0', platform: 'android', device: 'SM-S918B' }] : null })) : route.fulfill(denied);
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -906,5 +1036,247 @@ test('regulator: no dashboards', async () => {
   const { page, ctx } = await open({ role: 'regulator', width: 390 });
   await page.getByTestId('tile-my-case').waitFor();
   for (const n of [23, 24, 26, 7, 62]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
+  await ctx.close();
+});
+
+// ---------------- AdminBatch006: News & Announcements, Support & operations, Overview ----------------
+
+test('owner: write a Market News post in EN + BM with an uploaded picture, for a group, preview, publish, send the push alert (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-N').click();
+  await page.getByTestId('post-list').waitFor();
+  assert.match(await page.getByTestId('posts-news').innerText(), /OPR cut to 2\.75%[\s\S]*waiting to be sent/);
+  await page.getByTestId('post-new').click();
+  await page.getByTestId('post-save').click();
+  await page.getByTestId('post-problems').getByText(/English title is needed/).waitFor();
+  await page.getByTestId('title-en').fill('Home loan rates fall');
+  await page.getByTestId('body-en').fill('Most banks lowered their base rate this week.');
+  await page.getByTestId('lang-bm').click();
+  await page.getByTestId('title-bm').fill('Kadar pinjaman rumah turun');
+  await page.getByTestId('image-file').setInputFiles({ name: 'rates.png', mimeType: 'image/png', buffer: Buffer.from('fakepng') });
+  await page.waitForFunction(() => (document.querySelector('[data-testid="image-url"]')?.value ?? '').includes('/storage/v1/object/public/eab-feed-media/'));
+  await page.getByTestId('link').fill('http://not-secure.example.com');
+  await page.getByTestId('aud-groups').click();
+  await page.getByTestId('aud-groups').getByText('BM speakers').click();
+  await page.getByTestId('push-alert').check();
+  await page.getByTestId('post-save-publish').click();
+  await page.getByTestId('post-problems').getByText('The website link must start with https://').waitFor();
+  await page.getByTestId('link').fill('https://www.bnm.gov.my');
+  await page.getByTestId('preview').click();
+  assert.match(await page.getByTestId('preview-box').innerText(), /Kadar pinjaman rumah turun/);
+  await page.screenshot({ path: `${SHOTS}/30-news-editor-laptop.png`, fullPage: true });
+  await page.getByTestId('post-save-publish').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Weekly market update');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('post-msg').getByText('Published: Home loan rates fall').waitFor();
+  const save = calls.find(c => c.fn === 'eab_admin_feed_save');
+  assert.equal(save.args.p_item.title_bm, 'Kadar pinjaman rumah turun');
+  assert.equal(save.args.p_item.audience, 'groups'); assert.equal(save.args.p_item.group_ids.length, 1);
+  assert.match(save.args.p_item.image_url, /^https:\/\/fake\.supabase\.co\/storage\/v1\/object\/public\/eab-feed-media\/2026\/[0-9a-f-]{36}\.png$/);
+  assert.equal(save.args.p_reason, 'Weekly market update');
+  assert.ok(calls.some(c => c.fn === 'eab_admin_feed_set_status' && c.args.p_status === 'published'));
+  // send every waiting alert from the Push tab
+  await page.getByTestId('ntab-push').click();
+  await page.getByTestId('push-list').waitFor();
+  await page.getByTestId('push-send-all').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Send this week\'s alerts');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('push-msg').getByText(/Sent to 8 agents/).waitFor();
+  assert.ok(calls.some(c => c.fn.includes('/functions/v1/send-push')));
+  await page.getByTestId('push-list').getByText('Done').first().waitFor();
+  assert.match(await page.getByTestId('push').innerText(), /at least/i);
+  await page.screenshot({ path: `${SHOTS}/31-push-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('admin: order per group by typed position (other kinds kept), audience group with live count, invitation code and removing access (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  await page.getByTestId('tile-N').click();
+  await page.getByTestId('order-open').click();
+  await page.getByTestId('order-list').waitFor();
+  const rows = page.getByTestId('order-row');
+  assert.match(await rows.nth(0).innerText(), /New stamp duty rules/, 'newest first when no order is saved');
+  await page.getByTestId('order-pos').nth(0).fill('2');
+  await page.getByTestId('order-pos').nth(0).press('Enter');
+  assert.match(await rows.nth(0).innerText(), /OPR cut/);
+  await page.getByTestId('order-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('OPR news first');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('post-msg').getByText(/Order saved/).waitFor();
+  const set = calls.find(c => c.fn === 'eab_admin_feed_order_set');
+  assert.equal(set.args.p_items.length, 3, 'the project already ordered in Everyone is kept');
+  await page.screenshot({ path: `${SHOTS}/32-news-order-phone.png`, fullPage: true });
+  // audience group
+  await page.getByTestId('ntab-groups').click();
+  await page.getByTestId('group-new').click();
+  await page.getByTestId('group-name').fill('Selangor REN');
+  await page.getByTestId('f-emails').fill('agent@example.com, nope');
+  await page.getByText('Not an email address: nope').waitFor();
+  assert.ok(await page.getByTestId('group-save').isDisabled());
+  await page.getByTestId('f-emails').fill('agent@example.com');
+  await page.getByTestId('f-licence_types-REN').check();
+  await page.getByTestId('group-count').getByText(/1 of 6 agents match/).waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_group_preview' && c.args.p_filters.emails?.[0] === 'agent@example.com'));
+  await page.getByTestId('group-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Pilot group for Selangor');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('group-list').getByText('Selangor REN').waitFor();
+  assert.deepEqual(calls.find(c => c.fn === 'eab_admin_group_save').args.p_group.filters, { emails: ['agent@example.com'], licence_types: ['REN'] });
+  await page.screenshot({ path: `${SHOTS}/33-groups-phone.png`, fullPage: true });
+  // invitation codes
+  await page.getByTestId('ntab-codes').click();
+  await page.getByTestId('code-list').waitFor();
+  await page.getByTestId('code-new').click();
+  await page.getByTestId('code-project').first().check();
+  await page.getByTestId('code-max').fill('25');
+  await page.getByTestId('code-create').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('For the Klang team');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('code-made').getByText('NEWC0DE234').waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_code_create').args.p_max_uses, 25);
+  await page.getByTestId('code-who').last().click();
+  await page.getByTestId('code-grants').getByText('agent@example.com').first().waitFor();
+  await page.getByTestId('grant-revoke').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Left the Selangor team');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('code-grants').getByText('Nobody yet.').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_code_revoke' && c.args.p_user === AGENT));
+  await ctx.close();
+});
+
+test('admin: support ticket — screenshot, note, mark seen (laptop); compliance reads only', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 1366 });
+  await page.getByTestId('tile-65').click();
+  await page.getByTestId('ticket-list').waitFor();
+  assert.match(await page.getByTestId('tickets').innerText(), /Photo upload stuck at 90%/);
+  await page.getByTestId('ticket-row').click();
+  await page.getByTestId('ticket-shot-open').click();
+  await page.getByTestId('ticket-shot').waitFor();
+  assert.match(await page.getByTestId('ticket-email').getAttribute('href'), /^mailto:agent%40example\.com\?subject=/);
+  assert.ok(await page.getByTestId('ticket-save').isDisabled(), 'a note is needed');
+  await page.getByTestId('ticket-note').fill('Asked Siti to update to 2.2.1');
+  await page.getByTestId('ticket-to-seen').click();
+  await page.getByTestId('ticket-save').click();
+  await page.getByTestId('ticket-history').getByText(/New → Seen/).waitFor();
+  assert.equal(await page.getByTestId('ticket-status').innerText(), 'Seen');
+  const st = calls.find(c => c.fn === 'eab_admin_ticket_set_status');
+  assert.equal(st.args.p_status, 'seen'); assert.equal(st.args.p_note, 'Asked Siti to update to 2.2.1');
+  await page.screenshot({ path: `${SHOTS}/34-ticket-laptop.png`, fullPage: true });
+  await ctx.close();
+  const c2 = await open({ role: 'compliance', width: 390 });
+  await c2.page.getByTestId('tile-65').click();
+  await c2.page.getByTestId('ticket-row').click();
+  await c2.page.getByTestId('ticket-text').waitFor();
+  assert.equal(await c2.page.getByTestId('ticket-actions').count(), 0);
+  await c2.ctx.close();
+});
+
+test('owner: maintenance on (3 languages, reason), minimum version hard block, a feature flag for a group (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 390 });
+  await page.getByTestId('tile-68').click();
+  await page.getByTestId('maint-state').waitFor();
+  assert.ok(await page.getByTestId('maint-on').isDisabled(), 'needs the English message');
+  await page.getByTestId('maint-en').fill('We are upgrading the servers.');
+  await page.getByTestId('maint-bm').fill('Kami sedang menaik taraf pelayan.');
+  await page.getByTestId('maint-back').fill('2026-10-23T02:00');
+  await page.getByTestId('maint-on').click();
+  await page.getByText(/Every agent is blocked/).waitFor();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Database upgrade tonight');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('maint-state').getByText(/Maintenance mode is ON/).waitFor();
+  const m = calls.find(c => c.fn === 'eab_admin_set_settings').args;
+  assert.equal(m.p_patch.maintenance_on, true); assert.equal(m.p_patch.maintenance_message_bm, 'Kami sedang menaik taraf pelayan.');
+  assert.equal(m.p_patch.maintenance_back_at, '2026-10-22T18:00:00.000Z'); assert.equal(m.p_reason, 'Database upgrade tonight');
+  await page.screenshot({ path: `${SHOTS}/35-maintenance-phone.png`, fullPage: true });
+  await page.getByTestId('otab-release').click();
+  await page.getByTestId('rel-version').fill('2.x');
+  await page.getByText('A version looks like 2.2.0').waitFor();
+  await page.getByTestId('rel-version').fill('2.2.0');
+  await page.getByTestId('rel-hard').check();
+  await page.getByTestId('rel-url').fill('https://github.com/jslproperties101/estate-agent-buddy/releases');
+  await page.getByTestId('rel-save').click();
+  await page.getByText(/Agents on an older version cannot use the app/).waitFor();
+  await page.getByPlaceholder(/At least 5 characters/).fill('2.1 has the sync bug');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('release-state').getByText('Hard block').waitFor();
+  await page.getByTestId('otab-flags').click();
+  await page.getByTestId('flags-note').waitFor();
+  await page.getByTestId('flag-new').click();
+  await page.getByTestId('flag-label').fill('House Shopping v2');
+  assert.equal(await page.getByTestId('flag-key').inputValue(), 'house_shopping_v2');
+  await page.getByTestId('flag-groups').check();
+  assert.ok(await page.getByTestId('flag-save').isDisabled(), 'choose a group');
+  await page.getByTestId('flag-group').first().check();
+  await page.getByTestId('flag-enabled').check();
+  await page.getByTestId('flag-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Pilot with BM speakers');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('flag-list').getByText('House Shopping v2').waitFor();
+  const f = calls.find(c => c.fn === 'eab_admin_flag_save').args.p_flag;
+  assert.equal(f.key, 'house_shopping_v2'); assert.equal(f.audience, 'groups'); assert.equal(f.enabled, true); assert.equal(f.group_ids.length, 1);
+  await page.screenshot({ path: `${SHOTS}/36-flags-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('compliance: Master Dashboard alerts open the screen behind them; Top Agents and Live Users with names (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 1366 });
+  await page.getByTestId('tile-71').click();
+  await page.getByTestId('alerts').waitFor();
+  const t = await page.getByTestId('alerts').innerText();
+  assert.match(t, /No backup restore test has been recorded/);
+  assert.match(t, /11 sync failures in 7 days \(11%\)/);
+  assert.match(t, /1 new problem report/);
+  assert.ok(t.indexOf('No backup restore test') < t.indexOf('new problem report'), 'red first');
+  await page.screenshot({ path: `${SHOTS}/37-master-laptop.png`, fullPage: true });
+  await page.getByRole('button', { name: '1 new problem report' }).click();
+  await page.getByTestId('ticket-list').waitFor();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-58').click();
+  await page.getByTestId('top-list').waitFor();
+  assert.match(await page.getByTestId('top-list').innerText(), /1\s+Siti Agent/);
+  await page.getByTestId('top-90').click();
+  await page.waitForFunction(() => true);
+  assert.ok(calls.filter(c => c.fn === 'eab_admin_dash_top_agents').length >= 1);
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-22').click();
+  await page.getByTestId('live-list').waitFor();
+  assert.match(await page.getByTestId('live-list').innerText(), /Siti Agent[\s\S]*Add \/ edit listing/);
+  await ctx.close();
+});
+
+test('viewer: Master Dashboard and news read-only; no tickets, top agents or names (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'viewer', width: 390 });
+  await page.getByTestId('tile-71').waitFor();
+  for (const n of [65, 58]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
+  await page.getByTestId('tile-71').click();
+  await page.getByTestId('alerts').waitFor();
+  assert.equal(await page.getByRole('button', { name: '1 new problem report' }).count(), 0, 'the ticket alert is not a link for a viewer');
+  await page.screenshot({ path: `${SHOTS}/38-master-viewer-phone.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-N').click();
+  await page.getByTestId('post-list').waitFor();
+  await page.getByTestId('read-only').waitFor();
+  for (const id of ['post-new', 'post-edit', 'post-publish', 'order-open']) assert.equal(await page.getByTestId(id).count(), 0, id);
+  await page.getByTestId('ntab-codes').click();
+  await page.getByTestId('code-list').waitFor();
+  assert.equal(await page.getByTestId('code-who').count(), 0, 'who used a code names agents');
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-22').click();
+  await page.getByTestId('live-count').waitFor();
+  assert.equal(await page.getByTestId('live-list').count(), 0);
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-67').click();
+  await page.getByTestId('flags').waitFor();
+  assert.equal(await page.getByTestId('flag-new').count(), 0);
+  assert.ok(!calls.some(c => ['eab_admin_tickets', 'eab_admin_code_grants', 'eab_admin_dash_top_agents'].includes(c.fn)));
   await ctx.close();
 });

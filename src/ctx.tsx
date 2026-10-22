@@ -15,8 +15,18 @@ export type View =
   | { k: 'case'; id: string }
   | { k: 'vault' }
   | { k: 'health'; tab: HealthTab }
-  | { k: 'dash'; tab: DashTab };
+  | { k: 'dash'; tab: DashTab }
+  | { k: 'news'; tab: NewsTab }
+  | { k: 'tickets' }
+  | { k: 'ticket'; id: string }
+  | { k: 'ops'; tab: OpsTab }
+  | { k: 'master' }
+  | { k: 'top' }
+  | { k: 'live' };
 
+/** AdminBatch006 */
+export type NewsTab = 'news' | 'project' | 'announcement' | 'groups' | 'codes' | 'push';
+export type OpsTab = 'maintenance' | 'release' | 'flags';
 /** AdminBatch005 dashboard tabs. */
 export type DashTab = 'growth' | 'active' | 'retention' | 'inactive' | 'versions' | 'listings' | 'pipeline' | 'usage';
 export type HealthTab = 'db' | 'storage' | 'backups' | 'sync' | 'push' | 'performance' | 'errors';

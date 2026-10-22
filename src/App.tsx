@@ -2,7 +2,7 @@
 // after Google, the app asks the database who this is; anyone else is signed out again at once.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conn, configured, loadConn } from './config';
-import { ApiError, Session, loadSession, rpc, saveSession, signOutRemote, vaultUpload, vaultDownload } from './api/session';
+import { ApiError, Session, loadSession, rpc, saveSession, signOutRemote, vaultUpload, vaultDownload, mediaUpload, screenshotDownload, sendPush } from './api/session';
 import { Me, api as makeApi } from './api/admin';
 import { deviceLabel } from './native/native';
 import { isIdle, lastUsed, watchIdle, markUsed } from './admin/idle';
@@ -28,6 +28,9 @@ export default function App() {
   const files = useMemo(() => ({
     upload: async (path: string, blob: Blob) => { const s = session.current; if (!s) throw new ApiError('expired'); await vaultUpload(conn, s, path, blob, ns => setSession(ns)); },
     download: async (path: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return vaultDownload(conn, s, path, ns => setSession(ns)); },
+    media: async (path: string, blob: Blob) => { const s = session.current; if (!s) throw new ApiError('expired'); return mediaUpload(conn, s, path, blob, ns => setSession(ns)); },
+    screenshot: async (path: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return screenshotDownload(conn, s, path, ns => setSession(ns)); },
+    sendPush: async (itemId: string | null) => { const s = session.current; if (!s) throw new ApiError('expired'); return sendPush(conn, s, itemId, ns => setSession(ns)); },
   }), [conn, setSession]);
   const api = useMemo(() => makeApi(call, device, files), [call, device, files]);
 

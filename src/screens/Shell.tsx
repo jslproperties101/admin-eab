@@ -16,6 +16,10 @@ import { CaseScreen } from './Case';
 import { VaultScreen } from './Vault';
 import { HealthScreen } from './Health';
 import { DashboardsScreen } from './Dashboards';
+import { NewsScreen } from './News';
+import { TicketsScreen, TicketScreen } from './Tickets';
+import { OpsScreen } from './Ops';
+import { MasterScreen, TopAgentsScreen, LiveScreen } from './Overview';
 
 export function Shell() {
   const { me, view, go, back, canBack, signOut, conn } = useAdmin();
@@ -58,6 +62,13 @@ export function Shell() {
         {view.k === 'vault' && <VaultScreen />}
         {view.k === 'health' && <HealthScreen key={view.tab} tab={view.tab} />}
         {view.k === 'dash' && <DashboardsScreen key={view.tab} tab={view.tab} />}
+        {view.k === 'news' && <NewsScreen key={view.tab} tab={view.tab} />}
+        {view.k === 'tickets' && <TicketsScreen />}
+        {view.k === 'ticket' && <TicketScreen key={view.id} id={view.id} />}
+        {view.k === 'ops' && <OpsScreen key={view.tab} tab={view.tab} />}
+        {view.k === 'master' && <MasterScreen />}
+        {view.k === 'top' && <TopAgentsScreen />}
+        {view.k === 'live' && <LiveScreen />}
         <footer className="small muted" style={{ marginTop: 32 }}>
           Admin EAB {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>

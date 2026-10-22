@@ -51,7 +51,7 @@ cases, admin actions; compared with the month before; PDF / Excel kept in the Do
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,
 retention reviews, plus a PDF summary naming the workbook; both vaulted), Custom report builder (8 sources, fixed column
 list, filters, grouping with counts / totals / averages, chart, saved reports shared with every admin; Viewers build totals
-only, never names; exports Owner / Compliance). Needs `20261025000000_admin_batch_008_reports.sql`.
+only, never names; exports Owner / Compliance). Needs `20261026000000_admin_batch_008_reports.sql` (after `20261025000000_admin_batch_008_comms.sql`).
 
 AdminBatch007: Compliance core — PDPA requests (reference PDPA-YYYY-####, 21-day answer rule for access / correction,
 decision, outcome, every step kept; deletion requests are logged only), Retention (what is older than 7 years, per kind and

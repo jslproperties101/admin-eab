@@ -2,7 +2,7 @@
   "name": "admin-eab",
   "private": true,
   "version": "0.8.0",
-  "releaseLabel": "AdminBatch008",
+  "releaseLabel": "AdminBatch008-Reports",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

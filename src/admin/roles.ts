@@ -19,7 +19,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits'
   | 'viewDash' | 'viewDashAgents'
   | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps'
-  | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention';
+  | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention'
+  | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -61,6 +62,14 @@ const RULES: Record<Ability, Role[]> = {
   internal: ['owner', 'admin', 'compliance'],                    // internal tags and notes on agents
   viewRetention: ['owner', 'compliance'],
   reviewRetention: ['owner'],
+  // AdminBatch008 — same rules as the broadcast / report / workspace / to-do database functions
+  viewBroadcasts: ['owner', 'admin', 'compliance', 'viewer'],   // list and counts, no names
+  broadcastNames: ['owner', 'admin', 'compliance'],             // who got it (names, email, phone)
+  editBroadcasts: ['owner', 'admin'],                            // write, queue, send, cancel, tap-to-send
+  reports: ['owner', 'compliance'],                              // weekly report list, download, make now
+  reportSchedule: ['owner'],                                     // switch on / off, day, hour, who gets it
+  workspaces: ['owner', 'admin', 'compliance'],
+  todo: ['owner', 'admin', 'compliance', 'viewer'],              // own items; a Viewer cannot share or change shared ones
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

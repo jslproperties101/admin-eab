@@ -158,7 +158,12 @@ function FlagsTab() {
   return (
     <div className="stack" data-testid="flags">
       <div className="row"><h2 className="spacer">Feature flags</h2>{edit && <button className="btn small gold" onClick={() => setEditing('new')} data-testid="flag-new">New flag</button>}</div>
-      <p className="notice warn small" data-testid="flags-note">The main app does not read these switches yet. Until a main-app update does, switching a flag changes nothing on phones.</p>
+      <div className="notice small stack" data-testid="flags-note">
+        <span>The main app reads these switches after every sync (main-app version with MainForAdmin-E). Two kinds of key do something on phones:</span>
+        <span><b className="mono">tile.&lt;card&gt;</b> switched <b>OFF</b> hides that card on the agents’ Home (e.g. <span className="mono">tile.gps</span>). No flag, or ON = the card shows as before. It only hides the card; it is not a permission.</span>
+        <span><b className="mono">beta.&lt;name&gt;</b> switched <b>ON</b> shows a test feature to these agents. No feature uses one yet.</span>
+        <span className="muted">Card keys: project, sales, opportunities, creative, contacts, activity, gps, finance, calculator, matching, expert, market, agenda, property, voice. Any other key changes nothing.</span>
+      </div>
       {editing && <FlagEditor flag={editing === 'new' ? null : editing} groups={groups} taken={flags.map(f => f.key)} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await load(); }} />}
       {flags.length === 0 ? <p className="muted">No flags yet.</p> : (
         <div className="tablewrap dash-table">

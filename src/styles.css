@@ -212,3 +212,14 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 .alert-red { border-color: var(--red) !important; }
 button.stat.pick { text-align: left; color: inherit; font: inherit; cursor: pointer; }
 button.stat.pick:hover { border-color: var(--gold); }
+/* AdminBatch008: grouped choices (broadcast editor), calendar */
+fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0; min-width: 0; }
+fieldset > legend { font-weight: 700; padding: 0 6px; }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal .dow { font-size: .75rem; color: var(--muted, #aaa); text-align: center; }
+.cal button { min-height: 52px; border: 1px solid var(--line); border-radius: 8px; background: var(--card-2); text-align: left; padding: 4px 6px; font-size: .8rem; overflow: hidden; }
+.cal button.other { opacity: .45; }
+.cal button.today { border-color: var(--gold); }
+.cal button[aria-pressed=true] { background: var(--gold-grad); color: var(--on-gold); }
+.cal .dot { display: block; font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task.done .t { text-decoration: line-through; opacity: .7; }

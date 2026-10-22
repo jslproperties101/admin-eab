@@ -3,6 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 import { serve } from '../scripts/serve.mjs';
 
@@ -222,6 +223,34 @@ function reportsFake() {
   return { now, catalog, rows, saved, nums, bundle, board: ['owner', 'compliance'], staff: ['owner', 'admin', 'compliance'] };
 }
 
+// AdminBatch008 — broadcasts, weekly report, Team Workspaces, To-Do & Calendar. Answers like the 008 functions; the
+// "server functions" send-broadcast and weekly-report are faked too (no Resend, no WhatsApp, no PDF from the server).
+function b8Fake() {
+  let n = 0; const now = '2026-10-22T04:00:00Z';
+  const id = () => `bbbbbbbb-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+  const agents = [
+    { user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', phone: '60123456789', lang: 'bm', consent: true, active: true },
+    { user_id: 'b2', email: 'ali@example.com', name: 'Ali', phone: null, lang: 'en', consent: false, active: true },
+    { user_id: 'b3', email: 'gone@example.com', name: 'Banned Bob', phone: '60199999999', lang: 'en', consent: true, active: false },
+  ];
+  const st = { broadcasts: [], recipients: [], settings: { enabled: false, weekday: 1, hour: 8, recipients: [], updated_by: null, updated_at: now }, runs: [],
+    tasks: [{ id: id(), owner_user: 'other', shared: true, title: 'Renew Supabase plan', notes: null, due_on: '2026-10-20', done: false, done_at: null, done_by: null,
+      created_at: '2026-10-19T00:00:00Z', updated_at: now, owner_email: 'kim@example.com', done_by_email: null }], events: [], sends: [], reportRuns: 0 };
+  const cand = (b, a) => !a.active ? 'skipped_not_active' : b.kind === 'news' && !a.consent ? 'skipped_no_consent'
+    : (b.channel === 'email' ? !a.email : !a.phone) ? 'skipped_no_address' : 'pending';
+  const counts = b => st.recipients.filter(r => r.broadcast_id === b.id).reduce((m, r) => ({ ...m, [r.status]: (m[r.status] ?? 0) + 1 }), {});
+  const json = b => ({ ...b, created_by_email: 'joe@example.com', queued_by_email: b.queued_by ? 'joe@example.com' : null, counts: counts(b) });
+  const detail = b => ({ ...json(b), recipients: st.recipients.filter(r => r.broadcast_id === b.id) });
+  const admins = [{ user_id: 'me', email: 'joe@example.com', role: 'owner' }, { user_id: 'c9', email: 'nur@example.com', role: 'compliance' }];
+  const settingsJson = () => ({ ...st.settings, recipient_emails: admins.filter(a => st.settings.recipients.includes(a.user_id)), can_receive: admins });
+  const workspaces = { workspaces: [{ id: 'w1', name: 'Siti', created_at: '2026-10-01T00:00:00Z', owner_email: 'agent@example.com', owner_name: 'Siti Agent', members: 1, records: 5, listings: 2 }],
+    teams: [{ id: 't1', created_at: '2026-10-10T00:00:00Z', ended_at: null, end_reason: null, leader_email: 'agent@example.com', leader_name: 'Siti Agent',
+      members: [{ email: 'ali@example.com', name: 'Ali', joined_at: '2026-10-11T00:00:00Z', left_at: null }] }] };
+  const workspace = { id: 'w1', name: 'Siti', created_at: '2026-10-01T00:00:00Z', owner_user: AGENT, owner_email: 'agent@example.com', owner_name: 'Siti Agent',
+    members: [{ user_id: AGENT, email: 'agent@example.com', role: 'owner', active: true, joined_at: '2026-10-01T00:00:00Z' }], by_kind: { properties: 2, contacts: 3 }, deleted: 1 };
+  return { st, id, now, agents, cand, json, detail, settingsJson, workspaces, workspace, admins };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -250,6 +279,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const ops = opsFake();
   const cmp = complianceFake();
   const rep = reportsFake();
+  const b8 = b8Fake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
@@ -280,6 +310,28 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       const todo = ops.pushes.filter(p => p.status === 'queued' && (!body.item_id || p.item_id === body.item_id));
       for (const p of todo) Object.assign(p, { status: 'done', started_at: ops.now, finished_at: ops.now, targeted: 6, sent: 4, failed: 0, no_phone: 2, delivered: 2, opened: 1 });
       return route.fulfill(ok({ items: todo.map(p => ({ item_id: p.item_id, targeted: 6, sent: 4, failed: 0, no_phone: 2 })) }));
+    }
+    if (url.includes('/functions/v1/send-broadcast')) {
+      if (!['owner', 'admin'].includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'not allowed' }) });
+      const body = route.request().postDataJSON() ?? {}; b8.st.sends.push(body);
+      const bc = b8.st.broadcasts.find(x => x.id === body.broadcast_id);
+      if (bc.channel === 'whatsapp') return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'WhatsApp Business not set up: use tap-to-send' }) });
+      let sent = 0, failed = 0;
+      for (const r of b8.st.recipients.filter(x => x.broadcast_id === bc.id && x.status === 'pending')) {
+        if (r.address === 'agent@example.com') { Object.assign(r, { status: 'sent', sent_at: b8.now }); sent++; }
+        else { Object.assign(r, { status: 'failed', error: 'Resend 403: You can only send testing emails to your own email address' }); failed++; }
+      }
+      bc.status = 'done'; bc.finished_at = b8.now;
+      return route.fulfill(ok({ broadcast_id: bc.id, sent, failed, status: 'done', more: false }));
+    }
+    if (url.includes('/functions/v1/weekly-report')) {
+      if (!['owner', 'compliance'].includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'not allowed' }) });
+      const pdf = Buffer.from(`%PDF-1.7 fake report ${b8.st.reportRuns}`); const sha = createHash('sha256').update(pdf).digest('hex'); const rid = b8.id();
+      const run = { id: rid, ref: `RPT-2026-W43-M${++b8.st.reportRuns}`, period_from: '2026-10-12', period_to: '2026-10-18', trigger: 'manual', status: 'stored',
+        file_name: 'EAB-weekly-RPT-2026-W43.pdf', sha256: sha, bytes: 1234, emailed_to: [], error: 'email not set up (kept in the vault only)',
+        started_by: 'me', started_by_email: 'joe@example.com', created_at: b8.now, finished_at: b8.now };
+      b8.st.runs.unshift(run); objects.set(`reports/${rid}/${sha}`, pdf);
+      return route.fulfill(ok({ run }));
     }
     if (url.includes('/storage/v1/object/')) {
       const path = decodeURIComponent(url.split('/eab-vault/')[1]);
@@ -613,11 +665,77 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_board_report': return rep.board.includes(role)
         ? route.fulfill(ok({ month: args.p_month.slice(0, 7) + '-01', month_end: '2026-09-30', complete: true, made_at: rep.now, current: rep.nums(1), previous: rep.nums(0) })) : route.fulfill(denied);
       case 'eab_admin_audit_bundle': return rep.board.includes(role) ? route.fulfill(ok({ ...rep.bundle, year: args.p_year })) : route.fulfill(denied);
+      // ---------- AdminBatch008 ----------
+      case 'eab_admin_broadcasts': return ['owner', 'admin', 'compliance', 'viewer'].includes(role) ? route.fulfill(ok(b8.st.broadcasts.map(b8.json))) : route.fulfill(denied);
+      case 'eab_admin_broadcast': return ['owner', 'admin', 'compliance'].includes(role) ? route.fulfill(ok(b8.detail(b8.st.broadcasts.find(b => b.id === args.p_id)))) : route.fulfill(denied);
+      case 'eab_admin_broadcast_save': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        const p = args.p; let b = p.id && b8.st.broadcasts.find(x => x.id === p.id);
+        if (b) Object.assign(b, p, { updated_at: b8.now });
+        else { b = { ...p, id: b8.id(), ref: `BC-2026-${String(b8.st.broadcasts.length + 1).padStart(4, '0')}`, status: 'draft', created_by: 'me', created_at: b8.now, updated_at: b8.now,
+          queued_at: null, queued_by: null, claimed_at: null, finished_at: null }; b8.st.broadcasts.unshift(b); }
+        return route.fulfill(ok(b8.json(b)));
+      }
+      case 'eab_admin_broadcast_preview': {
+        const b = b8.st.broadcasts.find(x => x.id === args.p_id); const cs = b8.agents.map(a => b8.cand(b, a));
+        return route.fulfill(ok({ matched: cs.length, reach: cs.filter(c => c === 'pending').length, no_address: cs.filter(c => c === 'skipped_no_address').length,
+          no_consent: cs.filter(c => c === 'skipped_no_consent').length, not_active: cs.filter(c => c === 'skipped_not_active').length }));
+      }
+      case 'eab_admin_broadcast_queue': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        const b = b8.st.broadcasts.find(x => x.id === args.p_id);
+        for (const a of b8.agents) b8.st.recipients.push({ id: b8.st.recipients.length + 1, broadcast_id: b.id, user_id: a.user_id, email: a.email, name: a.name,
+          address: b.channel === 'email' ? a.email : a.phone, lang: a.lang, status: b8.cand(b, a), error: null, sent_at: null, sent_by_email: null });
+        Object.assign(b, { status: 'queued', queued_at: b8.now, queued_by: 'me', queue_reason: args.p_reason }); return route.fulfill(ok(b8.json(b)));
+      }
+      case 'eab_admin_broadcast_cancel': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        const b = b8.st.broadcasts.find(x => x.id === args.p_id);
+        b8.st.recipients.filter(r => r.broadcast_id === b.id && r.status === 'pending').forEach(r => { r.status = 'cancelled'; });
+        b.status = 'cancelled'; return route.fulfill(ok(b8.json(b)));
+      }
+      case 'eab_admin_broadcast_wa_opened': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        const r = b8.st.recipients.find(x => x.id === args.p_recipient); Object.assign(r, { status: 'opened_wa', sent_at: b8.now, sent_by_email: 'joe@example.com' });
+        const b = b8.st.broadcasts.find(x => x.id === r.broadcast_id);
+        b.status = b8.st.recipients.some(x => x.broadcast_id === b.id && x.status === 'pending') ? 'sending' : 'done'; return route.fulfill(ok(b8.json(b)));
+      }
+      case 'eab_admin_report_settings': return ['owner', 'compliance'].includes(role) ? route.fulfill(ok(b8.settingsJson())) : route.fulfill(denied);
+      case 'eab_admin_report_settings_save': {
+        if (role !== 'owner') return route.fulfill(denied);
+        Object.assign(b8.st.settings, args.p, { updated_by: 'me' }); return route.fulfill(ok(b8.settingsJson()));
+      }
+      case 'eab_admin_reports': return ['owner', 'compliance'].includes(role) ? route.fulfill(ok(b8.st.runs)) : route.fulfill(denied);
+      case 'eab_admin_report_download': {
+        const r = b8.st.runs.find(x => x.id === args.p_run); return route.fulfill(ok({ path: `reports/${r.id}/${r.sha256}`, file_name: r.file_name, sha256: r.sha256 }));
+      }
+      case 'eab_admin_check_report': return route.fulfill(ok(b8.st.runs.find(r => r.sha256 === args.p_sha256) ?? null));
+      case 'eab_admin_workspaces': return ['owner', 'admin', 'compliance'].includes(role) ? route.fulfill(ok(b8.workspaces)) : route.fulfill(denied);
+      case 'eab_admin_workspace': return ['owner', 'admin', 'compliance'].includes(role) ? route.fulfill(ok(b8.workspace)) : route.fulfill(denied);
+      case 'eab_admin_todo': return route.fulfill(ok({ tasks: b8.st.tasks.filter(t => !t.removed).map(t => ({ ...t, mine: t.owner_user === 'me' })),
+        events: b8.st.events.filter(e => !e.removed).map(e => ({ ...e, mine: e.owner_user === 'me' })) }));
+      case 'eab_admin_task_save': {
+        const p = args.p;
+        if (!p.id) { if (p.shared && role === 'viewer') return route.fulfill(denied);
+          const t = { id: b8.id(), owner_user: 'me', shared: !!p.shared, title: p.title, notes: null, due_on: p.due_on ?? null, done: false, done_at: null, done_by: null,
+            created_at: b8.now, updated_at: b8.now, owner_email: 'joe@example.com', done_by_email: null }; b8.st.tasks.push(t); return route.fulfill(ok(t)); }
+        const t = b8.st.tasks.find(x => x.id === p.id);
+        if (t.owner_user !== 'me' && (!t.shared || role === 'viewer')) return route.fulfill(denied);
+        if ('done' in p) Object.assign(t, { done: p.done, done_by: p.done ? 'me' : null, done_by_email: p.done ? 'joe@example.com' : null });
+        if (p.removed) t.removed = true; return route.fulfill(ok(t));
+      }
+      case 'eab_admin_event_save': {
+        const p = args.p;
+        if (!p.id) { if (p.shared && role === 'viewer') return route.fulfill(denied);
+          const e = { id: b8.id(), owner_user: 'me', shared: !!p.shared, title: p.title, notes: p.notes, place: p.place, starts_at: p.starts_at, ends_at: p.ends_at,
+            all_day: !!p.all_day, created_at: b8.now, updated_at: b8.now, owner_email: 'joe@example.com' }; b8.st.events.push(e); return route.fulfill(ok(e)); }
+        const e = b8.st.events.find(x => x.id === p.id); if (p.removed) e.removed = true; return route.fulfill(ok(e));
+      }
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
   await page.goto(BASE);
-  return { page, ctx, calls };
+  return { page, ctx, calls, b8 };
 }
 
 test('no connection set up: the sign-in screen says so, and refuses a secret key', async () => {
@@ -1717,5 +1835,170 @@ test('regulator: no reports', async () => {
   const { page, ctx } = await open({ role: 'regulator', width: 390 });
   await page.getByTestId('tile-my-case').waitFor();
   for (const n of [90, 127, 129]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
+  await ctx.close();
+});
+
+// ======================================================================================== AdminBatch008
+test('owner: email news broadcast in EN + BM — preview skips the no-consent and banned agents, make ready (reason), send; Resend refusal shown (laptop)', async () => {
+  const { page, ctx, calls, b8 } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-64').click();
+  await page.getByTestId('broadcasts').waitFor();
+  await page.getByTestId('bc-new').click();
+  await page.getByTestId('bc-news').check();
+  assert.ok(await page.getByTestId('bc-save').isDisabled(), 'needs the English subject and text');
+  await page.getByTestId('bc-subject-en').fill('New launch: Residensi Gold');
+  await page.getByTestId('bc-body-en').fill('Open for booking from Monday.');
+  await page.getByTestId('bc-subject-bm').fill('Pelancaran baharu');
+  await page.getByTestId('bc-body-bm').fill('Dibuka untuk tempahan mulai Isnin.');
+  await page.getByTestId('bc-save').click();
+  await page.getByTestId('broadcast').waitFor();
+  const saved = calls.find(c => c.fn === 'eab_admin_broadcast_save').args.p;
+  assert.equal(saved.channel, 'email'); assert.equal(saved.kind, 'news'); assert.equal(saved.body_bm, 'Dibuka untuk tempahan mulai Isnin.');
+  await page.getByTestId('bc-preview').getByText(/1 agent will get it now, of 3/).waitFor();
+  assert.match(await page.getByTestId('bc-preview').innerText(), /1 said no to news & offers.*1 account is not active/s);
+  await page.getByTestId('bc-queue').click();
+  await page.getByText(/this is a broadcast to ALL agents/).waitFor();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Launch news for opted-in agents');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('bc-status').getByText('Ready to send').waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_broadcast_queue').args.p_reason, 'Launch news for opted-in agents');
+  assert.equal(await page.getByTestId('bc-recipient').count(), 3);
+  await page.getByTestId('bc-send').click();
+  await page.getByTestId('bc-sent').getByText('1 sent, 0 failed.').waitFor();
+  await page.getByTestId('bc-status').getByText('Done').waitFor();
+  assert.equal(b8.st.sends[0].broadcast_id, saved.id ?? b8.st.broadcasts[0].id);
+  const rows = await page.getByTestId('bc-recipient').allInnerTexts();
+  assert.ok(rows.some(r => /Siti Agent[\s\S]*Bahasa Melayu[\s\S]*Sent/.test(r)), rows.join('|'));
+  assert.ok(rows.some(r => /Ali[\s\S]*Skipped: said no to news & offers/.test(r)));
+  assert.ok(rows.some(r => /Banned Bob[\s\S]*Skipped: account not active/.test(r)));
+  await page.screenshot({ path: `${SHOTS}/50-broadcast-laptop.png`, fullPage: true });
+  await page.getByRole('button', { name: '← Back' }).click();
+  await page.getByTestId('bc-list').getByText(/1 sent · 2 skipped/).waitFor();
+  await ctx.close();
+});
+
+test('admin: WhatsApp service notice — WhatsApp Business not set up is explained; tap-to-send opens WhatsApp with the agent’s language and records it (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  await page.getByTestId('tile-64').click();
+  await page.getByTestId('bc-new').click();
+  await page.getByTestId('bc-whatsapp').check();
+  assert.equal(await page.getByTestId('bc-subject-en').count(), 0, 'no subject for WhatsApp');
+  await page.getByTestId('bc-body-en').fill('Office closed on Friday.');
+  await page.getByTestId('bc-body-bm').fill('Pejabat tutup pada hari Jumaat.');
+  await page.getByTestId('bc-save').click();
+  await page.getByTestId('bc-preview').getByText(/1 agent will get it now, of 3/).waitFor();
+  assert.match(await page.getByTestId('bc-preview').innerText(), /1 have no WhatsApp number/);
+  await page.getByTestId('bc-queue').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Holiday notice for everyone');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('bc-send-box').waitFor();
+  await page.getByTestId('bc-send').click();
+  await page.getByTestId('bc-send-error').getByText(/WhatsApp Business not set up: use tap-to-send/).waitFor();
+  // WhatsApp itself is not reached in the test: the link the new tab opens is caught here.
+  const opened = [];
+  await ctx.route('https://wa.me/**', r => { opened.push(r.request().url()); return r.fulfill({ status: 200, contentType: 'text/html', body: 'WhatsApp' }); });
+  const [popup] = await Promise.all([page.waitForEvent('popup'), page.getByTestId('bc-wa-open').click()]);
+  await popup.waitForLoadState();
+  const u = new URL(opened[0]);
+  assert.equal(u.hostname, 'wa.me'); assert.equal(u.pathname, '/60123456789');
+  assert.equal(u.searchParams.get('text'), 'Pejabat tutup pada hari Jumaat.', 'Siti reads Bahasa Melayu');
+  await popup.close();
+  await page.getByTestId('bc-status').getByText('Done').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_broadcast_wa_opened'));
+  assert.match((await page.getByTestId('bc-recipient').allInnerTexts()).join('|'), /\+60 12-345 6789[\s\S]*Opened in WhatsApp/);
+  await page.screenshot({ path: `${SHOTS}/51-whatsapp-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('owner: weekly report — switch on (Monday 08:00, owner + compliance, reason), make one now, download the PDF, Vault "Check a file" knows it (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-70').click();
+  await page.getByTestId('report-settings').waitFor();
+  await page.getByTestId('rep-on').check();
+  assert.ok(await page.getByTestId('rep-save').isDisabled(), 'choose who gets it');
+  for (const c of await page.getByTestId('rep-who').all()) await c.check();
+  await page.getByTestId('rep-save').click();
+  await page.getByText(/Every Monday from 08:00, to 2 admins/).waitFor();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Weekly summary for the team');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="rep-save"]')?.hasAttribute('disabled'));
+  const set = calls.find(c => c.fn === 'eab_admin_report_settings_save').args;
+  assert.equal(set.p.enabled, true); assert.equal(set.p.weekday, 1); assert.equal(set.p.hour, 8); assert.deepEqual(set.p.recipients.sort(), ['c9', 'me']);
+  await page.getByTestId('rep-run').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Check the numbers today');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('rep-msg').getByText(/Kept in the vault — email not set up/).waitFor();
+  await page.getByTestId('rep-row').first().locator('.tag').getByText('Kept in the vault').waitFor();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('rep-dl').first().click()]);
+  assert.equal(dl.suggestedFilename(), 'EAB-weekly-RPT-2026-W43.pdf');
+  assert.ok(calls.some(c => c.fn === 'storage_download' && c.args.path.startsWith('reports/')));
+  await page.screenshot({ path: `${SHOTS}/52-reports-laptop.png`, fullPage: true });
+  // the same file in "Check a file": not a case pack, but a weekly report
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-19').click();
+  await page.getByTestId('vault-reports').waitFor();
+  await page.getByTestId('check-file-input').setInputFiles(await dl.path());
+  await page.getByTestId('check-file-ok').getByText(/weekly report made by Admin EAB/).waitFor();
+  await ctx.close();
+});
+
+test('compliance: Team Workspaces and one workspace; To-Do asks Calendar or To-Do; ticks a shared task; shared event on the calendar (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 390 });
+  await page.getByTestId('tile-69').click();
+  await page.getByTestId('team-row').getByText(/Siti Agent/).waitFor();
+  assert.match(await page.getByTestId('team-row').innerText(), /Ali/);
+  await page.getByTestId('ws-tab-own').click();
+  await page.getByTestId('ws-open').click();
+  await page.getByTestId('workspace').getByText(/Listings 2 · Contacts 3/).waitFor();
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-13').click();
+  await page.getByTestId('agenda-ask').waitFor();
+  await page.getByTestId('agenda-todo').click();
+  await page.getByTestId('task-row').getByText('Renew Supabase plan').waitFor();
+  assert.match(await page.getByTestId('task-row').innerText(), /Team[\s\S]*Late · 2026-10-20[\s\S]*by kim@example.com/);
+  await page.getByTestId('task-done').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="task-row"]')?.className.includes('done'));
+  assert.deepEqual(calls.find(c => c.fn === 'eab_admin_task_save').args.p, { id: calls.find(c => c.fn === 'eab_admin_task_save').args.p.id, done: true });
+  await page.getByTestId('task-title').fill('Prepare JPPH pack');
+  await page.getByTestId('todo-shared').check();
+  await page.getByTestId('task-add').click();
+  await page.getByText('Prepare JPPH pack').waitFor();
+  assert.equal(calls.filter(c => c.fn === 'eab_admin_task_save').at(-1).args.p.shared, true);
+  await page.getByTestId('todo-tab-cal').click();
+  await page.getByTestId('cal-grid').waitFor();
+  await page.getByTestId('ev-new').click();
+  await page.getByTestId('ev-title').fill('Compliance meeting');
+  await page.getByTestId('todo-shared').check();
+  await page.getByTestId('ev-save').click();
+  await page.getByTestId('ev-row').getByText(/09:00–10:00 · Compliance meeting/).waitFor();
+  const ev = calls.find(c => c.fn === 'eab_admin_event_save').args.p;
+  assert.equal(ev.shared, true); assert.match(ev.starts_at, /T01:00:00\.000Z$/, '09:00 Malaysia = 01:00 UTC');
+  await page.screenshot({ path: `${SHOTS}/53-calendar-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('viewer: broadcast list without names, no new broadcast; no reports or workspaces; private to-do only; feature flags page explains tile. and beta. keys', async () => {
+  const { page, ctx, b8 } = await open({ role: 'viewer', width: 390 });
+  b8.st.broadcasts.push({ id: 'bv1', ref: 'BC-2026-0001', channel: 'email', kind: 'service', subject_en: 'Hello', body_en: 'x', audience: 'all', group_ids: [], status: 'done',
+    created_by: 'me', created_at: b8.now, updated_at: b8.now, queued_at: b8.now, queued_by: 'me', claimed_at: b8.now, finished_at: b8.now });
+  await page.getByTestId('tile-64').click();
+  await page.getByTestId('bc-row').waitFor();
+  assert.equal(await page.getByTestId('bc-new').count(), 0);
+  assert.equal(await page.locator('button[data-testid="bc-row"]').count(), 0, 'rows do not open (names are not for viewers)');
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  for (const n of [69, 70]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n} closed for viewer`);
+  await page.getByTestId('tile-13').click();
+  await page.getByTestId('agenda-todo').click();
+  await page.getByTestId('task-new').waitFor();
+  assert.equal(await page.getByTestId('todo-shared').count(), 0, 'a Viewer makes private items only');
+  assert.ok(await page.getByTestId('task-done').isDisabled(), 'a shared task is read-only for a Viewer');
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-67').click();
+  const note = await page.getByTestId('flags-note').innerText();
+  assert.match(note, /tile\.<card> switched OFF hides that card/); assert.match(note, /beta\.<name> switched ON/); assert.doesNotMatch(note, /does not read these switches yet/);
   await ctx.close();
 });

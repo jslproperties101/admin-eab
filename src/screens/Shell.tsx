@@ -21,6 +21,10 @@ import { TicketsScreen, TicketScreen } from './Tickets';
 import { OpsScreen } from './Ops';
 import { MasterScreen, TopAgentsScreen, LiveScreen } from './Overview';
 import { ReportsScreen } from './Reports';
+import { BroadcastScreen, BroadcastsScreen } from './Broadcasts';
+import { WeeklyReportsScreen } from './WeeklyReports';
+import { WorkspaceScreen, WorkspacesScreen } from './Workspaces';
+import { TodoScreen } from './Todo';
 import { ComplaintScreen, ComplaintsScreen, HoldsScreen, LicencesScreen, PdpaRequestScreen, PdpaScreen, RetentionScreen } from './Compliance';
 
 export function Shell() {
@@ -79,6 +83,12 @@ export function Shell() {
         {view.k === 'licences' && <LicencesScreen />}
         {view.k === 'retention' && <RetentionScreen />}
         {view.k === 'reports' && <ReportsScreen key={view.tab} tab={view.tab} />}
+        {view.k === 'broadcasts' && <BroadcastsScreen />}
+        {view.k === 'broadcast' && <BroadcastScreen key={view.id} id={view.id} />}
+        {view.k === 'weeklyReports' && <WeeklyReportsScreen />}
+        {view.k === 'workspaces' && <WorkspacesScreen />}
+        {view.k === 'workspace' && <WorkspaceScreen key={view.id} id={view.id} />}
+        {view.k === 'todo' && <TodoScreen key={view.tab} tab={view.tab} />}
         <footer className="small muted" style={{ marginTop: 32 }}>
           Admin EAB {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>

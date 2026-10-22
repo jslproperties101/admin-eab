@@ -1,8 +1,8 @@
 // Typed calls to the eab_admin_* database functions (supabase/migrations/20261021000000_admin_eab_foundation.sql in the
 // estate-agent-buddy repo). Every call passes a short device description for the access log.
 import { Role } from '../admin/roles';
-import { PushSendItem } from './session';
-export type { PushSendItem };
+import { BroadcastSendResult, PushSendItem } from './session';
+export type { BroadcastSendResult, PushSendItem };
 
 export interface Me { user_id: string; email: string; role: Role; expires_at: string | null }
 export interface SearchHit {
@@ -81,6 +81,10 @@ export interface Files {
   screenshot?: (path: string) => Promise<Blob>;
   /** AdminBatch006: send waiting push alerts (one post, or all when null). */
   sendPush?: (itemId: string | null) => Promise<PushSendItem[]>;
+  /** AdminBatch008: deliver a queued broadcast (server function send-broadcast). */
+  sendBroadcast?: (id: string) => Promise<BroadcastSendResult>;
+  /** AdminBatch008: make the weekly report now (server function weekly-report). */
+  runReport?: (reason: string) => Promise<{ run?: ReportRun; error?: string }>;
 }
 
 // ---------- AdminBatch004: System Health ----------
@@ -342,6 +346,55 @@ export interface AuditBundle {
   pdpa: Omit<PdpaRequest, 'details' | 'history'>[]; complaints: Omit<Complaint, 'details' | 'history'>[];
   holds: LegalHold[]; retention_reviews: RetentionReview[];
 }
+// ---------- AdminBatch008: broadcasts, weekly report, Team Workspaces, To-Do & Calendar ----------
+export type BcChannel = 'email' | 'whatsapp';
+export type BcKind = 'service' | 'news';
+export type BcStatus = 'draft' | 'queued' | 'sending' | 'done' | 'cancelled';
+export type BcRecipientStatus = 'pending' | 'sent' | 'failed' | 'opened_wa' | 'cancelled' | 'skipped_no_consent' | 'skipped_no_address' | 'skipped_not_active';
+export interface Broadcast {
+  id: string; ref: string; channel: BcChannel; kind: BcKind;
+  subject_en: string | null; subject_bm: string | null; subject_zh: string | null;
+  body_en: string; body_bm: string | null; body_zh: string | null;
+  audience: 'all' | 'groups'; group_ids: string[]; status: BcStatus;
+  created_by: string; created_at: string; updated_at: string; queued_at: string | null; queued_by: string | null; queue_reason?: string | null;
+  claimed_at: string | null; finished_at: string | null; created_by_email?: string | null; queued_by_email?: string | null;
+  counts: Partial<Record<BcRecipientStatus, number>>;
+  recipients?: BcRecipient[];
+}
+export interface BcRecipient {
+  id: number; user_id: string; email: string; name: string | null; address: string | null; lang: 'en' | 'bm' | 'zh';
+  status: BcRecipientStatus; error: string | null; sent_at: string | null; sent_by_email: string | null;
+}
+export type BroadcastDraft = Pick<Broadcast, 'channel' | 'kind' | 'body_en' | 'audience' | 'group_ids'> & Partial<Pick<Broadcast, 'id' | 'subject_en' | 'subject_bm' | 'subject_zh' | 'body_bm' | 'body_zh'>>;
+export interface BcPreview { matched: number; reach: number; no_address: number; no_consent: number; not_active: number }
+export interface ReportAdmin { user_id: string; email: string; role: Role }
+export interface ReportSettings {
+  enabled: boolean; weekday: number; hour: number; recipients: string[]; updated_by: string | null; updated_at: string;
+  recipient_emails: ReportAdmin[]; can_receive: ReportAdmin[];
+}
+export interface ReportRun {
+  id: string; ref: string; period_from: string; period_to: string; trigger: 'schedule' | 'manual'; status: 'making' | 'stored' | 'emailed' | 'failed';
+  file_name: string | null; sha256: string | null; bytes: number | null; emailed_to: string[]; error: string | null;
+  started_by: string; started_by_email?: string | null; created_at: string; finished_at: string | null;
+}
+export interface WorkspaceRow { id: string; name: string; created_at: string; owner_email: string | null; owner_name: string | null; members: number; records: number; listings: number }
+export interface TeamRow {
+  id: string; created_at: string; ended_at: string | null; end_reason: string | null; leader_email: string | null; leader_name: string | null;
+  members: { email: string; name: string | null; joined_at: string; left_at: string | null }[];
+}
+export interface WorkspaceDetail {
+  id: string; name: string; created_at: string; owner_user: string; owner_email: string | null; owner_name: string | null;
+  members: { user_id: string; email: string; role: string; active: boolean; joined_at: string }[];
+  by_kind: Record<string, number>; deleted: number;
+}
+export interface AdminTask {
+  id: string; owner_user: string; shared: boolean; title: string; notes: string | null; due_on: string | null; done: boolean;
+  done_at: string | null; done_by: string | null; created_at: string; updated_at: string; owner_email?: string | null; done_by_email?: string | null; mine?: boolean;
+}
+export interface AdminEvent {
+  id: string; owner_user: string; shared: boolean; title: string; notes: string | null; place: string | null;
+  starts_at: string; ends_at: string | null; all_day: boolean; created_at: string; updated_at: string; owner_email?: string | null; mine?: boolean;
+}
 
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -480,6 +533,25 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   savedReportDelete: (id: string) => call<boolean>('eab_admin_saved_report_delete', { p_id: id, p_device: device }),
   boardReport: (month: string) => call<BoardReport>('eab_admin_board_report', { p_month: month, p_device: device }),
   auditBundle: (year: number) => call<AuditBundle>('eab_admin_audit_bundle', { p_year: year, p_device: device }),
+  // AdminBatch008 — broadcasts, weekly report, Team Workspaces, To-Do & Calendar
+  broadcasts: (limit = 200) => call<Broadcast[]>('eab_admin_broadcasts', { p_limit: limit }),
+  broadcast: (id: string) => call<Broadcast>('eab_admin_broadcast', { p_id: id, p_device: device }),
+  broadcastSave: (p: BroadcastDraft) => call<Broadcast>('eab_admin_broadcast_save', { p, p_device: device }),
+  broadcastPreview: (id: string) => call<BcPreview>('eab_admin_broadcast_preview', { p_id: id }),
+  broadcastQueue: (id: string, reason: string) => call<Broadcast>('eab_admin_broadcast_queue', { p_id: id, p_reason: reason, p_device: device }),
+  broadcastCancel: (id: string, reason: string) => call<Broadcast>('eab_admin_broadcast_cancel', { p_id: id, p_reason: reason, p_device: device }),
+  broadcastWaOpened: (recipient: number) => call<Broadcast>('eab_admin_broadcast_wa_opened', { p_recipient: recipient, p_device: device }),
+  reportSettings: () => call<ReportSettings>('eab_admin_report_settings'),
+  reportSettingsSave: (p: Partial<Pick<ReportSettings, 'enabled' | 'weekday' | 'hour' | 'recipients'>>, reason: string) =>
+    call<ReportSettings>('eab_admin_report_settings_save', { p, p_reason: reason, p_device: device }),
+  reports: (limit = 100) => call<ReportRun[]>('eab_admin_reports', { p_limit: limit, p_device: device }),
+  reportDownload: (id: string) => call<{ path: string; file_name: string; sha256: string }>('eab_admin_report_download', { p_run: id, p_device: device }),
+  checkReport: (sha: string) => call<ReportRun | null>('eab_admin_check_report', { p_sha256: sha, p_device: device }),
+  workspaces: (q: string | null = null) => call<{ workspaces: WorkspaceRow[]; teams: TeamRow[] }>('eab_admin_workspaces', { p_q: q, p_device: device }),
+  workspace: (id: string) => call<WorkspaceDetail>('eab_admin_workspace', { p_id: id, p_device: device }),
+  todo: () => call<{ tasks: AdminTask[]; events: AdminEvent[] }>('eab_admin_todo'),
+  taskSave: (p: Partial<AdminTask> & { removed?: boolean }) => call<AdminTask>('eab_admin_task_save', { p, p_device: device }),
+  eventSave: (p: Partial<AdminEvent> & { removed?: boolean }) => call<AdminEvent>('eab_admin_event_save', { p, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

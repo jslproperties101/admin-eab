@@ -30,7 +30,14 @@ export type View =
   | { k: 'holds' }
   | { k: 'licences' }
   | { k: 'retention' }
-  | { k: 'reports'; tab: ReportsTab };
+  | { k: 'reports'; tab: ReportsTab }
+  // AdminBatch008
+  | { k: 'broadcasts' }
+  | { k: 'broadcast'; id: string }
+  | { k: 'weeklyReports' }
+  | { k: 'workspaces' }
+  | { k: 'workspace'; id: string }
+  | { k: 'todo'; tab: 'todo' | 'calendar' };
 
 /** AdminBatch008 */
 export type ReportsTab = 'board' | 'audit' | 'builder';

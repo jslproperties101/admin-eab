@@ -62,7 +62,7 @@ export type CaseStatus = 'open' | 'supplied' | 'closed';
 export interface CaseAgent { user_id: string; email: string; name: string | null; date_from: string | null; date_to: string | null; added_at: string; removed_at: string | null }
 export interface CaseGrant { admin_user: string; email: string; expires_at: string; granted_at: string; active: boolean }
 export interface Pack {
-  id: string; case_id: string | null; agent_user: string | null; reference: string; kind: 'case_pack' | 'agent_profile' | 'pdpa_access';
+  id: string; case_id: string | null; agent_user: string | null; reference: string; kind: 'case_pack' | 'agent_profile' | 'pdpa_access' | 'board_report' | 'audit_bundle';
   format: 'pdf' | 'xlsx'; file_name: string; sha256: string; content_sha256: string | null; bytes: number; stored: boolean;
   created_by: string; created_at: string; case_no?: string | null; agent_email?: string | null; created_by_email?: string | null;
 }
@@ -301,6 +301,48 @@ export interface Retention {
   agents: { user_id: string; email: string; name: string | null; records: number; oldest: string; on_hold: boolean }[]; reviews: RetentionReview[];
 }
 
+// ---------- AdminBatch008: reports ----------
+export type ReportColType = 'text' | 'num' | 'date' | 'bool';
+/** One column of a report source: type, personal (names / emails: not for Viewers) and its plain-words label. */
+export interface ReportCol { t: ReportColType; p?: boolean; l: string }
+export interface ReportSource { label: string; date: string; columns: Record<string, ReportCol>; allowed?: boolean }
+export type ReportCatalog = Record<string, ReportSource>;
+export type ReportOp = 'in' | 'eq' | 'contains' | 'min' | 'max' | 'after' | 'before' | 'is';
+export interface ReportFilter { col: string; op: ReportOp; value: string | number | string[] }
+export interface ReportSpec {
+  source: string; columns?: string[]; group_by?: string[]; measure?: string; from?: string; to?: string;
+  filters?: ReportFilter[]; sort?: { by: string; dir: 'asc' | 'desc' }; limit?: number;
+}
+export type ReportRow = Record<string, string | number | boolean | null>;
+export interface ReportResult { rows: ReportRow[]; count: number; truncated: boolean; run_at: string }
+export interface SavedReport {
+  id: string; name: string; source: string; spec: ReportSpec; created_by: string; created_by_email: string | null; created_at: string;
+  updated_by: string | null; updated_at: string;
+}
+export interface BoardNumbers {
+  from: string; to: string;
+  agents: { total: number; new: number; active: number; not_active_now: number; status_changes: number };
+  licences: { total: number; verified: number; expired_at_end: number; expiring_60_after: number; no_expiry_date: number };
+  listings: { new: number; live_now: number; sold: number; rented: number; by_status_now: Record<string, number>; by_state_now: { state: string; listings: number }[] };
+  complaints: { received: number; by_category: Record<string, number>; resolved: number; open_at_end: number };
+  pdpa: { received: number; by_kind: Record<string, number>; with_deadline: number; answered_in_21: number; late: number };
+  tickets: { received: number; fixed_or_closed: number };
+  cases: { opened: number; closed: number; by_requester: Record<string, number>; packs: number };
+  admin: { actions: number; exports: number; top_actions: { action: string; n: number }[] };
+}
+export interface BoardReport { month: string; month_end: string; complete: boolean; made_at: string; current: BoardNumbers; previous: BoardNumbers }
+export interface AuditBundle {
+  year: number; from: string; to: string; made_at: string; cap: number;
+  chain: { actions: ChainCheck; access: ChainCheck };
+  counts: { actions: number; access: number };
+  actions: Omit<ActionRow, 'before' | 'after'>[]; access: Omit<AccessRow, 'detail'>[];
+  backup_tests: BackupTest[];
+  cases: (Omit<CaseFile, 'agents' | 'packs'> & { agents: number; packs: Pick<Pack, 'reference' | 'kind' | 'format' | 'sha256' | 'content_sha256' | 'created_at' | 'stored'>[] })[];
+  vault: Pick<Pack, 'reference' | 'kind' | 'format' | 'sha256' | 'created_at' | 'stored'>[];
+  pdpa: Omit<PdpaRequest, 'details' | 'history'>[]; complaints: Omit<Complaint, 'details' | 'history'>[];
+  holds: LegalHold[]; retention_reviews: RetentionReview[];
+}
+
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
 
 export const api = (call: Call, device: string, files: Files = { upload: async () => { throw new Error('no storage'); }, download: async () => { throw new Error('no storage'); } }) => ({
@@ -430,6 +472,14 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   retention: () => call<Retention>('eab_admin_retention', { p_device: device }),
   retentionReview: (decision: 'keep' | 'approve_later', note: string) => call<RetentionReview>('eab_admin_retention_review', { p_decision: decision, p_note: note, p_device: device }),
   feedSchedule: (id: string, at: string, reason: string) => call<FeedItem>('eab_admin_feed_schedule', { p_item: id, p_at: at, p_reason: reason, p_device: device }),
+  // AdminBatch008 — reports
+  reportCatalog: () => call<ReportCatalog>('eab_admin_report_catalog'),
+  reportRun: (spec: ReportSpec) => call<ReportResult>('eab_admin_report_run', { p_spec: spec, p_device: device }),
+  savedReports: () => call<SavedReport[]>('eab_admin_saved_reports'),
+  savedReportSave: (r: { id?: string; name: string; source: string; spec: ReportSpec }) => call<SavedReport>('eab_admin_saved_report_save', { p: r, p_device: device }),
+  savedReportDelete: (id: string) => call<boolean>('eab_admin_saved_report_delete', { p_id: id, p_device: device }),
+  boardReport: (month: string) => call<BoardReport>('eab_admin_board_report', { p_month: month, p_device: device }),
+  auditBundle: (year: number) => call<AuditBundle>('eab_admin_audit_bundle', { p_year: year, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

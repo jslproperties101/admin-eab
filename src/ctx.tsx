@@ -29,8 +29,11 @@ export type View =
   | { k: 'complaint'; id: string }
   | { k: 'holds' }
   | { k: 'licences' }
-  | { k: 'retention' };
+  | { k: 'retention' }
+  | { k: 'reports'; tab: ReportsTab };
 
+/** AdminBatch008 */
+export type ReportsTab = 'board' | 'audit' | 'builder';
 /** AdminBatch006 */
 export type NewsTab = 'news' | 'project' | 'announcement' | 'groups' | 'codes' | 'push';
 export type OpsTab = 'maintenance' | 'release' | 'flags';

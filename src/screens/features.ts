@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-007). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-008). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -29,6 +29,11 @@ export const SECTIONS: Section[] = [
     { n: 53, name: 'Terms Acceptance Log', open: { k: 'agents', filter: 'all' }, needs: 'listAgents', note: 'Version per agent; history in profile' },
     { n: 16, name: 'Content Moderation' },
     { n: 57, name: 'Photo Moderation' },
+  ] },
+  { title: 'Reports', items: [
+    { n: 90, name: 'Monthly Board Report', open: { k: 'reports', tab: 'board' }, needs: 'boardReport', note: 'Compared with last month; kept in the vault' },
+    { n: 129, name: 'Annual Audit Bundle', open: { k: 'reports', tab: 'audit' }, needs: 'auditBundle', note: 'Logs, tamper check, cases, PDPA, holds' },
+    { n: 127, name: 'Custom Report Builder', open: { k: 'reports', tab: 'builder' }, needs: 'reportBuilder', note: 'Pick columns, filters, totals; save and share' },
   ] },
   { title: 'Security', items: [
     { n: 17, name: 'Admins & Roles', open: { k: 'admins' }, needs: 'manageAdmins' },

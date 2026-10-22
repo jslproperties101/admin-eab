@@ -19,7 +19,8 @@ type Ask =
 
 const plusDays = (n: number) => new Date(Date.now() + 8 * 3600_000 + n * 86_400_000).toISOString().slice(0, 10);
 export const sizeText = (b: number) => (b > 1_048_576 ? `${(b / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
-export const KIND_LABEL: Record<Pack['kind'], string> = { case_pack: 'Case pack', agent_profile: 'Agent profile export', pdpa_access: 'PDPA copy for the agent' };
+export const KIND_LABEL: Record<Pack['kind'], string> = { case_pack: 'Case pack', agent_profile: 'Agent profile export', pdpa_access: 'PDPA copy for the agent',
+  board_report: 'Monthly Board report', audit_bundle: 'Annual audit bundle' };
 
 export function CaseScreen({ id }: { id: string }) {
   const { api, me, go } = useAdmin();

@@ -43,7 +43,7 @@ small, .small { font-size: .875rem; }
 /* fields */
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { color: #DAD3C3; font-size: .9rem; }
-input:not([type]), input[type=text], input[type=search], input[type=email], input[type=datetime-local], input[type=date], input[type=url], input[type=file], select, textarea {
+input:not([type]), input[type=text], input[type=search], input[type=email], input[type=datetime-local], input[type=date], input[type=number], input[type=url], input[type=file], select, textarea {
   width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: #0E0E10; }
 input:focus, select:focus, textarea:focus { border-color: var(--gold); outline: none; }
 textarea { min-height: 90px; resize: vertical; }
@@ -212,3 +212,6 @@ fieldset.field { border: none; padding: 0; margin: 0; }
 .alert-red { border-color: var(--red) !important; }
 button.stat.pick { text-align: left; color: inherit; font: inherit; cursor: pointer; }
 button.stat.pick:hover { border-color: var(--gold); }
+/* AdminBatch008 — reports */
+tr.sect th { text-align: left; color: var(--gold); padding-top: 14px; font-size: .95rem; }
+tr.alert-red td:first-child { border-left: 3px solid var(--red); }

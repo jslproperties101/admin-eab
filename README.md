@@ -46,6 +46,13 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
+cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
+workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,
+retention reviews, plus a PDF summary naming the workbook; both vaulted), Custom report builder (8 sources, fixed column
+list, filters, grouping with counts / totals / averages, chart, saved reports shared with every admin; Viewers build totals
+only, never names; exports Owner / Compliance). Needs `20261025000000_admin_batch_008_reports.sql`.
+
 AdminBatch007: Compliance core — PDPA requests (reference PDPA-YYYY-####, 21-day answer rule for access / correction,
 decision, outcome, every step kept; deletion requests are logged only), Retention (what is older than 7 years, per kind and
 per agent; review recorded; nothing is deleted), Legal holds (the database refuses to delete an agent's records while on

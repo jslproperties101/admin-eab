@@ -19,7 +19,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits'
   | 'viewDash' | 'viewDashAgents'
   | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps'
-  | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention';
+  | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention'
+  | 'boardReport' | 'auditBundle' | 'reportBuilder' | 'reportNames';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -61,6 +62,11 @@ const RULES: Record<Ability, Role[]> = {
   internal: ['owner', 'admin', 'compliance'],                    // internal tags and notes on agents
   viewRetention: ['owner', 'compliance'],
   reviewRetention: ['owner'],
+  // AdminBatch008 — same rules as the report database functions
+  boardReport: ['owner', 'compliance'],                          // monthly Board report (kept in the vault)
+  auditBundle: ['owner', 'compliance'],                          // annual audit bundle (kept in the vault)
+  reportBuilder: ['owner', 'admin', 'compliance', 'viewer'],     // custom reports; Viewer: grouped totals only
+  reportNames: ['owner', 'admin', 'compliance'],                 // report columns that name people (names, emails)
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

@@ -248,6 +248,7 @@ export interface MasterDash {
   aws_backup: 'not_set_up' | 'set_up'; last_restore_pass: string | null; sync_runs_7d: number; sync_fails_7d: number;
   tickets_new: number; tickets_open: number; pushes_waiting: number; posts_live: number; maintenance_on: boolean; maintenance_back_at: string | null;
   min_version: string | null; min_version_mode: 'soft' | 'hard' | null; flags_on: number; licences_unverified: number; accounts_not_active: number;
+  licences_expired?: number; licences_expiring_30?: number; pdpa_active?: number; pdpa_due_soon?: number; complaints_active?: number; holds_active?: number;
   active_by_day: { day: string; agents: number }[];
 }
 export interface TopAgent { user_id: string; email: string; name: string | null; listings: number; new_listings: number; sold: number; rented: number; closed: number; active_days: number; actions: number }
@@ -258,6 +259,46 @@ export interface LiveUsers {
 export interface OpsSettings extends Settings {
   min_version: string | null; min_version_mode: 'soft' | 'hard'; update_url: string | null; maintenance_on: boolean;
   maintenance_message_en: string | null; maintenance_message_bm: string | null; maintenance_message_zh: string | null; maintenance_back_at: string | null;
+}
+
+// ---------- AdminBatch007: compliance core ----------
+export type PdpaKind = 'access' | 'correction' | 'deletion' | 'withdraw_consent' | 'other';
+export type PdpaStatus = 'open' | 'in_progress' | 'done' | 'refused';
+export interface CaseEvent { id: number; kind: 'created' | 'status' | 'updated' | 'note'; body: string | null; from_status: string | null; to_status: string | null; by_user: string; by_email: string | null; at: string }
+export interface PdpaRequest {
+  id: string; ref: string; agent_user: string | null; requester_name: string; requester_contact: string | null; received_on: string; kind: PdpaKind;
+  details?: string; summary?: string; status: PdpaStatus; decision: string | null; decided_on: string | null; supplied_on: string | null; outcome: string | null;
+  case_id: string | null; case_no?: string | null; created_by: string; created_at: string; updated_at: string;
+  agent_email: string | null; agent_name?: string | null; agent_on_hold: boolean; days_open: number | null; history?: CaseEvent[];
+}
+export interface NewPdpa { agent_user?: string | null; requester_name: string; requester_contact?: string; received_on: string; kind: PdpaKind; details: string; case_id?: string | null }
+export type ComplaintStatus = 'open' | 'investigating' | 'resolved' | 'dismissed' | 'referred';
+export type ComplaintChannel = 'phone' | 'email' | 'walk_in' | 'board' | 'other';
+export type ComplaintCategory = 'misleading_listing' | 'conduct' | 'fees' | 'privacy' | 'other';
+export interface Complaint {
+  id: string; ref: string; agent_user: string | null; complainant_name: string; complainant_contact: string | null; received_on: string;
+  channel: ComplaintChannel; category: ComplaintCategory; listing_ref: string | null; details?: string; summary?: string; status: ComplaintStatus;
+  outcome: string | null; case_id: string | null; case_no?: string | null; created_by: string; created_at: string; updated_at: string;
+  agent_email: string | null; agent_name: string | null; agent_complaints?: number; history?: CaseEvent[];
+}
+export interface NewComplaint { agent_user?: string | null; complainant_name: string; complainant_contact?: string; received_on: string; channel: ComplaintChannel; category: ComplaintCategory; listing_ref?: string; details: string; case_id?: string | null }
+export interface LegalHold {
+  id: string; agent_user: string; reason: string; case_id: string | null; placed_by: string; placed_by_email: string | null; placed_at: string;
+  released_by: string | null; released_by_email: string | null; released_at: string | null; release_reason: string | null;
+  agent_email?: string; agent_name?: string | null; case_no?: string | null;
+}
+export interface LicenceExpiryRow { user_id: string; email: string; name: string | null; type: string | null; number: string; verified: boolean; expires_on: string | null; days_left: number | null }
+export interface LicenceExpiry { today: string; within: number; counts: { expired: number; in_7: number; in_30: number; in_60: number; no_date: number; licences: number }; agents: LicenceExpiryRow[] }
+export interface AgentNote { id: number; user_id: string; body: string; by_user: string; by_email: string | null; at: string }
+export interface AgentInternal {
+  tags: string[]; notes: AgentNote[]; holds: LegalHold[]; on_hold: boolean; complaints: number; complaints_active: number; pdpa: number;
+  licence_expires_on: string | null; licence_number: string | null;
+}
+export interface RetentionCounts { records: number; records_on_hold: number; versions: number; sign_ins: number; problem_reports: number; usage_days: number }
+export interface RetentionReview { id: number; cutoff: string; counts: RetentionCounts; decision: 'keep' | 'approve_later'; note: string; by_user: string; by_email: string | null; at: string }
+export interface Retention {
+  today: string; cutoff: string; deletion_enabled: boolean; counts: RetentionCounts; next_year: RetentionCounts;
+  agents: { user_id: string; email: string; name: string | null; records: number; oldest: string; on_hold: boolean }[]; reviews: RetentionReview[];
 }
 
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
@@ -363,6 +404,32 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   master: () => call<MasterDash>('eab_admin_dash_master'),
   topAgents: (from: string, to: string, limit = 50) => call<{ from: string; to: string; agents: TopAgent[] }>('eab_admin_dash_top_agents', { p_from: from, p_to: to, p_limit: limit, p_device: device }),
   liveUsers: (minutes = 5) => call<LiveUsers>('eab_admin_live_users', { p_minutes: minutes, p_device: device }),
+  // AdminBatch007 — compliance core
+  pdpaList: (status: PdpaStatus | 'active' | null = null) => call<{ counts: Partial<Record<PdpaStatus, number>>; requests: PdpaRequest[] }>('eab_admin_pdpa_list', { p_status: status, p_device: device }),
+  pdpaGet: (id: string) => call<PdpaRequest>('eab_admin_pdpa_get', { p_id: id, p_device: device }),
+  pdpaCreate: (p: NewPdpa) => call<PdpaRequest>('eab_admin_pdpa_create', { p, p_device: device }),
+  pdpaUpdate: (id: string, p: Partial<Pick<PdpaRequest, 'status' | 'decision' | 'decided_on' | 'supplied_on' | 'outcome' | 'case_id'>>, note: string) =>
+    call<PdpaRequest>('eab_admin_pdpa_update', { p_id: id, p, p_note: note, p_device: device }),
+  pdpaNote: (id: string, note: string) => call<PdpaRequest>('eab_admin_pdpa_note', { p_id: id, p_note: note, p_device: device }),
+  complaints: (status: ComplaintStatus | 'active' | null = null, agent: string | null = null) =>
+    call<{ counts: Partial<Record<ComplaintStatus, number>>; by_category: Partial<Record<ComplaintCategory, number>>; complaints: Complaint[] }>('eab_admin_complaints', { p_status: status, p_agent: agent, p_device: device }),
+  complaintGet: (id: string) => call<Complaint>('eab_admin_complaint_get', { p_id: id, p_device: device }),
+  complaintCreate: (p: NewComplaint) => call<Complaint>('eab_admin_complaint_create', { p, p_device: device }),
+  complaintUpdate: (id: string, p: Partial<Pick<Complaint, 'status' | 'outcome' | 'case_id' | 'agent_user' | 'listing_ref'>>, note: string) =>
+    call<Complaint>('eab_admin_complaint_update', { p_id: id, p, p_note: note, p_device: device }),
+  complaintNote: (id: string, note: string) => call<Complaint>('eab_admin_complaint_note', { p_id: id, p_note: note, p_device: device }),
+  holds: (active = true) => call<LegalHold[]>('eab_admin_holds', { p_active: active, p_device: device }),
+  holdPlace: (agent: string, reason: string, caseId: string | null = null) => call<LegalHold>('eab_admin_hold_place', { p_agent: agent, p_reason: reason, p_case: caseId, p_device: device }),
+  holdRelease: (id: string, reason: string) => call<LegalHold>('eab_admin_hold_release', { p_id: id, p_reason: reason, p_device: device }),
+  setLicenceExpiry: (user: string, expires: string | null, reason: string) => call<unknown>('eab_admin_set_licence_expiry', { p_user: user, p_expires: expires, p_reason: reason, p_device: device }),
+  licenceExpiry: (within = 60) => call<LicenceExpiry>('eab_admin_licence_expiry', { p_within: within, p_device: device }),
+  agentInternal: (user: string) => call<AgentInternal>('eab_admin_agent_internal', { p_user: user, p_device: device }),
+  agentTag: (user: string, tag: string, add: boolean) => call<string[]>('eab_admin_agent_tag', { p_user: user, p_tag: tag, p_add: add, p_device: device }),
+  agentNote: (user: string, note: string) => call<AgentNote>('eab_admin_agent_note', { p_user: user, p_note: note, p_device: device }),
+  tagList: () => call<{ tag: string; agents: number }[]>('eab_admin_tag_list'),
+  retention: () => call<Retention>('eab_admin_retention', { p_device: device }),
+  retentionReview: (decision: 'keep' | 'approve_later', note: string) => call<RetentionReview>('eab_admin_retention_review', { p_decision: decision, p_note: note, p_device: device }),
+  feedSchedule: (id: string, at: string, reason: string) => call<FeedItem>('eab_admin_feed_schedule', { p_item: id, p_at: at, p_reason: reason, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

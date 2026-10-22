@@ -172,6 +172,19 @@ function opsFake() {
   return { EVERY, staff, view, edit, items, groups, order, codes, grants, pushes, tickets, flags, master, row, id, now, uploads: [], sends: [] };
 }
 
+// AdminBatch007 — compliance core fake: PDPA requests, complaints, holds, licence expiry, tags / notes, retention.
+function complianceFake() {
+  let n = 0; const now = '2026-10-22T04:00:00Z';
+  const st = { pdpa: [], complaints: [], holds: [], tags: [], notes: [], reviews: [], expires: '2026-11-05' };
+  const ev = (kind, body, from, to) => ({ id: ++n, kind, body, from_status: from ?? null, to_status: to ?? null, by_user: 'me', by_email: 'joe@example.com', at: now });
+  const onHold = u => st.holds.some(h => h.agent_user === u && !h.released_at);
+  const pjson = r => ({ ...r, agent_email: r.agent_user ? 'agent@example.com' : null, agent_name: r.agent_user ? 'Siti Agent' : null, agent_on_hold: onHold(r.agent_user),
+    days_open: ['open', 'in_progress'].includes(r.status) ? 3 : null, summary: r.details.slice(0, 160) });
+  const cjson = c => ({ ...c, agent_email: c.agent_user ? 'agent@example.com' : null, agent_name: c.agent_user ? 'Siti Agent' : null,
+    agent_complaints: st.complaints.filter(x => x.agent_user && x.agent_user === c.agent_user).length, summary: c.details.slice(0, 160) });
+  return { st, ev, onHold, pjson, cjson, now, id: () => `cccccccc-0000-4000-8000-${String(++n).padStart(12, '0')}`, next: () => ++n };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -198,6 +211,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const health = healthFake();
   const dash = dashFake();
   const ops = opsFake();
+  const cmp = complianceFake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
@@ -439,6 +453,89 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_live_users': return ops.view.includes(role) ? route.fulfill(ok({ minutes: args.p_minutes, checked_at: ops.now, count: 1, names_hidden: !ops.staff.includes(role),
         by_screen: [{ screen: 'listing-form', agents: 1 }],
         agents: ops.staff.includes(role) ? [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', last_at: ops.now, screen: 'listing-form', app_version: '2.2.0', platform: 'android', device: 'SM-S918B' }] : null })) : route.fulfill(denied);
+      // AdminBatch007 — compliance core
+      case 'eab_admin_pdpa_list': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const f = args.p_status; const counts = {}; for (const r of cmp.st.pdpa) counts[r.status] = (counts[r.status] ?? 0) + 1;
+        return route.fulfill(ok({ counts, requests: cmp.st.pdpa.filter(r => !f || r.status === f || (f === 'active' && ['open', 'in_progress'].includes(r.status))).map(cmp.pjson) }));
+      }
+      case 'eab_admin_pdpa_get': return ['owner', 'compliance'].includes(role) ? route.fulfill(ok(cmp.pjson(cmp.st.pdpa.find(r => r.id === args.p_id)))) : route.fulfill(denied);
+      case 'eab_admin_pdpa_create': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const r = { id: cmp.id(), ref: `PDPA-2026-000${cmp.st.pdpa.length + 1}`, status: 'open', decision: null, decided_on: null, supplied_on: null, outcome: null,
+          case_id: null, created_by: 'me', created_at: cmp.now, updated_at: cmp.now, requester_contact: null, agent_user: null, ...args.p, history: [cmp.ev('created', null, null, 'open')] };
+        cmp.st.pdpa.unshift(r); return route.fulfill(ok(cmp.pjson(r)));
+      }
+      case 'eab_admin_pdpa_update': case 'eab_admin_pdpa_note': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const r = cmp.st.pdpa.find(x => x.id === args.p_id);
+        if (fn === 'eab_admin_pdpa_note') { r.history.push(cmp.ev('note', args.p_note)); return route.fulfill(ok(cmp.pjson(r))); }
+        if (args.p.status === 'done' && r.kind === 'deletion' && cmp.onHold(r.agent_user))
+          return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'this agent is on legal hold: a deletion request cannot be marked done' }) });
+        const from = r.status; Object.assign(r, args.p);
+        r.history.push(cmp.ev(r.status !== from ? 'status' : 'updated', args.p_note, r.status !== from ? from : null, r.status !== from ? r.status : null));
+        return route.fulfill(ok(cmp.pjson(r)));
+      }
+      case 'eab_admin_complaints': {
+        if (!ops.staff.includes(role)) return route.fulfill(denied);
+        const f = args.p_status; const counts = {}, by = {};
+        for (const c of cmp.st.complaints) { counts[c.status] = (counts[c.status] ?? 0) + 1; by[c.category] = (by[c.category] ?? 0) + 1; }
+        return route.fulfill(ok({ counts, by_category: by, complaints: cmp.st.complaints.filter(c => (!f || c.status === f || (f === 'active' && ['open', 'investigating'].includes(c.status))) && (!args.p_agent || c.agent_user === args.p_agent)).map(cmp.cjson) }));
+      }
+      case 'eab_admin_complaint_get': return ops.staff.includes(role) ? route.fulfill(ok(cmp.cjson(cmp.st.complaints.find(c => c.id === args.p_id)))) : route.fulfill(denied);
+      case 'eab_admin_complaint_create': {
+        if (!ops.staff.includes(role)) return route.fulfill(denied);
+        const c = { id: cmp.id(), ref: `CMP-2026-000${cmp.st.complaints.length + 1}`, status: 'open', outcome: null, case_id: null, created_by: 'me', created_at: cmp.now, updated_at: cmp.now,
+          complainant_contact: null, listing_ref: null, agent_user: null, ...args.p, history: [cmp.ev('created', null, null, 'open')] };
+        cmp.st.complaints.unshift(c); return route.fulfill(ok(cmp.cjson(c)));
+      }
+      case 'eab_admin_complaint_update': case 'eab_admin_complaint_note': {
+        if (!ops.staff.includes(role)) return route.fulfill(denied);
+        const c = cmp.st.complaints.find(x => x.id === args.p_id);
+        if (fn === 'eab_admin_complaint_note') { c.history.push(cmp.ev('note', args.p_note)); return route.fulfill(ok(cmp.cjson(c))); }
+        const from = c.status; Object.assign(c, args.p);
+        c.history.push(cmp.ev(c.status !== from ? 'status' : 'updated', args.p_note, c.status !== from ? from : null, c.status !== from ? c.status : null));
+        return route.fulfill(ok(cmp.cjson(c)));
+      }
+      case 'eab_admin_holds': return ops.staff.includes(role) ? route.fulfill(ok(cmp.st.holds.filter(h => !args.p_active || !h.released_at)
+        .map(h => ({ ...h, agent_email: 'agent@example.com', agent_name: 'Siti Agent', case_no: null })))) : route.fulfill(denied);
+      case 'eab_admin_hold_place': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const h = { id: cmp.id(), agent_user: args.p_agent, reason: args.p_reason, case_id: args.p_case, placed_by: 'me', placed_by_email: 'joe@example.com', placed_at: cmp.now,
+          released_by: null, released_by_email: null, released_at: null, release_reason: null };
+        cmp.st.holds.unshift(h); return route.fulfill(ok(h));
+      }
+      case 'eab_admin_hold_release': {
+        if (!['owner', 'compliance'].includes(role)) return route.fulfill(denied);
+        const h = cmp.st.holds.find(x => x.id === args.p_id); Object.assign(h, { released_at: cmp.now, release_reason: args.p_reason, released_by_email: 'joe@example.com' });
+        return route.fulfill(ok(h));
+      }
+      case 'eab_admin_licence_expiry': return ops.staff.includes(role) ? route.fulfill(ok({ today: '2026-10-22', within: args.p_within,
+        counts: { expired: 0, in_7: 0, in_30: 1, in_60: 1, no_date: 1, licences: 2 },
+        agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', type: 'REN', number: '12345', verified: true, expires_on: cmp.st.expires, days_left: 14 },
+          { user_id: 'b2', email: 'ali@example.com', name: 'Ali', type: 'REA', number: 'E 777', verified: false, expires_on: null, days_left: null }] })) : route.fulfill(denied);
+      case 'eab_admin_set_licence_expiry': if (!ops.staff.includes(role)) return route.fulfill(denied); cmp.st.expires = args.p_expires; return route.fulfill(ok({ expires_on: args.p_expires }));
+      case 'eab_admin_agent_internal': return ops.staff.includes(role) ? route.fulfill(ok({ tags: [...cmp.st.tags].sort(), notes: cmp.st.notes, holds: cmp.st.holds.filter(h => h.agent_user === args.p_user),
+        on_hold: cmp.onHold(args.p_user), complaints: cmp.st.complaints.length, complaints_active: cmp.st.complaints.filter(c => c.status === 'open').length,
+        pdpa: cmp.st.pdpa.length, licence_expires_on: cmp.st.expires, licence_number: 'REN 12345' })) : route.fulfill(denied);
+      case 'eab_admin_agent_tag': {
+        if (!ops.staff.includes(role)) return route.fulfill(denied);
+        cmp.st.tags = args.p_add ? [...new Set([...cmp.st.tags, args.p_tag])] : cmp.st.tags.filter(t => t !== args.p_tag); return route.fulfill(ok(cmp.st.tags));
+      }
+      case 'eab_admin_agent_note': { if (!ops.staff.includes(role)) return route.fulfill(denied); const nn = { id: cmp.next(), user_id: args.p_user, body: args.p_note, by_user: 'me', by_email: 'joe@example.com', at: cmp.now }; cmp.st.notes.unshift(nn); return route.fulfill(ok(nn)); }
+      case 'eab_admin_retention': return ['owner', 'compliance'].includes(role) ? route.fulfill(ok({ today: '2026-10-22', cutoff: '2019-10-22', deletion_enabled: false,
+        counts: { records: 3, records_on_hold: 1, versions: 4, sign_ins: 10, problem_reports: 0, usage_days: 0 },
+        next_year: { records: 5, records_on_hold: 1, versions: 6, sign_ins: 20, problem_reports: 0, usage_days: 0 },
+        agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', records: 3, oldest: '2018-05-01T00:00:00Z', on_hold: true }], reviews: cmp.st.reviews })) : route.fulfill(denied);
+      case 'eab_admin_retention_review': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const r = { id: cmp.next(), cutoff: '2019-10-22', counts: { records: 3, records_on_hold: 1, versions: 4, sign_ins: 10, problem_reports: 0, usage_days: 0 }, decision: args.p_decision, note: args.p_note, by_user: 'me', by_email: 'joe@example.com', at: cmp.now };
+        cmp.st.reviews.unshift(r); return route.fulfill(ok(r));
+      }
+      case 'eab_admin_feed_schedule': {
+        if (!ops.edit.includes(role)) return route.fulfill(denied);
+        const it = ops.items.find(i => i.id === args.p_item); Object.assign(it, { status: 'published', published_at: args.p_at }); return route.fulfill(ok(it));
+      }
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -1278,5 +1375,141 @@ test('viewer: Master Dashboard and news read-only; no tickets, top agents or nam
   await page.getByTestId('flags').waitFor();
   assert.equal(await page.getByTestId('flag-new').count(), 0);
   assert.ok(!calls.some(c => ['eab_admin_tickets', 'eab_admin_code_grants', 'eab_admin_dash_top_agents'].includes(c.fn)));
+  await ctx.close();
+});
+
+// ---------------- AdminBatch007: compliance core ----------------
+
+test('compliance: log a PDPA deletion request for an agent, put the agent on legal hold, "done" is refused, then refuse with a note (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 1366 });
+  await page.getByTestId('tile-50').click();
+  await page.getByTestId('pdpa').waitFor();
+  await page.getByTestId('pdpa-new').click();
+  await page.getByTestId('agent-q').fill('siti');
+  await page.getByTestId('agent-find').click();
+  await page.getByTestId('agent-hit').click();
+  await page.getByTestId('pdpa-name').fill('Siti Agent');
+  await page.getByTestId('pdpa-kind').selectOption('deletion');
+  await page.getByTestId('pdpa-save').click();
+  await page.getByText('Write what was asked.').waitFor();
+  await page.getByTestId('pdpa-details').fill('Please delete all my listings and contacts.');
+  await page.getByTestId('pdpa-save').click();
+  await page.getByTestId('pdpa-req').waitFor();
+  assert.match(await page.getByTestId('pdpa-req').innerText(), /PDPA-2026-0001[\s\S]*Logging only: nothing is deleted/);
+  const cr = calls.find(c => c.fn === 'eab_admin_pdpa_create').args.p;
+  assert.equal(cr.agent_user, AGENT); assert.equal(cr.kind, 'deletion');
+  // legal hold from the Legal Hold screen
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-88').click();
+  await page.getByTestId('hold-form').getByTestId('agent-q').fill('siti');
+  await page.getByTestId('hold-form').getByTestId('agent-find').click();
+  await page.getByTestId('hold-form').getByTestId('agent-hit').click();
+  await page.getByTestId('hold-place').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Police report RPT/88');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('hold-list').getByText('On hold').waitFor();
+  await page.screenshot({ path: `${SHOTS}/39-holds-laptop.png`, fullPage: true });
+  // back to the request: marked done is refused while on hold
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-50').click();
+  await page.getByTestId('pdpa-row').click();
+  await page.getByTestId('pdpa-hold').waitFor();
+  await page.getByTestId('pdpa-to-done').click();
+  await page.getByTestId('pdpa-note').fill('Trying to close');
+  assert.ok(await page.getByTestId('pdpa-apply').isDisabled(), 'done is blocked on the screen while on hold');
+  await page.getByTestId('pdpa-to-done').click();
+  await page.getByTestId('pdpa-to-refused').click();
+  await page.getByTestId('pdpa-decision').fill('Kept: inside the 7-year period');
+  await page.getByTestId('pdpa-note').fill('Lawyer advice 22 Oct');
+  await page.getByTestId('pdpa-apply').click();
+  await page.getByTestId('history').getByText(/Open → Refused/).waitFor();
+  const up = calls.find(c => c.fn === 'eab_admin_pdpa_update').args;
+  assert.equal(up.p.status, 'refused'); assert.equal(up.p.decision, 'Kept: inside the 7-year period'); assert.equal(up.p_note, 'Lawyer advice 22 Oct');
+  await page.screenshot({ path: `${SHOTS}/40-pdpa-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('admin: complaint register; tags, note and licence expiry on the Agent Profile; licence list (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  assert.equal(await page.getByTestId('tile-50').count(), 0, 'PDPA is owner / compliance');
+  await page.getByTestId('tile-91').click();
+  await page.getByTestId('complaint-new').click();
+  await page.getByTestId('cmp-name').fill('Buyer Tan');
+  await page.getByTestId('cmp-listing').fill('P1001');
+  await page.getByTestId('cmp-details').fill('The advert said freehold but the title is leasehold.');
+  await page.getByTestId('cmp-save').click();
+  await page.getByTestId('complaint').waitFor();
+  await page.getByTestId('cmp-to-investigating').click();
+  await page.getByTestId('cmp-note').fill('Asked the agent for the title copy');
+  await page.getByTestId('cmp-apply').click();
+  await page.getByTestId('history').getByText(/Open → Investigating/).waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_complaint_create').args.p.category, 'misleading_listing');
+  assert.equal(await page.getByTestId('case-pick').count(), 0, 'admin cannot see case files');
+  await page.screenshot({ path: `${SHOTS}/41-complaint-phone.png`, fullPage: true });
+  // agent profile internal box
+  await page.getByTestId('global-search').fill('siti');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  await page.getByTestId('hit-agent').first().click();
+  await page.getByTestId('internal-box').waitFor();
+  await page.getByTestId('tag-input').fill('VIP');
+  await page.getByTestId('tag-add').click();
+  await page.getByTestId('agent-tag').getByText('vip').waitFor();
+  await page.getByTestId('agent-note').fill('Met at the Board office');
+  await page.getByTestId('agent-note-save').click();
+  await page.getByTestId('agent-notes').getByText('Met at the Board office').waitFor();
+  assert.equal(await page.getByTestId('internal-hold').count(), 0, 'admin cannot place a legal hold');
+  await page.getByTestId('internal-expiry').fill('2027-01-31');
+  await page.getByTestId('internal-expiry-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('From the REN card');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('licence-expiry').getByText(/2027-01-31/).waitFor();
+  assert.deepEqual(calls.find(c => c.fn === 'eab_admin_agent_tag').args.p_tag, 'vip');
+  await page.screenshot({ path: `${SHOTS}/42-agent-internal-phone.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-82').click();
+  await page.getByTestId('licence-list').waitFor();
+  assert.match(await page.getByTestId('licence-list').innerText(), /No expiry date/);
+  await ctx.close();
+});
+
+test('owner: retention review (nothing deleted), schedule a post and copy a post (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-51').click();
+  await page.getByTestId('no-delete').waitFor();
+  assert.match(await page.getByTestId('retention-agents').innerText(), /Siti Agent[\s\S]*Legal hold/);
+  await page.getByTestId('ret-keep').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Lawyer has not answered: keep everything');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('retention-reviews').getByText(/Keep/).waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_retention_review').args.p_decision, 'keep');
+  assert.ok(!calls.some(c => /delete/i.test(c.fn)), 'no delete call anywhere');
+  await page.screenshot({ path: `${SHOTS}/43-retention-laptop.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-N').click();
+  await page.getByTestId('post-copy').first().click();
+  assert.equal(await page.getByTestId('title-en').inputValue(), 'OPR cut to 2.75% (copy)');
+  await page.getByTestId('title-en').fill('OPR outlook for December');
+  await page.getByTestId('publish-at').fill('2020-01-01T09:00');
+  await page.getByText('Pick a time from now on, before the end date.').waitFor();
+  await page.getByTestId('publish-at').fill('2030-12-01T09:00');
+  await page.getByTestId('post-schedule').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Monthly outlook, scheduled');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('post-msg').getByText(/Scheduled for 2030-12-01 09:00/).waitFor();
+  const sch = calls.find(c => c.fn === 'eab_admin_feed_schedule').args;
+  assert.equal(sch.p_at, '2030-12-01T01:00:00.000Z');
+  assert.equal(calls.find(c => c.fn === 'eab_admin_feed_save').args.p_item.id, undefined, 'a copy is a new post');
+  await page.getByTestId('post-state').filter({ hasText: 'Scheduled' }).first().waitFor();
+  await ctx.close();
+});
+
+test('viewer: no compliance screens', async () => {
+  const { page, ctx } = await open({ role: 'viewer', width: 390 });
+  await page.getByTestId('tile-71').waitFor();
+  for (const n of [50, 51, 82, 88, 91]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
   await ctx.close();
 });

@@ -46,6 +46,13 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch007: Compliance core — PDPA requests (reference PDPA-YYYY-####, 21-day answer rule for access / correction,
+decision, outcome, every step kept; deletion requests are logged only), Retention (what is older than 7 years, per kind and
+per agent; review recorded; nothing is deleted), Legal holds (the database refuses to delete an agent's records while on
+hold), Complaint register (CMP-YYYY-####), Licence expiry (dates, warnings at 60 / 30 / 7 days), internal tags and notes on
+the Agent Profile, scheduled posts and copying a post; Master Dashboard alerts for licences, PDPA and complaints.
+Needs `20261024000000_admin_batch_007_compliance.sql`.
+
 AdminBatch006: News & Announcements (Market News, pushed Projects, Announcements: EN / BM / ZH, picture and PDF upload
 to the public folder `eab-feed-media` or a pasted link, audience everyone / groups / invitation code, end date, push alert,
 preview, publish / withdraw, order per audience group by drag or typed position), Audience Groups (ranked, with how many

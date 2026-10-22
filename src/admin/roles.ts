@@ -18,7 +18,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewCases' | 'editCases' | 'grantRegulator' | 'vault'
   | 'viewHealth' | 'viewHealthAgents' | 'recordBackupTest' | 'editHealthLimits'
   | 'viewDash' | 'viewDashAgents'
-  | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps';
+  | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps'
+  | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -51,6 +52,15 @@ const RULES: Record<Ability, Role[]> = {
   editTickets: ['owner', 'admin'],                               // status and internal notes
   viewOps: ['owner', 'admin', 'compliance', 'viewer'],           // maintenance, minimum version, feature flags
   editOps: ['owner', 'admin'],
+  // AdminBatch007 — same rules as the compliance database functions
+  pdpa: ['owner', 'compliance'],                                 // PDPA requests (view and write)
+  complaints: ['owner', 'admin', 'compliance'],
+  viewHolds: ['owner', 'admin', 'compliance'],
+  placeHold: ['owner', 'compliance'],                            // place / release a legal hold
+  licences: ['owner', 'admin', 'compliance'],                    // licence expiry list and dates
+  internal: ['owner', 'admin', 'compliance'],                    // internal tags and notes on agents
+  viewRetention: ['owner', 'compliance'],
+  reviewRetention: ['owner'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

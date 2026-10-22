@@ -22,7 +22,14 @@ export type View =
   | { k: 'ops'; tab: OpsTab }
   | { k: 'master' }
   | { k: 'top' }
-  | { k: 'live' };
+  | { k: 'live' }
+  | { k: 'pdpa' }
+  | { k: 'pdpa_req'; id: string }
+  | { k: 'complaints' }
+  | { k: 'complaint'; id: string }
+  | { k: 'holds' }
+  | { k: 'licences' }
+  | { k: 'retention' };
 
 /** AdminBatch006 */
 export type NewsTab = 'news' | 'project' | 'announcement' | 'groups' | 'codes' | 'push';

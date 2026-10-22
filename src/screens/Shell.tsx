@@ -20,6 +20,7 @@ import { NewsScreen } from './News';
 import { TicketsScreen, TicketScreen } from './Tickets';
 import { OpsScreen } from './Ops';
 import { MasterScreen, TopAgentsScreen, LiveScreen } from './Overview';
+import { ComplaintScreen, ComplaintsScreen, HoldsScreen, LicencesScreen, PdpaRequestScreen, PdpaScreen, RetentionScreen } from './Compliance';
 
 export function Shell() {
   const { me, view, go, back, canBack, signOut, conn } = useAdmin();
@@ -69,6 +70,13 @@ export function Shell() {
         {view.k === 'master' && <MasterScreen />}
         {view.k === 'top' && <TopAgentsScreen />}
         {view.k === 'live' && <LiveScreen />}
+        {view.k === 'pdpa' && <PdpaScreen />}
+        {view.k === 'pdpa_req' && <PdpaRequestScreen key={view.id} id={view.id} />}
+        {view.k === 'complaints' && <ComplaintsScreen />}
+        {view.k === 'complaint' && <ComplaintScreen key={view.id} id={view.id} />}
+        {view.k === 'holds' && <HoldsScreen />}
+        {view.k === 'licences' && <LicencesScreen />}
+        {view.k === 'retention' && <RetentionScreen />}
         <footer className="small muted" style={{ marginTop: 32 }}>
           Admin EAB {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>

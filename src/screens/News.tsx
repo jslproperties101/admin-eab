@@ -70,7 +70,7 @@ function PostsTab({ kind }: { kind: FeedKind }) {
   const { data: items, err, load } = useLoad<FeedItem[]>(() => api.feedList(kind), [api, kind]);
   const { data: groups } = useLoad<AudienceGroup[]>(() => api.groups(), [api]);
   const { data: pushes, load: loadPush } = useLoad<PushReport[]>(() => api.pushList(), [api]);
-  const [editing, setEditing] = useState<FeedItem | 'new' | null>(null);
+  const [editing, setEditing] = useState<FeedItem | 'new' | { copy: FeedItem } | null>(null);
   const [ordering, setOrdering] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -93,17 +93,20 @@ function PostsTab({ kind }: { kind: FeedKind }) {
       </div>
       {msg && <p className="notice ok small" role="status" data-testid="post-msg">{msg}</p>}
       {ordering && groups && <OrderBox kind={kind} items={items} groups={groups} onDone={m => { setMsg(m); setOrdering(false); }} />}
-      {editing && <PostEditor kind={kind} item={editing === 'new' ? null : editing} groups={groups ?? []}
+      {editing && <PostEditor key={editing === 'new' ? 'new' : 'copy' in editing ? `copy-${editing.copy.id}` : editing.id} kind={kind}
+        item={editing === 'new' || 'copy' in editing ? null : editing} copyFrom={editing !== 'new' && 'copy' in editing ? editing.copy : null} groups={groups ?? []}
         onClose={() => setEditing(null)} onSaved={async (m) => { setMsg(m); setEditing(null); await load(); await loadPush(); }} />}
       {items.length === 0 ? <p className="muted">Nothing yet. {edit ? `Press “New ${KIND_ONE[kind]}”.` : ''}</p> : (
         <div className="stack" data-testid="post-list">
           {items.map(i => {
             const p = pushOf(i.id);
             const expired = i.expires_at && new Date(i.expires_at).getTime() < Date.now();
+            const later = i.status === 'published' && !!i.published_at && new Date(i.published_at).getTime() > Date.now();
             return (
               <div key={i.id} className="card post" data-testid="post-row">
                 <div className="row">
-                  <span className={`tag ${i.status === 'published' && !expired ? 'ok' : i.status === 'withdrawn' ? 'red' : ''}`}>{expired && i.status === 'published' ? 'Ended' : STATUS_WORD[i.status]}</span>
+                  <span className={`tag ${i.status === 'published' && !expired && !later ? 'ok' : i.status === 'withdrawn' ? 'red' : later ? 'amber' : ''}`} data-testid="post-state">
+                    {expired && i.status === 'published' ? 'Ended' : later ? `Scheduled ${fmtTime(i.published_at)}` : STATUS_WORD[i.status]}</span>
                   {i.display && <span className="tag">{i.display === 'banner' ? 'Banner' : 'Pop-up'}</span>}
                   <span className="tag">{AUDIENCE_WORD[i.audience]}{i.audience === 'groups' ? `: ${i.group_ids.map(g => groups?.find(x => x.id === g)?.name ?? '?').join(', ')}` : ''}</span>
                   {i.push_alert && <span className="tag gold">Push alert</span>}
@@ -119,6 +122,7 @@ function PostsTab({ kind }: { kind: FeedKind }) {
                 {edit && (
                   <div className="row">
                     <button className="btn small" onClick={() => setEditing(i)} data-testid="post-edit">Edit</button>
+                    <button className="btn small" onClick={() => setEditing({ copy: i })} data-testid="post-copy">Copy</button>
                     {i.status !== 'published' && <button className="btn small gold" onClick={() => setStatus(i, 'published')} data-testid="post-publish">Publish</button>}
                     {i.status === 'published' && <button className="btn small danger" onClick={() => setStatus(i, 'withdrawn')} data-testid="post-withdraw">Withdraw</button>}
                     {i.status === 'withdrawn' && <button className="btn small" onClick={() => setStatus(i, 'draft')}>Back to draft</button>}
@@ -167,14 +171,16 @@ function SendNow({ itemId, onDone }: { itemId: string | null; onDone: () => void
 type Lang = 'en' | 'bm' | 'zh';
 const LANG_TAB: { k: Lang; label: string }[] = [{ k: 'en', label: 'English' }, { k: 'bm', label: 'BM' }, { k: 'zh', label: '中文' }];
 
-function PostEditor({ kind, item, groups, onClose, onSaved }: {
-  kind: FeedKind; item: FeedItem | null; groups: AudienceGroup[]; onClose: () => void; onSaved: (msg: string) => Promise<void> | void;
+function PostEditor({ kind, item, copyFrom, groups, onClose, onSaved }: {
+  kind: FeedKind; item: FeedItem | null; copyFrom?: FeedItem | null; groups: AudienceGroup[]; onClose: () => void; onSaved: (msg: string) => Promise<void> | void;
 }) {
   const { api } = useAdmin();
-  const [d, setD] = useState<FeedDraft>(() => item
-    ? { id: item.id, kind, title_en: item.title_en, title_bm: item.title_bm, title_zh: item.title_zh, body_en: item.body_en, body_bm: item.body_bm, body_zh: item.body_zh,
-        image_url: item.image_url, link_url: item.link_url, pdf_url: item.pdf_url, push_alert: item.push_alert, display: item.display,
-        project: item.project, audience: item.audience, expires_at: item.expires_at, group_ids: item.group_ids }
+  const src = item ?? copyFrom ?? null;
+  const [at, setAt] = useState('');
+  const [d, setD] = useState<FeedDraft>(() => src
+    ? { ...(item ? { id: item.id } : {}), kind, title_en: item ? src.title_en : `${src.title_en} (copy)`.slice(0, 200), title_bm: src.title_bm, title_zh: src.title_zh, body_en: src.body_en, body_bm: src.body_bm, body_zh: src.body_zh,
+        image_url: src.image_url, link_url: src.link_url, pdf_url: src.pdf_url, push_alert: src.push_alert, display: src.display,
+        project: src.project, audience: src.audience, expires_at: item ? src.expires_at : null, group_ids: src.group_ids }
     : { kind, title_en: '', audience: 'all', push_alert: false, display: kind === 'announcement' ? 'banner' : null, group_ids: [], project: kind === 'project' ? {} : null });
   const [lang, setLang] = useState<Lang>('en');
   const [preview, setPreview] = useState<Lang | null>(null);
@@ -184,6 +190,23 @@ function PostEditor({ kind, item, groups, onClose, onSaved }: {
   const set = (p: Partial<FeedDraft>) => setD(x => ({ ...x, ...p }));
   const setProject = (p: Partial<ProjectInfo>) => setD(x => ({ ...x, project: { ...(x.project ?? {}), ...p } }));
   const tk = `title_${lang}` as const, bk = `body_${lang}` as const;
+  const atIso = fromLocalInput(at);
+  const atBad = !!at && (!atIso || new Date(atIso).getTime() < Date.now() - 60_000 || (!!d.expires_at && new Date(d.expires_at).getTime() <= new Date(atIso).getTime()));
+  const schedule = () => {
+    setTouched(true);
+    if (problems.length || !atIso || atBad) return;
+    confirm.ask({
+      title: `Schedule this ${KIND_ONE[kind]}`,
+      body: <p><b>{d.title_en}</b><br />Agents in "{AUDIENCE_WORD[d.audience ?? 'all']}" see it from <b>{at.replace('T', ' ')}</b> (Malaysia time).{d.push_alert ? ' The push alert waits until then.' : ''}</p>,
+      label: 'Save and schedule',
+      run: async reason => {
+        const clean: FeedDraft = { ...d, project: kind === 'project' ? d.project ?? {} : null, display: kind === 'announcement' ? d.display : null, group_ids: d.audience === 'groups' ? d.group_ids : [] };
+        const saved = await api.feedSave(clean, reason);
+        await api.feedSchedule(saved.id, atIso, reason);
+        await onSaved(`Scheduled for ${at.replace('T', ' ')}: ${saved.title_en}`);
+      },
+    });
+  };
   const save = (publish: boolean) => {
     setTouched(true);
     if (problems.length) return;
@@ -203,7 +226,7 @@ function PostEditor({ kind, item, groups, onClose, onSaved }: {
   };
   return (
     <div className="card boxed stack editor" data-testid="post-editor">
-      <div className="row"><h3 className="spacer">{item ? 'Edit' : 'New'} {KIND_ONE[kind]}</h3><button className="btn small" onClick={onClose}>Cancel</button></div>
+      <div className="row"><h3 className="spacer">{item ? 'Edit' : copyFrom ? 'Copy of a' : 'New'} {KIND_ONE[kind]}</h3><button className="btn small" onClick={onClose}>Cancel</button></div>
       <div className="tabs" role="group" aria-label="Language" style={{ margin: 0 }}>
         {LANG_TAB.map(l => <button key={l.k} aria-pressed={lang === l.k} onClick={() => setLang(l.k)} data-testid={`lang-${l.k}`}>
           {l.label}{l.k !== 'en' && !(d[`title_${l.k}` as const] ?? '').trim() ? ' (empty → English)' : ''}</button>)}
@@ -252,6 +275,9 @@ function PostEditor({ kind, item, groups, onClose, onSaved }: {
       )}
       {d.audience === 'codes' && <p className="muted small">Only agents who type an invitation code for this project see it. Make the code in “Invitation codes” after saving.</p>}
       <div className="grid2">
+        {item?.status !== 'published' && <label className="field"><span>Publish later at (optional, Malaysia time)</span>
+          <input type="datetime-local" value={at} onChange={e => setAt(e.target.value)} data-testid="publish-at" />
+          {atBad && <small className="error">Pick a time from now on, before the end date.</small>}</label>}
         <label className="field"><span>Ends on (optional, Malaysia time)</span>
           <input type="datetime-local" value={toLocalInput(d.expires_at)} onChange={e => set({ expires_at: fromLocalInput(e.target.value) })} data-testid="expires" /></label>
         <label className="choice switch"><input type="checkbox" checked={!!d.push_alert} onChange={e => set({ push_alert: e.target.checked })} data-testid="push-alert" />
@@ -262,7 +288,9 @@ function PostEditor({ kind, item, groups, onClose, onSaved }: {
         <button className="btn" onClick={() => setPreview(preview ? null : lang)} data-testid="preview">{preview ? 'Hide preview' : 'Preview'}</button>
         <span className="spacer" />
         <button className="btn" onClick={() => save(false)} data-testid="post-save">Save</button>
-        {item?.status !== 'published' && <button className="btn gold" onClick={() => save(true)} data-testid="post-save-publish">Save and publish</button>}
+        {item?.status !== 'published' && (at
+          ? <button className="btn gold" disabled={atBad} onClick={schedule} data-testid="post-schedule">Save and schedule</button>
+          : <button className="btn gold" onClick={() => save(true)} data-testid="post-save-publish">Save and publish</button>)}
       </div>
       {preview && <Preview d={d} lang={preview} onLang={setPreview} />}
       {confirm.node}

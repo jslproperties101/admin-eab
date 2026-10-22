@@ -9,6 +9,7 @@ import { fmtTime, historyLines, labelOf, recordFields, recordTitle, sortCollecti
 import { exportAgentProfile } from '../export/run';
 import { ConfirmDialog, ErrorBox, Kv, Loading } from './ui';
 import { EVENT_LABEL, LicenceTag, STATUS_LABEL, StatusTag, isBadEvent, platformLabel } from './status';
+import { InternalBox } from './Compliance';
 
 // Special tabs next to the record types (AdminBatch002).
 const LOGIN_TAB = '__login', TERMS_TAB = '__terms';
@@ -51,6 +52,7 @@ export function AgentScreen({ id, openCollection, openRecord }: { id: string; op
             { k: 'Workspaces', v: p.workspaces.map(w => `${w.name} (${w.role})`).join(', ') },
           ]} />
         </div>
+        {can(me.role, 'internal') && <InternalBox userId={p.user_id} email={p.email} />}
         {can(me.role, 'accountActions') && <AccountBox profile={p} onChanged={() => void load()} />}
         {can(me.role, 'verifyLicence') && p.licence_detail && <LicenceBox profile={p} onChanged={() => void load()} />}
         {can(me.role, 'export') && <ExportBox profile={p} />}

@@ -3,7 +3,7 @@
 // Top Agents names agents (Owner / Admin / Compliance, access-logged). Live Users: counts for everyone, names for staff.
 import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { View, errText, useAdmin } from '../ctx';
-import { can } from '../admin/roles';
+import { Ability, Role, can } from '../admin/roles';
 import { LiveUsers, MasterDash, TopAgent } from '../api/admin';
 import { MB, daysSince, fmtBytes, levelFor, pct, todayKL } from '../admin/health';
 import { RANGE_LABEL, RangeKey, fmtNum, nameLabel, presetRange } from '../admin/dash';
@@ -31,9 +31,17 @@ export function masterAlerts(m: MasterDash, today: string): Alert[] {
   if (m.min_version_mode === 'hard' && m.min_version) a.push({ level: 'amber', text: `Hard block below version ${m.min_version}`, open: { k: 'ops', tab: 'release' } });
   if (m.stale) a.push({ level: 'amber', text: `${m.stale} stale listing${m.stale === 1 ? '' : 's'} (60+ days)`, open: { k: 'dash', tab: 'listings' } });
   if (m.at_risk) a.push({ level: 'amber', text: `${m.at_risk} agent${m.at_risk === 1 ? '' : 's'} at risk of leaving`, open: { k: 'dash', tab: 'retention' } });
+  if (m.licences_expired) a.push({ level: 'red', text: `${m.licences_expired} licence${m.licences_expired === 1 ? '' : 's'} expired`, open: { k: 'licences' } });
+  if (m.licences_expiring_30) a.push({ level: 'amber', text: `${m.licences_expiring_30} licence${m.licences_expiring_30 === 1 ? '' : 's'} expiring within 30 days`, open: { k: 'licences' } });
+  if (m.pdpa_due_soon) a.push({ level: 'red', text: `${m.pdpa_due_soon} PDPA request${m.pdpa_due_soon === 1 ? '' : 's'} open 14+ days (21-day rule)`, open: { k: 'pdpa' } });
+  else if (m.pdpa_active) a.push({ level: 'amber', text: `${m.pdpa_active} PDPA request${m.pdpa_active === 1 ? '' : 's'} open`, open: { k: 'pdpa' } });
+  if (m.complaints_active) a.push({ level: 'amber', text: `${m.complaints_active} complaint${m.complaints_active === 1 ? '' : 's'} open`, open: { k: 'complaints' } });
   if (m.licences_unverified) a.push({ level: 'amber', text: `${m.licences_unverified} licence${m.licences_unverified === 1 ? '' : 's'} not verified`, open: { k: 'agents', filter: 'licence' } });
   return a.sort((x, y) => (x.level === y.level ? 0 : x.level === 'red' ? -1 : 1));
 }
+
+const NEEDS: Partial<Record<View['k'], Ability>> = { tickets: 'viewTickets', pdpa: 'pdpa', complaints: 'complaints', licences: 'licences', agents: 'listAgents', top: 'viewDashAgents' };
+const openable = (v: View, role: Role) => { const n = NEEDS[v.k]; return !n || can(role, n); };
 
 function Tile({ label, value, sub, open, testid }: { label: string; value: ReactNode; sub?: ReactNode; open?: View; testid?: string }) {
   const { go } = useAdmin();
@@ -60,7 +68,7 @@ export function MasterScreen() {
         {alerts.length === 0 ? <p className="muted" style={{ margin: 0 }}>Nothing needs attention right now.</p> : (
           <ul className="alerts">{alerts.map(a => (
             <li key={a.text} className={a.level}>
-              {a.open && (a.open.k !== 'tickets' || staff) ? <button className="linkbtn" onClick={() => go(a.open!)}>{a.text}</button> : <span>{a.text}</span>}
+              {a.open && openable(a.open, me.role) ? <button className="linkbtn" onClick={() => go(a.open!)}>{a.text}</button> : <span>{a.text}</span>}
             </li>))}</ul>
         )}
       </div>
@@ -70,6 +78,7 @@ export function MasterScreen() {
         <Tile label="Using the app now" value={fmtNum(m.live_now)} sub="last 5 minutes" open={{ k: 'live' }} testid="m-live" />
         <Tile label="Active today" value={fmtNum(m.active_today)} sub={`${m.active_7d} in 7 days · ${m.active_30d} in 30`} open={{ k: 'dash', tab: 'active' }} />
         <Tile label="At risk" value={fmtNum(m.at_risk)} open={{ k: 'dash', tab: 'retention' }} />
+        <Tile label="Holds / complaints" value={`${fmtNum(m.holds_active ?? 0)} / ${fmtNum(m.complaints_active ?? 0)}`} sub="legal holds / open complaints" open={can(me.role, 'complaints') ? { k: 'complaints' } : undefined} />
         <Tile label="Accounts not active" value={fmtNum(m.accounts_not_active)} sub="suspended / banned / closed" open={can(me.role, 'listAgents') ? { k: 'agents', filter: 'not_active' } : undefined} />
       </div>
       <div className="card"><Bars label="Agents who used the app, last 14 days" items={m.active_by_day.map(d => ({ label: d.day, value: d.agents }))} /></div>

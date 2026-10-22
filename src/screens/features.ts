@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-006). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-007). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -20,8 +20,11 @@ export const SECTIONS: Section[] = [
     { n: 75, name: 'Temporary Regulator Login', open: { k: 'cases' }, needs: 'grantRegulator', note: 'Given inside a case, max 90 days' },
     { n: 78, name: 'Agent Data Export (PDPA)', open: { k: 'cases' }, needs: 'editCases', note: 'Make a PDPA case for the agent' },
     { n: 19, name: 'Document Vault', open: { k: 'vault' }, needs: 'vault', note: 'Every pack and export, 7 years' },
-    { n: 50, name: 'PDPA & Deletion Requests' },
-    { n: 51, name: 'Retention Policy (7 years)' },
+    { n: 50, name: 'PDPA & Deletion Requests', open: { k: 'pdpa' }, needs: 'pdpa', note: '21-day rule; deletion logged only' },
+    { n: 51, name: 'Retention Policy (7 years)', open: { k: 'retention' }, needs: 'viewRetention', note: 'Review only; nothing deleted' },
+    { n: 88, name: 'Legal Hold', open: { k: 'holds' }, needs: 'viewHolds', note: 'Freeze an agent’s records' },
+    { n: 91, name: 'Complaint Register', open: { k: 'complaints' }, needs: 'complaints', note: 'Complaints about agents' },
+    { n: 82, name: 'Licence Expiry', open: { k: 'licences' }, needs: 'licences', note: 'Warnings at 60 / 30 / 7 days' },
     { n: 52, name: 'Licence Verification', open: { k: 'agents', filter: 'licence' }, needs: 'listAgents', note: 'Unverified first' },
     { n: 53, name: 'Terms Acceptance Log', open: { k: 'agents', filter: 'all' }, needs: 'listAgents', note: 'Version per agent; history in profile' },
     { n: 16, name: 'Content Moderation' },

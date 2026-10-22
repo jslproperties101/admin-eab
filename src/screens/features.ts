@@ -3,7 +3,7 @@
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
-export interface Feature { n: number | string; name: string; open?: View; needs?: Ability; note?: string; blocked?: string }
+export interface Feature { n: number | string; name: string; open?: View; needs?: Ability; note?: string; blocked?: string; /** AdminBatch008: ask To-Do or Calendar first (same as the main app's Agenda card). */ choose?: boolean }
 export interface Section { title: string; items: Feature[] }
 
 const SEARCH: View = { k: 'search' };
@@ -30,10 +30,10 @@ export const SECTIONS: Section[] = [
     { n: 16, name: 'Content Moderation' },
     { n: 57, name: 'Photo Moderation' },
   ] },
-  { title: 'Reports', items: [
-    { n: 90, name: 'Monthly Board Report', open: { k: 'reports', tab: 'board' }, needs: 'boardReport', note: 'Compared with last month; kept in the vault' },
-    { n: 129, name: 'Annual Audit Bundle', open: { k: 'reports', tab: 'audit' }, needs: 'auditBundle', note: 'Logs, tamper check, cases, PDPA, holds' },
-    { n: 127, name: 'Custom Report Builder', open: { k: 'reports', tab: 'builder' }, needs: 'reportBuilder', note: 'Pick columns, filters, totals; save and share' },
+  { title: 'Report Centre', items: [
+    { n: 90, name: 'Monthly Board Report', open: { k: 'reportcentre', tab: 'board' }, needs: 'boardReport', note: 'Compared with last month; kept in the vault' },
+    { n: 129, name: 'Annual Audit Bundle', open: { k: 'reportcentre', tab: 'audit' }, needs: 'auditBundle', note: 'Logs, tamper check, cases, PDPA, holds' },
+    { n: 127, name: 'Custom Report Builder', open: { k: 'reportcentre', tab: 'builder' }, needs: 'reportBuilder', note: 'Pick columns, filters, totals; save and share' },
   ] },
   { title: 'Security', items: [
     { n: 17, name: 'Admins & Roles', open: { k: 'admins' }, needs: 'manageAdmins' },
@@ -48,15 +48,15 @@ export const SECTIONS: Section[] = [
     { n: 63, name: 'Announcements & Banners', open: { k: 'news', tab: 'announcement' }, needs: 'viewContent', note: 'Banner or pop-up' },
     { n: 'G', name: 'Audience Groups', open: { k: 'news', tab: 'groups' }, needs: 'viewContent', note: 'Saved, ranked filters' },
     { n: 15, name: 'Broadcast Push', open: { k: 'news', tab: 'push' }, needs: 'viewContent', note: 'Send waiting alerts' },
-    { n: 64, name: 'Email & WhatsApp Broadcast' },
+    { n: 64, name: 'Email & WhatsApp Broadcast', open: { k: 'broadcasts' }, needs: 'viewBroadcasts', note: 'Service notices and news & offers' },
     { n: 65, name: 'Support Tickets & Feedback', open: { k: 'tickets' }, needs: 'viewTickets', note: 'Problem reports, status, notes' },
     { n: 66, name: 'App Release Manager', open: { k: 'ops', tab: 'release' }, needs: 'viewOps', note: 'Minimum version, soft / hard' },
     { n: 68, name: 'Maintenance Mode', open: { k: 'ops', tab: 'maintenance' }, needs: 'viewOps', note: 'Block the app, 3 languages' },
     { n: 67, name: 'Feature Flags', open: { k: 'ops', tab: 'flags' }, needs: 'viewOps', note: 'Switch features per group' },
     { n: 11, name: 'System Settings', open: { k: 'settings' }, needs: 'viewSettings', note: 'Company name, support contact' },
-    { n: 69, name: 'Team Workspaces' },
-    { n: 70, name: 'Scheduled Reports' },
-    { n: 13, name: 'To-Do & Calendar' },
+    { n: 69, name: 'Team Workspaces', open: { k: 'workspaces' }, needs: 'workspaces', note: 'Agents’ workspaces, teams, members' },
+    { n: 70, name: 'Scheduled Reports', open: { k: 'reports' }, needs: 'reports', note: 'Weekly PDF, kept and emailed' },
+    { n: 13, name: 'To-Do & Calendar', open: { k: 'todo', tab: 'todo' }, needs: 'todo', note: 'Yours, or shared with the team', choose: true },
   ] },
   { title: 'Users & Growth', items: [
     { n: 1, name: 'Agents Overview', open: { k: 'agents', filter: 'all' }, needs: 'listAgents', note: 'Status, licence, last sign-in' },

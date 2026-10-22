@@ -20,6 +20,7 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewDash' | 'viewDashAgents'
   | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps'
   | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention'
+  | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo'
   | 'boardReport' | 'auditBundle' | 'reportBuilder' | 'reportNames';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
@@ -62,7 +63,15 @@ const RULES: Record<Ability, Role[]> = {
   internal: ['owner', 'admin', 'compliance'],                    // internal tags and notes on agents
   viewRetention: ['owner', 'compliance'],
   reviewRetention: ['owner'],
-  // AdminBatch008 — same rules as the report database functions
+  // AdminBatch008 — same rules as the broadcast / report / workspace / to-do database functions
+  viewBroadcasts: ['owner', 'admin', 'compliance', 'viewer'],   // list and counts, no names
+  broadcastNames: ['owner', 'admin', 'compliance'],             // who got it (names, email, phone)
+  editBroadcasts: ['owner', 'admin'],                            // write, queue, send, cancel, tap-to-send
+  reports: ['owner', 'compliance'],                              // weekly report list, download, make now
+  reportSchedule: ['owner'],                                     // switch on / off, day, hour, who gets it
+  workspaces: ['owner', 'admin', 'compliance'],
+  todo: ['owner', 'admin', 'compliance', 'viewer'],              // own items; a Viewer cannot share or change shared ones
+  // AdminBatch008 Reports — same rules as the Board report / audit bundle / report builder functions
   boardReport: ['owner', 'compliance'],                          // monthly Board report (kept in the vault)
   auditBundle: ['owner', 'compliance'],                          // annual audit bundle (kept in the vault)
   reportBuilder: ['owner', 'admin', 'compliance', 'viewer'],     // custom reports; Viewer: grouped totals only

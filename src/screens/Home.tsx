@@ -1,10 +1,13 @@
 // Home: every feature as an icon tile, grouped in sections. Built features open; the rest say "Coming soon".
+import { useState } from 'react';
 import { useAdmin } from '../ctx';
 import { can, ROLE_HELP } from '../admin/roles';
 import { SECTIONS } from './features';
 
 export function Home() {
   const { me, go } = useAdmin();
+  // AdminBatch008: To-Do & Calendar asks which one first, like the main app's Agenda card.
+  const [ask, setAsk] = useState(false);
   if (me.role === 'regulator') return <RegulatorHome />;
   const ready = SECTIONS.flatMap(s => s.items).filter(f => f.open && (!f.needs || can(me.role, f.needs))).length;
   return (
@@ -24,7 +27,7 @@ export function Home() {
               const status = f.blocked ? f.blocked : f.open && !allowed ? 'Not for your role' : f.open ? f.note ?? 'Open' : 'Coming soon';
               return (
                 <button key={`${s.title}-${f.n}`} className={`tile ${isReady ? 'ready' : 'soon'}`} disabled={!isReady}
-                  onClick={() => f.open && go(f.open)} data-testid={isReady ? `tile-${f.n}` : undefined}>
+                  onClick={() => { if (f.choose) setAsk(true); else if (f.open) go(f.open); }} data-testid={isReady ? `tile-${f.n}` : undefined}>
                   <span className="ico" aria-hidden="true">{String(f.n)}</span>
                   <span className="t">{f.name}</span>
                   <span className="n">{status}</span>
@@ -34,6 +37,16 @@ export function Home() {
           </div>
         </section>
       ))}
+      {ask && (
+        <div className="overlay" role="presentation" onClick={e => { if (e.target === e.currentTarget) setAsk(false); }}>
+          <div className="dialog card boxed stack" role="dialog" aria-modal="true" aria-label="Open which?" data-testid="agenda-ask">
+            <h2>Open which?</h2>
+            <button className="btn gold" onClick={() => { setAsk(false); go({ k: 'todo', tab: 'calendar' }); }} data-testid="agenda-calendar">Calendar</button>
+            <button className="btn gold" onClick={() => { setAsk(false); go({ k: 'todo', tab: 'todo' }); }} data-testid="agenda-todo">To-Do</button>
+            <button className="btn" onClick={() => setAsk(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

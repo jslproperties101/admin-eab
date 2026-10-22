@@ -46,6 +46,14 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch008: Email & WhatsApp broadcast (service notice to everyone chosen / news & offers only to agents who said yes;
+email through Resend, WhatsApp tap-to-send plus the WhatsApp Business sender switched off until Meta keys exist; the list of
+who gets it is fixed with a typed reason and kept for good; unsubscribe link in every email), Scheduled Reports (weekly
+summary PDF, totals only, kept in the vault for 7 years and emailed to chosen Owner / Compliance admins; "make one now"),
+Team Workspaces overview (read only), To-Do & Calendar for admins (each item private or shared; shared changes recorded),
+"Check a file" also knows weekly reports, Feature flags page explains tile.<card> and beta.<name>. Needs
+`20261025000000_admin_batch_008_comms.sql` and the Edge Functions send-broadcast, email-unsubscribe, weekly-report
+(main repo, branch feature/admin-batch-008-db).
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,

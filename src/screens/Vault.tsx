@@ -4,7 +4,8 @@
 // Admin EAB made, and which one.
 import { useCallback, useEffect, useState } from 'react';
 import { useAdmin, errText } from '../ctx';
-import { Pack } from '../api/admin';
+import { Pack, ReportRun } from '../api/admin';
+import { can } from '../admin/roles';
 import { sha256Hex } from '../api/session';
 import { fmtTime } from '../export/reports';
 import { shortFp } from '../export/pack';
@@ -12,7 +13,7 @@ import { KIND_LABEL, PackList } from './Case';
 import { ErrorBox, Kv, Loading } from './ui';
 
 export function VaultScreen() {
-  const { api } = useAdmin();
+  const { api, me, go } = useAdmin();
   const [rows, setRows] = useState<Pack[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -25,6 +26,10 @@ export function VaultScreen() {
       <h1>Document Vault</h1>
       <p className="muted" style={{ margin: 0 }}>Every case pack and agent export, kept for 7 years. Nobody can change or delete a file here. Downloads are recorded.</p>
       <CheckFile />
+      {can(me.role, 'reports') && (
+        <div className="row"><small className="muted spacer">Weekly summary reports are kept here too and listed in Scheduled Reports.</small>
+          <button className="btn small" onClick={() => go({ k: 'reports' })} data-testid="vault-reports">Weekly reports</button></div>
+      )}
       {err && <ErrorBox text={err} onRetry={() => void load()} />}
       {!rows && !err && <Loading />}
       {rows && <PackList packs={rows} showCase />}
@@ -33,16 +38,19 @@ export function VaultScreen() {
 }
 
 function CheckFile() {
-  const { api } = useAdmin();
+  const { api, me } = useAdmin();
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<{ name: string; sha: string; pack: Pack | null } | null>(null);
+  const [res, setRes] = useState<{ name: string; sha: string; pack: Pack | null; report?: ReportRun | null } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const onFile = async (f: File | undefined) => {
     if (!f) return;
     setBusy(true); setErr(null); setRes(null);
     try {
       const sha = await sha256Hex(f);
-      setRes({ name: f.name, sha, pack: await api.checkFile(sha) });
+      const pack = await api.checkFile(sha);
+      // AdminBatch008: weekly reports are vault files too (Owner / Compliance).
+      const report = !pack && can(me.role, 'reports') ? await api.checkReport(sha) : null;
+      setRes({ name: f.name, sha, pack, report });
     } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
   };
   return (
@@ -62,6 +70,16 @@ function CheckFile() {
             { k: 'Case', v: res.pack.case_no ?? '' },
             { k: 'Agent', v: res.pack.agent_email ?? '' },
             { k: 'Made', v: `${fmtTime(res.pack.created_at)}${res.pack.created_by_email ? ` by ${res.pack.created_by_email}` : ''}` },
+            { k: 'Fingerprint', v: <span className="mono">{res.sha}</span> },
+          ]} />
+        </div>
+      ) : res.report ? (
+        <div className="notice ok" data-testid="check-file-ok">
+          <b>Genuine and unchanged.</b> “{res.name}” is exactly the weekly report made by Admin EAB:
+          <Kv rows={[
+            { k: 'Reference', v: res.report.ref },
+            { k: 'Week', v: `${res.report.period_from} – ${res.report.period_to}` },
+            { k: 'Made', v: `${fmtTime(res.report.created_at)}${res.report.started_by_email ? ` (${res.report.trigger === 'manual' ? 'by' : 'schedule of'} ${res.report.started_by_email})` : ''}` },
             { k: 'Fingerprint', v: <span className="mono">{res.sha}</span> },
           ]} />
         </div>

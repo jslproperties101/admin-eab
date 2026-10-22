@@ -180,5 +180,5 @@ test('roles mirror the database; report tiles open', () => {
   };
   for (const [ab, roles] of Object.entries(rule)) for (const r of ALL_ROLES) assert.equal(can(r, ab as never), roles.includes(r), `${ab} ${r}`);
   const open = new Map(SECTIONS.flatMap(s => s.items).filter(f => f.open).map(f => [String(f.n), f]));
-  for (const n of ['90', '127', '129']) assert.equal(open.get(n)?.open?.k, 'reports', n);
+  for (const n of ['90', '127', '129']) assert.equal(open.get(n)?.open?.k, 'reportcentre', n);
 });

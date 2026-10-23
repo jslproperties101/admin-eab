@@ -25,6 +25,7 @@ import { BroadcastScreen, BroadcastsScreen } from './Broadcasts';
 import { WeeklyReportsScreen } from './WeeklyReports';
 import { WorkspaceScreen, WorkspacesScreen } from './Workspaces';
 import { TodoScreen } from './Todo';
+import { MarketScreen } from './Market';
 import { ComplaintScreen, ComplaintsScreen, HoldsScreen, LicencesScreen, PdpaRequestScreen, PdpaScreen, RetentionScreen } from './Compliance';
 
 export function Shell() {
@@ -89,6 +90,7 @@ export function Shell() {
         {view.k === 'workspaces' && <WorkspacesScreen />}
         {view.k === 'workspace' && <WorkspaceScreen key={view.id} id={view.id} />}
         {view.k === 'todo' && <TodoScreen key={view.tab} tab={view.tab} />}
+        {view.k === 'market' && <MarketScreen key={view.tab} tab={view.tab} />}
         <footer className="small muted" style={{ marginTop: 32 }}>
           Admin EAB {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>

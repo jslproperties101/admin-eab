@@ -251,6 +251,61 @@ function b8Fake() {
   return { st, id, now, agents, cand, json, detail, settingsJson, workspaces, workspace, admins };
 }
 
+/** AdminBatch009 fake Listings & market data (lists with names only for owner / admin / compliance, like the database). */
+function marketFake() {
+  const staff = ['owner', 'admin', 'compliance'], view = [...staff, 'viewer'];
+  const siti = { user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent' };
+  return {
+    view, staff,
+    quality: (a, role) => ({ listings: 4, average: 58.8, bands: { good: 1, fair: 2, poor: 1 }, missing: { photos: 1, more_photos: 1, map_pin: 3, tenure: 2 },
+      by_state: [{ state: 'Selangor', listings: 3, average: 63.3 }, { state: 'Not set', listings: 1, average: 45 }], below: a.p_below, weak_count: 3,
+      names_hidden: !staff.includes(role),
+      weak: staff.includes(role) ? [
+        { ...siti, id: 'p1', ref: 'P1001', headline: 'Terrace in Kajang', type: 'Terrace house', state: 'Selangor', city: 'Kajang', status: 'available', score: 45, photos: 0, missing: ['photos', 'map_pin', 'tenure'], updated_at: '2026-10-20T00:00:00Z' },
+        { ...siti, id: 'p3', ref: 'P1003', headline: 'Condo', type: 'Condominium', state: 'Selangor', city: 'Cheras', status: 'available', score: 70, photos: 2, missing: ['more_photos', 'map_pin'], updated_at: '2026-10-19T00:00:00Z' },
+      ] : null }),
+    dom: a => ({ from: a.p_from, to: a.p_to, no_date: 1, open: { listings: 3, median: 64, average: 81.3, buckets: { under_30: 1, d30_89: 1, d90_179: 0, d180_plus: 1 } },
+      closed: { listings: 1, median: 42 },
+      by_state: [{ state: 'Selangor', open: 2, median: 52, average: 52, oldest: 90, closed: 1, closed_median: 42 }, { state: 'Johor', open: 1, median: 190, average: 190, oldest: 190, closed: 0, closed_median: null }],
+      by_city: [{ state: 'Selangor', city: 'Kajang', open: 2, median: 52, average: 52, oldest: 90, closed: 1, closed_median: 42 }, { state: 'Johor', city: 'Johor Bahru', open: 1, median: 190, average: 190, oldest: 190, closed: 0, closed_median: null }],
+      by_type: [{ type: 'Terrace house', open: 2, median: 52, average: 52, oldest: 90, closed: 1, closed_median: 42 }] }),
+    price: (a, role) => ({ from: a.p_from, to: a.p_to, deals: 3, compared: 2, not_linked: 1, no_price: 0, average_pct: -2.5, median_pct: -2.5, below: 1, at: 1, above: 0,
+      by_side: [{ side: 'sale', deals: 2, average_pct: -2.5, median_pct: -2.5 }], by_state: [{ state: 'Selangor', deals: 2, average_pct: -2.5, median_pct: -2.5 }],
+      by_type: [{ type: 'Terrace house', deals: 2, average_pct: -2.5, median_pct: -2.5 }], names_hidden: !staff.includes(role),
+      list: staff.includes(role) ? [{ ...siti, deal_id: 'd1', date: '2026-10-17', side: 'sale', ref: 'P1001', headline: 'Terrace in Kajang', type: 'Terrace house', state: 'Selangor', city: 'Kajang', asking: 1000000, final: 950000, pct: -5 },
+        { ...siti, deal_id: 'd2', date: '2026-10-10', side: 'sale', ref: 'P1004', headline: null, type: 'Terrace house', state: 'Selangor', city: 'Kajang', asking: 500000, final: 500000, pct: 0 }] : null }),
+    areas: a => ({ from: a.p_from, to: a.p_to, on_market: 4, new: 2, closed: 1, enquiries: 5, enquiries_unlinked: 1,
+      by_state: [{ state: 'Selangor', on_market: 3, new: 2, closed: 1, enquiries: 4, per_listing: 1.33 }, { state: 'Johor', on_market: 1, new: 0, closed: 0, enquiries: 0, per_listing: 0 }],
+      by_city: [{ state: 'Selangor', city: 'Kajang', on_market: 2, new: 1, closed: 1, enquiries: 4, per_listing: 2, supply_level: 1, demand_level: 1 },
+        { state: 'Selangor', city: 'Cheras', on_market: 1, new: 1, closed: 0, enquiries: 0, per_listing: 0, supply_level: 0.5, demand_level: 0 },
+        { state: 'Johor', city: 'Johor Bahru', on_market: 1, new: 0, closed: 0, enquiries: 0, per_listing: 0, supply_level: 0.5, demand_level: 0 }] }),
+    stuck: (a, role) => {
+      const all = [{ ...siti, id: 'p9', ref: 'P1009', headline: 'Semi-D', type: 'Semi-D house', state: 'Johor', city: 'Johor Bahru', stage: 'booked_pending_loan', asking: 800000, updated_at: '2026-08-14T00:00:00Z', days: 70 },
+        { ...siti, id: 'p8', ref: 'P1008', headline: null, type: null, state: null, city: null, stage: 'booked_pending_consent', asking: null, updated_at: '2026-09-20T00:00:00Z', days: 33 }];
+      const list = all.filter(x => x.days >= a.p_days);
+      return { days: a.p_days, booked: 3, stuck_count: list.length, by_stage: [{ stage: 'booked_pending_consent', booked: 1, stuck: list.filter(x => x.stage === 'booked_pending_consent').length, oldest: 33 },
+        { stage: 'booked_pending_loan', booked: 2, stuck: list.filter(x => x.stage === 'booked_pending_loan').length, oldest: 70 }], names_hidden: !staff.includes(role), list: staff.includes(role) ? list : null };
+    },
+    commission: (a, role) => ({ from: a.p_from, to: a.p_to,
+      open: { deals: 3, value: 1953000, commission: 61500, agents_share: 46500, estimated: 28500, confirmed: 33000, overdue: 1, no_date: 0 },
+      received: { deals: 1, commission: 8000, agents_share: 8000 },
+      by_month: [{ month: '2026-10', deals: 1, estimated: 0, confirmed: 3000, commission: 3000 }, { month: '2026-11', deals: 2, estimated: 28500, confirmed: 30000, commission: 58500 }],
+      by_side: [{ side: 'rent', deals: 1, value: 3000, commission: 3000 }, { side: 'sale', deals: 2, value: 1950000, commission: 58500 }],
+      by_stage: [{ stage: 'available', deals: 1, commission: 28500 }, { stage: 'booked_pending_loan', deals: 1, commission: 30000 }, { stage: 'not_linked', deals: 1, commission: 3000 }],
+      names_hidden: !staff.includes(role), agents: staff.includes(role) ? [{ ...siti, deals: 3, commission: 61500, agents_share: 46500, next_date: '2026-11-12' }] : null }),
+    projects: a => ({ from: a.p_from, to: a.p_to, projects: 1, reached: 2, opened: 1, redeemed: 2,
+      list: [{ id: 'f9', title: 'Eco Park Phase 2', developer: 'Eco World', status: 'published', published_at: '2026-10-20T02:00:00Z', expires_at: null, audience: 'codes', reached: 2, opened: 1, open_pct: 50, redeemed: 2, codes: 1 }],
+      by_day: [{ day: '2026-10-21', opened: 1, redeemed: 2 }] }),
+    news: a => ({ from: a.p_from, to: a.p_to, posts: 2, reached: 12, opened: 7, open_pct: 58.3, with_alert: { posts: 1, open_pct: 66.7 }, without_alert: { posts: 1, open_pct: 50 },
+      list: [{ id: 'f1', title: 'OPR cut: what it means', published_at: '2026-10-21T02:00:00Z', audience: 'all', push_alert: true, reached: 6, opened: 4, open_pct: 66.7, median_hours: 0.75 },
+        { id: 'f2', title: 'New stamp duty rules', published_at: '2026-10-15T02:00:00Z', audience: 'groups', push_alert: false, reached: 6, opened: 3, open_pct: 50, median_hours: 26 }],
+      by_language: [{ language: 'en', reached: 8, opened: 5, open_pct: 62.5 }, { language: 'ms', reached: 4, opened: 2, open_pct: 50 }],
+      by_group: [{ group_id: 'g1', group: 'Selangor RENs', priority: 1, reached: 6, opened: 4, open_pct: 66.7 }],
+      heatmap: [{ dow: 2, hour: 9, events: 4 }, { dow: 3, hour: 20, events: 2 }, { dow: 6, hour: 11, events: 1 }],
+      best: [{ dow: 2, hour: 9, opens: 4 }, { dow: 3, hour: 20, opens: 2 }, { dow: 6, hour: 11, opens: 1 }] }),
+  };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -276,6 +331,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
     agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', date_from: '2026-10-01', date_to: null, added_at: '2026-10-18T00:00:00Z', removed_at: null }], grants: [] });
   const health = healthFake();
   const dash = dashFake();
+  const mkt = marketFake();
   const ops = opsFake();
   const cmp = complianceFake();
   const rep = reportsFake();
@@ -468,6 +524,15 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_dash_listings': return dash.dash.includes(role) ? route.fulfill(ok(dash.listings(args, role))) : route.fulfill(denied);
       case 'eab_admin_dash_usage': return dash.dash.includes(role) ? route.fulfill(ok(dash.usage(args))) : route.fulfill(denied);
       case 'eab_admin_dash_events': return dash.staff.includes(role) ? route.fulfill(ok(dash.events(args))) : route.fulfill(denied);
+      // AdminBatch009 — Listings & market
+      case 'eab_admin_market_quality': return mkt.view.includes(role) ? route.fulfill(ok(mkt.quality(args, role))) : route.fulfill(denied);
+      case 'eab_admin_market_dom': return mkt.view.includes(role) ? route.fulfill(ok(mkt.dom(args))) : route.fulfill(denied);
+      case 'eab_admin_market_price': return mkt.view.includes(role) ? route.fulfill(ok(mkt.price(args, role))) : route.fulfill(denied);
+      case 'eab_admin_market_areas': return mkt.view.includes(role) ? route.fulfill(ok(mkt.areas(args))) : route.fulfill(denied);
+      case 'eab_admin_market_stuck': return mkt.view.includes(role) ? route.fulfill(ok(mkt.stuck(args, role))) : route.fulfill(denied);
+      case 'eab_admin_market_commission': return mkt.view.includes(role) ? route.fulfill(ok(mkt.commission(args, role))) : route.fulfill(denied);
+      case 'eab_admin_market_projects': return mkt.view.includes(role) ? route.fulfill(ok(mkt.projects(args))) : route.fulfill(denied);
+      case 'eab_admin_market_news': return mkt.view.includes(role) ? route.fulfill(ok(mkt.news(args))) : route.fulfill(denied);
       // AdminBatch006 — News (MainForAdmin-D), tickets, flags, overview
       case 'eab_admin_feed_list': return ops.view.includes(role) ? route.fulfill(ok(ops.items.filter(i => !args.p_kind || i.kind === args.p_kind))) : route.fulfill(denied);
       case 'eab_admin_feed_save': {
@@ -1784,6 +1849,7 @@ test('admin: report builder — list with columns and a filter, then totals with
   await page.getByTestId('rb-msg').getByText(/Saved “Value by state”/).waitFor();
   const sv = calls.find(c => c.fn === 'eab_admin_saved_report_save').args.p;
   assert.equal(sv.source, 'listings'); assert.deepEqual(sv.spec.group_by, ['state']); assert.equal(sv.spec.measure, 'sum:asking_price');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="rb-saved-row"]').length === 2);   // wait for the list to refresh
   assert.equal(await page.getByTestId('rb-saved-row').count(), 2);
   // someone else's saved report: no Remove for an admin
   assert.equal(await page.getByTestId('rb-saved-row').filter({ hasText: 'Ali' }).getByTestId('rb-remove').count(), 0);
@@ -1827,6 +1893,7 @@ test('owner: open a shared saved report, run it, export Excel, then remove it (l
   await page.getByTestId('rb-remove-yes').click();
   await page.getByTestId('rb-msg').getByText(/Removed “Listings by state \(Ali\)”/).waitFor();
   assert.equal(calls.find(c => c.fn === 'eab_admin_saved_report_delete').args.p_id, 'sr-1');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="rb-saved-row"]').length === 0);   // wait for the list to refresh
   assert.equal(await page.getByTestId('rb-saved-row').count(), 0);
   await ctx.close();
 });
@@ -2000,5 +2067,109 @@ test('viewer: broadcast list without names, no new broadcast; no reports or work
   await page.getByTestId('tile-67').click();
   const note = await page.getByTestId('flags-note').innerText();
   assert.match(note, /tile\.<card> switched OFF hides that card/); assert.match(note, /beta\.<name> switched ON/); assert.doesNotMatch(note, /does not read these switches yet/);
+  await ctx.close();
+});
+
+// ---------------- AdminBatch009: Listings & market ----------------
+
+test('owner: Listings & market — quality score, days on market, asking vs final, hot areas, commission, projects, news; Excel report (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  for (const n of [102, 103, 104, 105, 107, 108, 109, 110]) assert.ok(await page.getByTestId(`tile-${n}`).isEnabled(), `tile ${n}`);
+  assert.equal(await page.getByTestId('tile-106').count(), 0, '106 waits for the main app');
+  await page.getByTestId('tile-102').click();
+  await page.getByTestId('weak').waitFor();
+  assert.match(await page.getByTestId('mkt-quality').innerText(), /Average score\s*58\.8 \/ 100/);
+  assert.match(await page.getByTestId('weak').innerText(), /P1001[\s\S]*Siti Agent[\s\S]*45[\s\S]*No photos/);
+  assert.equal(await page.getByTestId('range').count(), 0, 'quality is "now", no period');
+  assert.ok(calls.some(c => c.fn === 'eab_admin_market_quality' && c.args.p_below === 80 && c.args.p_device), 'below 80, with device for the access log');
+  // tap "Fewer than 5 photos" → only P1003
+  await page.getByTestId('missing').getByText('Fewer than 5 photos').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="weak"]')?.textContent?.includes('P1001'));
+  assert.match(await page.getByTestId('weak').innerText(), /P1003/);
+  await page.screenshot({ path: `${SHOTS}/60-market-quality-laptop.png`, fullPage: true });
+  await page.getByTestId('mtab-dom').click();
+  await page.getByTestId('dom-table').waitFor();
+  assert.match(await page.getByTestId('dom-table').innerText(), /Johor[\s\S]*190 d/);
+  await page.getByTestId('dom-by-city').click();
+  await page.getByTestId('dom-table').getByText('Kajang, Selangor').waitFor();
+  assert.match(await page.getByTestId('limit').innerText(), /does not keep old prices/);
+  await page.getByTestId('mtab-price').click();
+  await page.getByTestId('price-list').waitFor();
+  assert.match(await page.getByTestId('price-list').innerText(), /RM 1,000,000[\s\S]*RM 950,000[\s\S]*-5%/);
+  assert.match(await page.getByTestId('mkt-price').innerText(), /Median difference\s*-2\.5%/);
+  await page.getByTestId('mtab-areas').click();
+  await page.getByTestId('areas-grid').waitFor();
+  await page.getByTestId('areas-states').getByText('Johor').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="areas-grid"]')?.textContent?.includes('Kajang'));
+  assert.match(await page.getByTestId('areas-grid').innerText(), /Johor Bahru/);
+  await page.screenshot({ path: `${SHOTS}/61-market-areas-laptop.png`, fullPage: true });
+  await page.getByTestId('mtab-commission').click();
+  await page.getByTestId('commission-agents').waitFor();
+  assert.match(await page.getByTestId('mkt-commission').innerText(), /Expected commission\s*RM 61,500/);
+  assert.match(await page.getByTestId('commission-stages').innerText(), /Not linked to a listing/);
+  await page.getByTestId('commission-months').waitFor();
+  await page.screenshot({ path: `${SHOTS}/62-market-commission-laptop.png`, fullPage: true });
+  await page.getByTestId('mtab-projects').click();
+  await page.getByTestId('projects-list').waitFor();
+  assert.match(await page.getByTestId('projects-list').innerText(), /Eco Park Phase 2[\s\S]*Invitation code only[\s\S]*50%/);
+  await page.getByTestId('mtab-news').click();
+  await page.getByTestId('news-list').waitFor();
+  assert.match(await page.getByTestId('best-times').innerText(), /Tue 09:00-10:00/);
+  assert.match(await page.getByTestId('news-languages').innerText(), /Bahasa Melayu/);
+  assert.match(await page.getByTestId('news-groups').innerText(), /Selangor RENs/);
+  assert.match(await page.getByTestId('news-list').innerText(), /OPR cut[\s\S]*45 min/);
+  await page.getByTestId('news-heatmap').waitFor();
+  await page.screenshot({ path: `${SHOTS}/63-market-news-laptop.png`, fullPage: true });
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('mkt-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^Market-EAB-20261021-000007\.xlsx$/);
+  const exp = calls.find(c => c.fn === 'eab_admin_export');
+  assert.equal(exp.args.p_kind, 'market_report'); assert.equal(exp.args.p_target, null);
+  assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(exp.args.p_detail.from) && exp.args.p_detail.to);
+  await ctx.close();
+});
+
+test('admin: stuck deals at 30 days by default, then 60 — names and agent profile link; no export (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  await page.getByTestId('tile-107').click();
+  await page.getByTestId('stuck-list').waitFor();
+  assert.ok(calls.some(c => c.fn === 'eab_admin_market_stuck' && c.args.p_days === 30), '30 days (Joe)');
+  assert.match(await page.getByTestId('stuck-list').innerText(), /P1009[\s\S]*Pending Loan[\s\S]*70[\s\S]*P1008[\s\S]*33/);
+  assert.equal(await page.getByTestId('mkt-xlsx').count(), 0, 'admin cannot export');
+  await page.screenshot({ path: `${SHOTS}/64-market-stuck-phone.png`, fullPage: true });
+  await page.getByTestId('stuck-60').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="stuck-list"]')?.textContent?.includes('P1008'));
+  assert.ok(calls.some(c => c.fn === 'eab_admin_market_stuck' && c.args.p_days === 60));
+  await page.getByTestId('mtab-quality').click();
+  await page.getByTestId('weak').waitFor();
+  await page.screenshot({ path: `${SHOTS}/65-market-quality-phone.png`, fullPage: true });
+  await page.getByTestId('weak').getByRole('button', { name: 'Siti Agent' }).first().click();
+  await page.getByTestId('agent-status').first().waitFor();
+  await ctx.close();
+});
+
+test('viewer: Listings & market totals and charts only — no lists naming agents, no export (phone)', async () => {
+  const { page, ctx } = await open({ role: 'viewer', width: 390 });
+  await page.getByTestId('tile-102').click();
+  await page.getByTestId('mkt-quality').waitFor();
+  assert.equal(await page.getByTestId('weak').count(), 0);
+  await page.getByTestId('names-hidden').waitFor();
+  assert.equal(await page.getByTestId('missing').locator('button').count(), 0, 'no tap-to-filter of a list it cannot see');
+  for (const [tab, list] of [['price', 'price-list'], ['stuck', 'stuck-list'], ['commission', 'commission-agents']]) {
+    await page.getByTestId(`mtab-${tab}`).click();
+    await page.getByTestId(`mkt-${tab}`).waitFor();
+    assert.equal(await page.getByTestId(list).count(), 0, list);
+  }
+  assert.doesNotMatch(await page.locator('main').innerText(), /agent@example\.com|Siti Agent/);
+  await page.getByTestId('mtab-news').click();
+  await page.getByTestId('news-list').waitFor();
+  assert.equal(await page.getByTestId('mkt-pdf').count(), 0);
+  await page.screenshot({ path: `${SHOTS}/66-market-viewer-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('regulator: no Listings & market', async () => {
+  const { page, ctx } = await open({ role: 'regulator', width: 390 });
+  await page.getByTestId('tile-my-case').waitFor();
+  for (const n of [102, 103, 104, 105, 107, 108, 109, 110]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
   await ctx.close();
 });

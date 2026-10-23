@@ -61,7 +61,7 @@ export function DashboardsScreen({ tab: first }: { tab: DashTab }) {
   );
 }
 
-function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
+export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,7 +74,7 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
   return { data, err, busy, load };
 }
 
-function RangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
+export function RangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
   const today = todayKL();
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);
@@ -102,7 +102,7 @@ function RangePicker({ range, onChange }: { range: Range; onChange: (r: Range) =
   );
 }
 
-function Head({ title, onRefresh, busy, children }: { title: string; onRefresh: () => void; busy: boolean; children?: ReactNode }) {
+export function Head({ title, onRefresh, busy, children }: { title: string; onRefresh: () => void; busy: boolean; children?: ReactNode }) {
   return (
     <div className="row">
       <h2 className="spacer">{title}</h2>
@@ -111,16 +111,16 @@ function Head({ title, onRefresh, busy, children }: { title: string; onRefresh: 
     </div>
   );
 }
-function Stat({ label, value, sub, level }: { label: string; value: ReactNode; sub?: ReactNode; level?: 'ok' | 'amber' | 'red' }) {
+export function Stat({ label, value, sub, level }: { label: string; value: ReactNode; sub?: ReactNode; level?: 'ok' | 'amber' | 'red' }) {
   return <div className={`stat ${level ?? ''}`}><span className="l">{label}</span><b className="v">{value}</b>{sub && <small className="muted">{sub}</small>}</div>;
 }
-function AgentLink({ id, email, name }: { id: string; email: string | null; name: string | null }) {
+export function AgentLink({ id, email, name }: { id: string; email: string | null; name: string | null }) {
   const { go, me } = useAdmin();
   const text = name ? `${name}` : email ?? id;
   if (!can(me.role, 'viewAgent')) return <span>{text}</span>;
   return <button className="linkbtn" onClick={() => go({ k: 'agent', id })} title={email ?? undefined}>{text}</button>;
 }
-const Hidden = ({ what }: { what: string }) => <p className="muted small">{what} shown to the Owner, Admin and Compliance only.</p>;
+export const Hidden = ({ what }: { what: string }) => <p className="muted small">{what} shown to the Owner, Admin and Compliance only.</p>;
 
 // ---------------------------------------------------------------- Sign-ups & Growth (23)
 function GrowthTab({ range }: { range: Range }) {

@@ -210,6 +210,72 @@ export interface UsageEvent {
 }
 export interface DashEvents { kind: string; name: string; from: string; to: string; total: number; events: UsageEvent[] }
 
+// ---------- AdminBatch009: Listings & market (eab_admin_market_*) ----------
+export interface AgentRef { user_id: string; email: string | null; name: string | null }
+export interface WeakListing extends AgentRef {
+  id: string; ref: string | null; headline: string | null; type: string | null; state: string | null; city: string | null; status: string;
+  score: number; photos: number; missing: string[]; updated_at: string;
+}
+export interface MarketQuality {
+  listings: number; average: number | null; bands: { good: number; fair: number; poor: number }; missing: Record<string, number>;
+  by_state: { state: string; listings: number; average: number }[]; below: number; weak_count: number; names_hidden: boolean; weak: WeakListing[] | null;
+}
+export interface DomRow { open: number; median: number | null; average: number | null; oldest: number | null; closed: number; closed_median: number | null }
+export interface MarketDom {
+  from: string; to: string; no_date: number;
+  open: { listings: number; median: number | null; average: number | null; buckets: { under_30: number; d30_89: number; d90_179: number; d180_plus: number } };
+  closed: { listings: number; median: number | null };
+  by_state: (DomRow & { state: string })[]; by_city: (DomRow & { state: string; city: string })[]; by_type: (DomRow & { type: string })[];
+}
+export interface PriceGroup { deals: number; average_pct: number | null; median_pct: number | null }
+export interface PricedDeal extends AgentRef {
+  deal_id: string; date: string; side: string; ref: string | null; headline: string | null; type: string | null; state: string | null; city: string | null;
+  asking: number; final: number; pct: number;
+}
+export interface MarketPrice {
+  from: string; to: string; deals: number; compared: number; not_linked: number; no_price: number; average_pct: number | null; median_pct: number | null;
+  below: number; at: number; above: number;
+  by_side: (PriceGroup & { side: string })[]; by_state: (PriceGroup & { state: string })[]; by_type: (PriceGroup & { type: string })[];
+  names_hidden: boolean; list: PricedDeal[] | null;
+}
+export interface AreaRow { state: string; on_market: number; new: number; closed: number; enquiries: number; per_listing: number | null }
+export interface MarketAreas {
+  from: string; to: string; on_market: number; new: number; closed: number; enquiries: number; enquiries_unlinked: number;
+  by_state: AreaRow[]; by_city: (AreaRow & { city: string; supply_level: number; demand_level: number })[];
+}
+export interface StuckListing extends AgentRef {
+  id: string; ref: string | null; headline: string | null; type: string | null; state: string | null; city: string | null; stage: string;
+  asking: number | null; updated_at: string; days: number;
+}
+export interface MarketStuck {
+  days: number; booked: number; stuck_count: number; by_stage: { stage: string; booked: number; stuck: number; oldest: number | null }[];
+  names_hidden: boolean; list: StuckListing[] | null;
+}
+export interface MarketCommission {
+  from: string; to: string;
+  open: { deals: number; value: number; commission: number; agents_share: number; estimated: number; confirmed: number; overdue: number; no_date: number };
+  received: { deals: number; commission: number; agents_share: number };
+  by_month: { month: string; deals: number; estimated: number; confirmed: number; commission: number }[];
+  by_side: { side: string; deals: number; value: number; commission: number }[];
+  by_stage: { stage: string; deals: number; commission: number }[];
+  names_hidden: boolean; agents: (AgentRef & { deals: number; commission: number; agents_share: number; next_date: string | null })[] | null;
+}
+export interface MarketProjects {
+  from: string; to: string; projects: number; reached: number; opened: number; redeemed: number;
+  list: { id: string; title: string; developer: string | null; status: string; published_at: string; expires_at: string | null; audience: string;
+    reached: number; opened: number; open_pct: number | null; redeemed: number; codes: number }[];
+  by_day: { day: string; opened: number; redeemed: number }[];
+}
+export interface MarketNews {
+  from: string; to: string; posts: number; reached: number; opened: number; open_pct: number | null;
+  with_alert: { posts: number; open_pct: number | null }; without_alert: { posts: number; open_pct: number | null };
+  list: { id: string; title: string; published_at: string; audience: string; push_alert: boolean; reached: number; opened: number; open_pct: number | null; median_hours: number | null }[];
+  by_language: { language: string; reached: number; opened: number; open_pct: number | null }[];
+  by_group: { group_id: string; group: string; priority: number; reached: number; opened: number; open_pct: number | null }[];
+  heatmap: { dow: number; hour: number; events: number }[];
+  best: { dow: number; hour: number; opens: number }[];
+}
+
 // ---------- AdminBatch006: news (MainForAdmin-D functions), tickets, flags, overview ----------
 export type FeedKind = 'news' | 'project' | 'announcement';
 export type FeedStatus = 'draft' | 'published' | 'withdrawn';
@@ -468,6 +534,15 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   dashUsage: (from: string, to: string) => call<DashUsage>('eab_admin_dash_usage', { p_from: from, p_to: to }),
   dashEvents: (kind: string, name: string, from: string, to: string, limit = 200) =>
     call<DashEvents>('eab_admin_dash_events', { p_kind: kind, p_name: name, p_from: from, p_to: to, p_limit: limit, p_device: device }),
+  // AdminBatch009 — Listings & market
+  marketQuality: (below = 80, limit = 500) => call<MarketQuality>('eab_admin_market_quality', { p_below: below, p_limit: limit, p_device: device }),
+  marketDom: (from: string, to: string) => call<MarketDom>('eab_admin_market_dom', { p_from: from, p_to: to }),
+  marketPrice: (from: string, to: string) => call<MarketPrice>('eab_admin_market_price', { p_from: from, p_to: to, p_device: device }),
+  marketAreas: (from: string, to: string) => call<MarketAreas>('eab_admin_market_areas', { p_from: from, p_to: to }),
+  marketStuck: (days = 30) => call<MarketStuck>('eab_admin_market_stuck', { p_days: days, p_device: device }),
+  marketCommission: (from: string, to: string) => call<MarketCommission>('eab_admin_market_commission', { p_from: from, p_to: to, p_device: device }),
+  marketProjects: (from: string, to: string) => call<MarketProjects>('eab_admin_market_projects', { p_from: from, p_to: to }),
+  marketNews: (from: string, to: string) => call<MarketNews>('eab_admin_market_news', { p_from: from, p_to: to }),
   // AdminBatch006 — News & Announcements (MainForAdmin-D functions + 006 helpers)
   feedList: (kind: FeedKind | null = null) => call<FeedItem[]>('eab_admin_feed_list', { p_kind: kind }),
   feedSave: (item: FeedDraft, reason: string) => call<FeedItem>('eab_admin_feed_save', { p_item: item, p_reason: reason, p_device: device }),

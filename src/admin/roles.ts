@@ -21,7 +21,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps'
   | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention'
   | 'boardReport' | 'auditBundle' | 'reportBuilder' | 'reportNames'
-  | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo';
+  | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo'
+  | 'viewMarket' | 'viewMarketAgents';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -76,6 +77,9 @@ const RULES: Record<Ability, Role[]> = {
   reportSchedule: ['owner'],                                     // switch on / off, day, hour, who gets it
   workspaces: ['owner', 'admin', 'compliance'],
   todo: ['owner', 'admin', 'compliance', 'viewer'],              // own items; a Viewer cannot share or change shared ones
+  // AdminBatch009 — same rules as the eab_admin_market_* database functions
+  viewMarket: ['owner', 'admin', 'compliance', 'viewer'],        // totals and charts
+  viewMarketAgents: ['owner', 'admin', 'compliance'],            // lists that name agents (needs work, deals, stuck, commission by agent)
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

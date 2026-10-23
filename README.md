@@ -46,6 +46,15 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch009: Listings & market — Listing quality score out of 100 with a "needs work" list (what is missing), Days on
+market by state / city / type, Asking vs final price (deals linked to a listing), Hot areas (listings and enquiries per
+state and city), Stuck deals (Booked before SPA signed with no change for 30 days; 45 / 60 / 90 to choose), Commission
+forecast (open deals by month and stage, agents' share, received in the period), Project performance (opens, code
+redemptions) and Market News engagement (open rate per post, language and group; best times to post). Totals for Viewers;
+lists naming agents for Owner / Admin / Compliance (access log); PDF / Excel for Owner / Compliance. Read-only: needs
+`20261027100000_admin_batch_009_market.sql` (main repo branch feature/admin-batch-009-market-db, after AdminBatch008 Reports).
+Buyer Demand vs Supply (106) waits for buyer requirements in the main app.
+
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,

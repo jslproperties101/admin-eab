@@ -55,9 +55,9 @@ export function Lines({ labels, series, label, testid }: {
 }
 
 /** Horizontal bars with the label and number on each line; optional click per line. */
-export function HBars({ items, label, testid, onPick, unit }: {
+export function HBars({ items, label, testid, onPick, unit, share = true }: {
   items: { key: string; label: ReactNode; value: number; sub?: ReactNode }[]; label: string; testid?: string;
-  onPick?: (key: string) => void; unit?: string;
+  onPick?: (key: string) => void; unit?: string; /** false for rates, where "share of the total" means nothing */ share?: boolean;
 }) {
   if (!items.length) return EMPTY;
   const max = Math.max(1, ...items.map(i => i.value));
@@ -69,7 +69,7 @@ export function HBars({ items, label, testid, onPick, unit }: {
           <>
             <span className="hl">{it.label}{it.sub && <small className="muted"> {it.sub}</small>}</span>
             <span className="hb"><span style={{ width: `${(it.value / max) * 100}%` }} /></span>
-            <span className="hv">{it.value.toLocaleString()}{unit ? ` ${unit}` : ''} <small className="muted">{total ? `${Math.round((it.value / total) * 100)}%` : ''}</small></span>
+            <span className="hv">{it.value.toLocaleString()}{unit ? ` ${unit}` : ''} <small className="muted">{share && total ? `${Math.round((it.value / total) * 100)}%` : ''}</small></span>
           </>
         );
         return onPick
@@ -81,7 +81,7 @@ export function HBars({ items, label, testid, onPick, unit }: {
 }
 
 /** Day x hour (Malaysia time) — darker gold = more use. */
-export function Heatmap({ rows, testid }: { rows: DashUsage['heatmap']; testid?: string }) {
+export function Heatmap({ rows, testid, caption }: { rows: DashUsage['heatmap']; testid?: string; caption?: (max: number) => string }) {
   const { grid, max } = heatGrid(rows);
   if (!max) return EMPTY;
   return (
@@ -95,7 +95,7 @@ export function Heatmap({ rows, testid }: { rows: DashUsage['heatmap']; testid?:
           </tr>
         ))}</tbody>
       </table>
-      <small className="muted">Screens and features opened, by day and hour (Malaysia time). Darker = more. Busiest hour: {max} actions.</small>
+      <small className="muted">{caption ? caption(max) : `Screens and features opened, by day and hour (Malaysia time). Darker = more. Busiest hour: ${max} actions.`}</small>
     </div>
   );
 }

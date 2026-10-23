@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-008). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-009). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -82,6 +82,17 @@ export const SECTIONS: Section[] = [
     { n: 62, name: 'Feature Usage', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'Most used and not used' },
     { n: 60, name: 'AI Command Usage' },
     { n: 61, name: 'Marketing Studio Usage' },
+  ] },
+  { title: 'Listings & Market', items: [
+    { n: 102, name: 'Listing Quality Score', open: { k: 'market', tab: 'quality' }, needs: 'viewMarket', note: 'Score out of 100; needs photos / details' },
+    { n: 103, name: 'Days on Market', open: { k: 'market', tab: 'dom' }, needs: 'viewMarket', note: 'By state, city and type' },
+    { n: 104, name: 'Asking vs Final Price', open: { k: 'market', tab: 'price' }, needs: 'viewMarket', note: 'Deals linked to a listing' },
+    { n: 105, name: 'Hot Areas', open: { k: 'market', tab: 'areas' }, needs: 'viewMarket', note: 'Listings and enquiries by area' },
+    { n: 106, name: 'Buyer Demand vs Supply', blocked: 'Needs buyer requirements in the main app' },
+    { n: 107, name: 'Stuck Deals', open: { k: 'market', tab: 'stuck' }, needs: 'viewMarket', note: 'Booked, no change for 30 days' },
+    { n: 108, name: 'Commission Forecast', open: { k: 'market', tab: 'commission' }, needs: 'viewMarket', note: 'Open deals by month and stage' },
+    { n: 109, name: 'Project Performance', open: { k: 'market', tab: 'projects' }, needs: 'viewMarket', note: 'Opens and code redemptions' },
+    { n: 110, name: 'Market News Engagement', open: { k: 'market', tab: 'news' }, needs: 'viewMarket', note: 'Open rates; best time to post' },
   ] },
   { title: 'System Health', items: [
     { n: 4, name: 'Database Health', open: { k: 'health', tab: 'db' }, needs: 'viewHealth', note: 'Tables, connections, slow queries' },

@@ -37,8 +37,12 @@ export type View =
   | { k: 'weeklyReports' }
   | { k: 'workspaces' }
   | { k: 'workspace'; id: string }
-  | { k: 'todo'; tab: 'todo' | 'calendar' };
+  | { k: 'todo'; tab: 'todo' | 'calendar' }
+  // AdminBatch009
+  | { k: 'market'; tab: MarketTab };
 
+/** AdminBatch009 — Listings & market tabs. */
+export type MarketTab = 'quality' | 'dom' | 'price' | 'areas' | 'stuck' | 'commission' | 'projects' | 'news';
 /** AdminBatch008 */
 export type ReportsTab = 'board' | 'audit' | 'builder';
 /** AdminBatch006 */

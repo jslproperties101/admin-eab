@@ -32,12 +32,16 @@ export type View =
   | { k: 'retention' }
   | { k: 'reports'; tab: ReportsTab }
   // AdminBatch008
-  | { k: 'broadcasts' }
+  | { k: 'broadcasts'; to?: { id: string; label: string }[] }
   | { k: 'broadcast'; id: string }
   | { k: 'weeklyReports' }
   | { k: 'workspaces' }
   | { k: 'workspace'; id: string }
-  | { k: 'todo'; tab: 'todo' | 'calendar' };
+  | { k: 'todo'; tab: 'todo' | 'calendar' }
+  // AdminBatch009
+  | { k: 'scorecard' }
+  | { k: 'funnel' }
+  | { k: 'duplicates' };
 
 /** AdminBatch008 */
 export type ReportsTab = 'board' | 'audit' | 'builder';

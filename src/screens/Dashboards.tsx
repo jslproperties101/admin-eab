@@ -74,7 +74,7 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
   return { data, err, busy, load };
 }
 
-function RangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
+export function RangePicker({ range, onChange }: { range: Range; onChange: (r: Range) => void }) {
   const today = todayKL();
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);

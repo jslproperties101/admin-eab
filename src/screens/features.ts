@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-008). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-009). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -69,6 +69,13 @@ export const SECTIONS: Section[] = [
     { n: 27, name: 'Device & OS Breakdown', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'Platforms and phone models' },
     { n: 28, name: 'Geography Map' },
     { n: 29, name: 'Language Usage', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'English, BM, Chinese' },
+  ] },
+  { title: 'Agent Insight', items: [
+    { n: 92, name: 'Agent Scorecard', open: { k: 'scorecard' }, needs: 'scorecard', note: 'Listings 40 + activity 30 + compliance 30' },
+    { n: 93, name: 'Onboarding Funnel', open: { k: 'funnel' }, needs: 'funnel', note: 'Sign-up to first deal; who is stuck' },
+    { n: 95, name: 'Bulk Actions', open: { k: 'agents', filter: 'all' }, needs: 'bulkActions', note: 'Tap "Choose agents" in the list' },
+    { n: 97, name: 'Duplicate Accounts', open: { k: 'duplicates' }, needs: 'duplicates', note: 'Same phone number, phone or licence' },
+    { n: 98, name: 'Devices per Agent', open: SEARCH, needs: 'viewDevices', note: 'Phones tab in each Agent Profile' },
   ] },
   { title: 'Content & Business', items: [
     { n: 7, name: 'Listings Analytics', open: { k: 'dash', tab: 'listings' }, needs: 'viewDash', note: 'By status; stale listings' },

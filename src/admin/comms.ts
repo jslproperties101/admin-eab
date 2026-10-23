@@ -39,10 +39,12 @@ export function countsLine(c: Broadcast['counts']): string {
 }
 
 /** A draft is ready to queue when the English text (and, for email, the English subject) is there and an audience is chosen. */
-export function draftProblem(d: { channel: 'email' | 'whatsapp'; subject_en?: string | null; body_en: string; audience: 'all' | 'groups'; group_ids: string[] }): string | null {
+export function draftProblem(d: { channel: 'email' | 'whatsapp'; subject_en?: string | null; body_en: string; audience: 'all' | 'groups' | 'agents'; group_ids: string[]; user_ids?: string[] }): string | null {
   if (!d.body_en.trim()) return 'Write the English text (the other languages are optional).';
   if (d.channel === 'email' && !(d.subject_en ?? '').trim()) return 'Write the English subject.';
   if (d.audience === 'groups' && d.group_ids.length === 0) return 'Choose at least one group, or everyone.';
+  // AdminBatch009: "Message" from the Agents list = exactly the ticked agents
+  if (d.audience === 'agents' && !(d.user_ids?.length)) return 'No agents chosen. Tick agents in the Agents list, then Message.';
   return null;
 }
 

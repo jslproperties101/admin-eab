@@ -22,13 +22,13 @@ const KIND_HELP = {
   news: 'News & offers — only agents who said yes to news & offers get it. Every email has a link to stop them.',
 };
 
-export function BroadcastsScreen() {
+export function BroadcastsScreen({ to }: { to?: { id: string; label: string }[] }) {
   const { api, me, go } = useAdmin();
   const edit = can(me.role, 'editBroadcasts');
   const names = can(me.role, 'broadcastNames');
   const [rows, setRows] = useState<Broadcast[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [writing, setWriting] = useState(false);
+  const [writing, setWriting] = useState(!!to?.length);
   const load = useCallback(async () => { setErr(null); try { setRows(await api.broadcasts()); } catch (e) { setErr(errText(e)); } }, [api]);
   useEffect(() => { void load(); }, [load]);
   return (
@@ -36,7 +36,7 @@ export function BroadcastsScreen() {
       <div className="row"><h1 className="spacer">Email & WhatsApp broadcast</h1>
         {edit && !writing && <button className="btn gold" onClick={() => setWriting(true)} data-testid="bc-new">New broadcast</button>}</div>
       <p className="muted small" style={{ margin: 0 }}>{KIND_HELP.service} {KIND_HELP.news}</p>
-      {writing && <BroadcastEditor draft={null} onClose={() => setWriting(false)} onSaved={b => go({ k: 'broadcast', id: b.id })} />}
+      {writing && <BroadcastEditor draft={null} to={to} onClose={() => setWriting(false)} onSaved={b => go({ k: 'broadcast', id: b.id })} />}
       {err ? <ErrorBox text={err} onRetry={() => void load()} /> : !rows ? <Loading /> : rows.length === 0 ? <p className="muted">No broadcasts yet.</p> : (
         <div className="stack" data-testid="bc-list">
           {rows.map(b => {
@@ -60,13 +60,15 @@ export function BroadcastsScreen() {
   );
 }
 
-function BroadcastEditor({ draft, onClose, onSaved }: { draft: Broadcast | null; onClose: () => void; onSaved: (b: Broadcast) => void }) {
+function BroadcastEditor({ draft, to, onClose, onSaved }: { draft: Broadcast | null; to?: { id: string; label: string }[]; onClose: () => void; onSaved: (b: Broadcast) => void }) {
   const { api } = useAdmin();
   const [groups, setGroups] = useState<AudienceGroup[]>([]);
   const [d, setD] = useState<BroadcastDraft>(() => draft
     ? { id: draft.id, channel: draft.channel, kind: draft.kind, subject_en: draft.subject_en, subject_bm: draft.subject_bm, subject_zh: draft.subject_zh,
-        body_en: draft.body_en, body_bm: draft.body_bm, body_zh: draft.body_zh, audience: draft.audience, group_ids: draft.group_ids }
+        body_en: draft.body_en, body_bm: draft.body_bm, body_zh: draft.body_zh, audience: draft.audience, group_ids: draft.group_ids, user_ids: draft.user_ids ?? [] }
+    : to?.length ? { channel: 'email', kind: 'service', subject_en: '', body_en: '', audience: 'agents', group_ids: [], user_ids: to.map(a => a.id) }
     : { channel: 'email', kind: 'service', subject_en: '', body_en: '', audience: 'all', group_ids: [] });
+  const chosen = d.user_ids?.length ?? 0;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { api.groups().then(g => setGroups(g.filter(x => x.active && x.id !== '00000000-0000-0000-0000-000000000000'))).catch(() => setGroups([])); }, [api]);
@@ -89,6 +91,8 @@ function BroadcastEditor({ draft, onClose, onSaved }: { draft: Broadcast | null;
         <label className="choice"><input type="radio" checked={d.kind === 'news'} onChange={() => set({ kind: 'news' })} data-testid="bc-news" /> {KIND_HELP.news}</label>
       </fieldset>
       <fieldset className="stack"><legend>Who</legend>
+        {chosen > 0 && <label className="choice"><input type="radio" checked={d.audience === 'agents'} onChange={() => set({ audience: 'agents', group_ids: [] })} data-testid="bc-agents" />
+          {' '}The {chosen} agent{chosen === 1 ? '' : 's'} ticked in the Agents list{to?.length ? `: ${to.slice(0, 5).map(a => a.label).join(', ')}${to.length > 5 ? ` and ${to.length - 5} more` : ''}` : ''}</label>}
         <label className="choice"><input type="radio" checked={d.audience === 'all'} onChange={() => set({ audience: 'all', group_ids: [] })} data-testid="bc-all" /> Every agent</label>
         <label className="choice"><input type="radio" checked={d.audience === 'groups'} onChange={() => set({ audience: 'groups' })} data-testid="bc-groups" /> Chosen audience groups</label>
         {d.audience === 'groups' && (groups.length === 0 ? <small className="muted">No audience groups yet (make them in Market News → Audience groups).</small> : groups.map(g => (
@@ -137,7 +141,7 @@ export function BroadcastScreen({ id }: { id: string }) {
     <div className="stack" data-testid="broadcast">
       <div className="row"><h1 className="spacer">{b.ref}</h1><span className={`tag ${statusTag(b.status)}`} data-testid="bc-status">{BC_STATUS[b.status]}</span></div>
       <p className="muted small" style={{ margin: 0 }}>{b.channel === 'email' ? 'Email' : 'WhatsApp'} · {b.kind === 'news' ? 'News & offers' : 'Service notice'} ·
-        {b.audience === 'all' ? ' every agent' : ` ${b.group_ids.length} audience group${b.group_ids.length === 1 ? '' : 's'}`} · written by {b.created_by_email ?? '—'} {fmtTime(b.created_at)}
+        {b.audience === 'all' ? ' every agent' : b.audience === 'agents' ? ` ${b.user_ids?.length ?? 0} chosen agent${b.user_ids?.length === 1 ? '' : 's'}` : ` ${b.group_ids.length} audience group${b.group_ids.length === 1 ? '' : 's'}`} · written by {b.created_by_email ?? '—'} {fmtTime(b.created_at)}
         {b.queued_at && <> · queued by {b.queued_by_email ?? '—'} {fmtTime(b.queued_at)}</>}</p>
       {changing ? <BroadcastEditor draft={b} onClose={() => setChanging(false)} onSaved={async () => { setChanging(false); await load(); }} /> : (
         <div className="card boxed stack">

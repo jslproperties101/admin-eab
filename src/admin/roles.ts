@@ -21,7 +21,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewContent' | 'editContent' | 'viewTickets' | 'editTickets' | 'viewOps' | 'editOps'
   | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention'
   | 'boardReport' | 'auditBundle' | 'reportBuilder' | 'reportNames'
-  | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo';
+  | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo'
+  | 'scorecard' | 'funnel' | 'bulkActions' | 'duplicates' | 'viewDevices' | 'removeDevice';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -76,6 +77,13 @@ const RULES: Record<Ability, Role[]> = {
   reportSchedule: ['owner'],                                     // switch on / off, day, hour, who gets it
   workspaces: ['owner', 'admin', 'compliance'],
   todo: ['owner', 'admin', 'compliance', 'viewer'],              // own items; a Viewer cannot share or change shared ones
+  // AdminBatch009 — same rules as the agent-insight database functions
+  scorecard: ['owner', 'admin', 'compliance', 'viewer'],         // Viewer: how scores are spread, no names
+  funnel: ['owner', 'admin', 'compliance', 'viewer'],            // Viewer: counts only; "who is stuck" = viewDashAgents
+  bulkActions: ['owner', 'admin'],                               // suspend / re-activate / sign out / tag / message many agents
+  duplicates: ['owner', 'admin', 'compliance'],
+  viewDevices: ['owner', 'admin', 'compliance', 'regulator'],    // a regulator only for agents in their case
+  removeDevice: ['owner', 'admin'],                              // sign one phone out (MainForAdmin-G)
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

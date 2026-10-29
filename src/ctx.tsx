@@ -46,7 +46,12 @@ export type View =
   // AdminBatch010
   | { k: 'moderation'; tab: ModTab }
   | { k: 'modcase'; id: string }
-  | { k: 'content'; tab: ContentTab };
+  | { k: 'content'; tab: ContentTab }
+  // AdminBatch011
+  | { k: 'money'; tab: MoneyTab };
+
+/** AdminBatch011 — Money tabs (10, 2, 40, 33, 34 and prices). */
+export type MoneyTab = 'ledger' | 'google' | 'alerts' | 'pnl' | 'cost' | 'prices';
 
 /** AdminBatch010 — Moderation tabs (16, 57, 56) and Content insight tabs (54, 28, 8, 55, 60, 61). */
 export type ModTab = 'cases' | 'suspects' | 'photos' | 'duplicates';

@@ -77,6 +77,13 @@ words are not recorded) and Marketing Studio usage (61). Maps are drawn by the a
 needed for the background; dots still show offline). PDF / Excel for Owner / Compliance. Nothing in the main app changes.
 Needs `20261028000000_admin_batch_010_content.sql` (main repo branch feature/admin-batch-010-db, after both 009 files).
 
+AdminBatch011 "Money" (0.11.0): Money screen (Owner / Admin / Compliance see it; only the Owner changes it). Billing &
+expenses ledger (10; LED-YYYY-####, money paid and received, foreign currency with its rate, "repeat monthly" copy; never
+deleted or edited — void with a reason), Google API usage & estimated cost per Google product (2), quota alerts against
+monthly / daily limits and the free allowance (40), profit & loss by month (33) and cost per active agent (34), prices and
+the US$ → RM rate. Subscription revenue stays blocked until subscriptions exist in the main app. PDF / Excel for Owner /
+Compliance. Needs `20261029000000_admin_batch_011_money.sql` (main repo branch feature/admin-batch-011-db, after 010).
+
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,

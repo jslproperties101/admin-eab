@@ -402,6 +402,60 @@ function contentFake() {
   };
 }
 
+/** AdminBatch011 fake Money: ledger (add, void, repeat), Google products and prices, usage with alerts, monthly summary. */
+function moneyFake() {
+  let n = 0, seq = 0; const now = '2026-10-30T03:00:00Z';
+  const view = ['owner', 'admin', 'compliance'];
+  const st = { entries: [], settings: { usd_myr: null, monthly_budget_myr: null, updated_at: now }, skus: [
+    { sku: 'dynamic_maps', label: 'Dynamic Maps (each map shown)', names: ['maps.map'], price_per_1000: 7, free_per_month: 10000, monthly_limit: null, daily_limit: null, alert_pct: 80, updated_at: now },
+    { sku: 'geocoding', label: 'Geocoding (address ↔ map pin)', names: ['geocoding.reverse', 'geocoding.forward'], price_per_1000: 5, free_per_month: 10000, monthly_limit: null, daily_limit: null, alert_pct: 80, updated_at: now },
+    { sku: 'places_autocomplete', label: 'Places Autocomplete', names: ['places.autocomplete'], price_per_1000: null, free_per_month: null, monthly_limit: null, daily_limit: null, alert_pct: 80, updated_at: now }] };
+  const calls = { dynamic_maps: 9200, geocoding: 300, places_autocomplete: 40 };
+  const entry = (p, extra = {}) => ({ id: `eeeeeeee-0000-4000-8000-${String(++n).padStart(12, '0')}`, ref: `LED-2026-${String(++seq).padStart(4, '0')}`,
+    kind: p.kind, category: p.category, payee: p.payee, description: p.description || null, amount: Number(p.amount), currency: p.currency ?? 'MYR',
+    fx_to_myr: p.currency && p.currency !== 'MYR' ? Number(p.fx_to_myr) : 1, amount_myr: Math.round(Number(p.amount) * (p.currency && p.currency !== 'MYR' ? Number(p.fx_to_myr) : 1) * 100) / 100,
+    paid_on: p.paid_on, period_month: p.period_month ?? `${p.paid_on.slice(0, 7)}-01`, recurring: !!p.recurring, invoice_ref: p.invoice_ref || null,
+    repeat_of: null, repeat_ref: null, voided_at: null, void_reason: null, voided_by_email: null, created_by_email: 'joe@example.com', created_at: now, ...extra });
+  st.entries.push(entry({ kind: 'expense', category: 'supabase', payee: 'Supabase Inc', amount: 25, currency: 'USD', fx_to_myr: 4.5, paid_on: '2026-09-05', recurring: true }));
+  const usage = () => {
+    const products = st.skus.map(k => {
+      const c = calls[k.sku] ?? 0, proj = Math.round(c * 31 / 30);
+      const cost = x => (k.price_per_1000 === null ? null : Math.round(Math.max(0, x - (k.free_per_month ?? 0)) * k.price_per_1000 / 10) / 100);
+      let level = 'ok'; const reasons = [];
+      if (k.daily_limit && c / 30 >= k.daily_limit) { level = 'red'; reasons.push('daily limit reached today'); }
+      if (k.monthly_limit && c >= k.monthly_limit) { level = 'red'; reasons.push('monthly limit reached'); }
+      else if (k.monthly_limit && proj >= k.monthly_limit * k.alert_pct / 100) { level = level === 'red' ? 'red' : 'amber'; reasons.push(`on course for ${k.alert_pct}% of the monthly limit`); }
+      if (k.price_per_1000 && k.free_per_month && proj >= k.free_per_month * k.alert_pct / 100) { if (level === 'ok') level = 'amber'; reasons.push(`on course to use ${k.alert_pct}% of the free allowance`); }
+      return { ...k, month_calls: c, today_calls: Math.round(c / 30), projected: proj, level, reasons, month_usd: cost(c), projected_usd: cost(proj),
+        month_myr: st.settings.usd_myr && cost(c) !== null ? Math.round(cost(c) * st.settings.usd_myr * 100) / 100 : null,
+        projected_myr: st.settings.usd_myr && cost(proj) !== null ? Math.round(cost(proj) * st.settings.usd_myr * 100) / 100 : null };
+    }).sort((a, b) => ({ red: 0, amber: 1, ok: 2 }[a.level] - { red: 0, amber: 1, ok: 2 }[b.level]) || b.month_calls - a.month_calls);
+    const usd = products.reduce((s, p) => s + (p.month_usd ?? 0), 0);
+    return { months: 6, since: '2026-05-01', this_month: '2026-10-01', days_in_month: 31, days_passed: 30, usd_myr: st.settings.usd_myr, products,
+      alerts: products.filter(p => p.level !== 'ok').length, month_usd: usd, projected_usd: usd, month_myr: st.settings.usd_myr ? usd * st.settings.usd_myr : null,
+      projected_myr: st.settings.usd_myr ? usd * st.settings.usd_myr : null, unpriced_calls: 40,
+      by_month: [{ month: '2026-09', calls: 4000, failures: 2, usd: 0, myr: 0 }, { month: '2026-10', calls: 9540, failures: 3, usd, myr: null }],
+      by_month_sku: [], by_name: [{ name: 'maps.map', sku: 'dynamic_maps', calls: 9200, failures: 0, agents: 6 }, { name: 'geocoding.reverse', sku: 'geocoding', calls: 300, failures: 3, agents: 4 }],
+      by_day: [{ day: '2026-10-29', calls: 320 }, { day: '2026-10-30', calls: 310 }],
+      top_agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', calls: 5200 }] };
+  };
+  const summary = () => {
+    const live = st.entries.filter(e => !e.voided_at);
+    const month = m => { const l = live.filter(e => e.period_month.startsWith(m)); const inc = l.filter(e => e.kind === 'income').reduce((s, e) => s + e.amount_myr, 0);
+      const exp = l.filter(e => e.kind === 'expense').reduce((s, e) => s + e.amount_myr, 0); const active = m === '2026-10' ? 4 : 3;
+      return { month: m, income: inc, expenses: exp, net: inc - exp, active, cost_per_active: Math.round(exp / active * 100) / 100, google_usd: m === '2026-10' ? 0 : 0, google_myr: null,
+        google_billed: l.some(e => e.category === 'google'), over_budget: !!st.settings.monthly_budget_myr && exp > st.settings.monthly_budget_myr }; };
+    const by_month = [month('2026-09'), month('2026-10')];
+    const tot = k => by_month.reduce((s, m) => s + m[k], 0);
+    const cats = {}; for (const e of live) { const key = `${e.kind}/${e.category}`; cats[key] = (cats[key] ?? 0) + e.amount_myr; }
+    return { months: 12, since: '2025-11-01', usd_myr: st.settings.usd_myr, monthly_budget_myr: st.settings.monthly_budget_myr, income: tot('income'), expenses: tot('expenses'), net: tot('net'),
+      this_month: { ...by_month[1] }, by_month,
+      by_category: Object.entries(cats).map(([k, v]) => ({ kind: k.split('/')[0], category: k.split('/')[1], amount_myr: v, per_active: Math.round(v / 7 * 100) / 100 })),
+      average_active: 3.5, cost_per_active_avg: Math.round(tot('expenses') / 7 * 100) / 100 };
+  };
+  return { view, st, entry, usage, summary, now };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -434,6 +488,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const ins = insightFake();
   const b8 = b8Fake();
   const c10 = contentFake();
+  const m11 = moneyFake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
@@ -918,6 +973,45 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         if (args.p_action === 'suspend') profile.status = 'suspended';
         return route.fulfill(ok({ ref: `BULK-2026-000${++ins.bulks}`, action: args.p_action, count: args.p_users.length }));
       }
+      // AdminBatch011 — Money
+      case 'eab_admin_ledger': {
+        if (!m11.view.includes(role)) return route.fulfill(denied);
+        const list = m11.st.entries.filter(e => (!args.p_kind || e.kind === args.p_kind) && (args.p_voided || !e.voided_at));
+        const live = m11.st.entries.filter(e => !e.voided_at), cats = {};
+        for (const e of live) { const k = `${e.kind}/${e.category}`; cats[k] = cats[k] ?? { kind: e.kind, category: e.category, entries: 0, amount_myr: 0 }; cats[k].entries++; cats[k].amount_myr += e.amount_myr; }
+        return route.fulfill(ok({ from: args.p_from, to: args.p_to, expenses_myr: live.filter(e => e.kind === 'expense').reduce((s, e) => s + e.amount_myr, 0),
+          income_myr: live.filter(e => e.kind === 'income').reduce((s, e) => s + e.amount_myr, 0), voided: m11.st.entries.filter(e => e.voided_at).length,
+          by_category: Object.values(cats), entries: [...list].reverse() }));
+      }
+      case 'eab_admin_ledger_add': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const e = m11.entry(args.p); m11.st.entries.push(e); return route.fulfill(ok(e));
+      }
+      case 'eab_admin_ledger_void': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const e = m11.st.entries.find(x => x.id === args.p_id);
+        Object.assign(e, { voided_at: m11.now, void_reason: args.p_reason, voided_by_email: 'joe@example.com' }); return route.fulfill(ok(e));
+      }
+      case 'eab_admin_ledger_repeat': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const src = m11.st.entries.filter(e => e.recurring && !e.voided_at && e.period_month === '2026-09-01' && !m11.st.entries.some(c => c.repeat_of === e.id));
+        for (const e of src) m11.st.entries.push(m11.entry({ ...e, paid_on: '2026-10-05', period_month: '2026-10-01' }, { repeat_of: e.id, repeat_ref: e.ref }));
+        return route.fulfill(ok({ month: args.p_month, copied: src.length }));
+      }
+      case 'eab_admin_money_settings': return m11.view.includes(role) ? route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus })) : route.fulfill(denied);
+      case 'eab_admin_money_settings_set': {
+        if (role !== 'owner') return route.fulfill(denied);
+        for (const k of ['usd_myr', 'monthly_budget_myr']) if (k in args.p) m11.st.settings[k] = args.p[k] === '' ? null : Number(args.p[k]);
+        return route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus }));
+      }
+      case 'eab_admin_api_sku_set': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const k = m11.st.skus.find(x => x.sku === args.p_sku);
+        for (const [f, v] of Object.entries(args.p)) k[f] = v === '' ? (f === 'alert_pct' ? 80 : null) : Number(v);
+        return route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus }));
+      }
+      case 'eab_admin_api_usage': return m11.view.includes(role) ? route.fulfill(ok(m11.usage())) : route.fulfill(denied);
+      case 'eab_admin_money_summary': return m11.view.includes(role) ? route.fulfill(ok(m11.summary())) : route.fulfill(denied);
       // AdminBatch010 — Content & Maps
       case 'eab_admin_mod_cases': {
         if (!c10.staff.includes(role)) return route.fulfill(denied);
@@ -2592,4 +2686,127 @@ test('viewer: Content insight counts and anonymous dots only; no moderation; reg
   await r.page.getByTestId('tile-my-case').waitFor();
   for (const n of [16, 57, 56, 54, 28, 8, 55, 60, 61]) assert.equal(await r.page.getByTestId(`tile-${n}`).count(), 0, `regulator tile ${n}`);
   await r.ctx.close();
+});
+
+// ---------------- AdminBatch011: Money ----------------
+
+test('owner: ledger — add a US$ bill with its rate, void an entry with a reason, copy monthly bills; P&L and cost per user (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  for (const n of [2, 40, 10, 34, 33]) assert.ok(await page.getByTestId(`tile-${n}`).isEnabled(), `tile ${n}`);
+  await page.getByTestId('tile-10').click();
+  await page.getByTestId('ledger-list').waitFor();
+  assert.match(await page.getByTestId('ledger-list').innerText(), /LED-2026-0001[\s\S]*Supabase Inc[\s\S]*USD 25\.00[\s\S]*at 4\.5[\s\S]*RM 112\.50/);
+  // add: AWS US$ 12 — first without the rate
+  await page.getByTestId('ledger-new').click();
+  await page.getByTestId('lf-category').selectOption('aws');
+  await page.getByTestId('lf-payee').fill('Amazon Web Services');
+  await page.getByTestId('lf-amount').fill('12');
+  await page.getByTestId('lf-currency').selectOption('USD');
+  await page.getByTestId('lf-save').click();
+  assert.match(await page.getByTestId('lf-problems').innerText(), /how many RM for 1 USD/);
+  assert.ok(!calls.some(c => c.fn === 'eab_admin_ledger_add'));
+  await page.getByTestId('lf-fx').fill('4.4');
+  assert.match(await page.getByTestId('lf-myr').innerText(), /RM 52\.80/);
+  await page.getByTestId('lf-recurring').check();
+  await page.screenshot({ path: `${SHOTS}/80-money-ledger-form-laptop.png`, fullPage: true });
+  await page.getByTestId('lf-save').click();
+  await page.getByTestId('ledger-list').getByText('Amazon Web Services').waitFor();
+  const add = calls.find(c => c.fn === 'eab_admin_ledger_add').args.p;
+  assert.equal(add.category, 'aws'); assert.equal(add.currency, 'USD'); assert.equal(add.fx_to_myr, 4.4); assert.equal(add.amount, 12); assert.equal(add.recurring, true);
+  // void the AWS one
+  await page.getByTestId('ledger-row').filter({ hasText: 'Amazon Web Services' }).getByTestId('ledger-void').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Wrong month, entering again');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="ledger-list"]')?.textContent?.includes('Amazon Web Services'));
+  assert.equal(calls.find(c => c.fn === 'eab_admin_ledger_void').args.p_reason, 'Wrong month, entering again');
+  await page.getByTestId('ledger-voided').check();
+  await page.getByTestId('ledger-row').filter({ hasText: 'Amazon Web Services' }).getByText('void', { exact: true }).waitFor();
+  // copy last month's monthly bills
+  await page.getByTestId('ledger-repeat').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('October bills');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('ledger-note').getByText(/1 entry copied/).waitFor();
+  assert.match(await page.getByTestId('ledger-list').innerText(), /copied from LED-2026-0001/);
+  await page.screenshot({ path: `${SHOTS}/81-money-ledger-laptop.png`, fullPage: true });
+  // P&L and cost per user
+  await page.getByTestId('mtab2-pnl').click();
+  await page.getByTestId('pnl-table').waitFor();
+  assert.match(await page.getByTestId('pnl-table').innerText(), /Oct 2026[\s\S]*RM 112\.50/);
+  await page.getByTestId('mtab2-cost').click();
+  await page.getByTestId('cost-table').waitFor();
+  assert.match(await page.getByTestId('money-cost').innerText(), /This month, per active agent\s*RM 28\.13[\s\S]*4 active agents/);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('money-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^Money-EAB-20261021-000007\.xlsx$/);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_export').args.p_kind, 'money_report');
+  await ctx.close();
+});
+
+test('owner: Google API cost, quota alerts with a limit, prices and the US$ rate (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 390 });
+  await page.getByTestId('tile-2').click();
+  await page.getByTestId('google-products').waitFor();
+  assert.match(await page.getByTestId('google-products').innerText(), /Dynamic Maps[\s\S]*9,200[\s\S]*US\$ 7\.00[\s\S]*Places Autocomplete[\s\S]*not set/);
+  assert.match(await page.getByTestId('money-google').innerText(), /set the US\$ → RM rate in Prices/);
+  await page.screenshot({ path: `${SHOTS}/82-money-google-phone.png`, fullPage: true });
+  // alerts: Dynamic Maps is on course for 80% of the free allowance → Watch; set a monthly limit of 9,000 → Limit reached
+  await page.getByTestId('mtab2-alerts').click();
+  await page.getByTestId('alert-dynamic_maps').waitFor();
+  assert.match(await page.getByTestId('alert-dynamic_maps').innerText(), /Watch[\s\S]*80% of the free allowance/);
+  await page.getByTestId('alert-edit-dynamic_maps').click();
+  await page.getByTestId('sku-monthly_limit').fill('9000');
+  await page.getByTestId('sku-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Same as the Google Cloud quota');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('alert-dynamic_maps').getByText('Limit reached', { exact: true }).waitFor();
+  assert.deepEqual(calls.find(c => c.fn === 'eab_admin_api_sku_set').args.p, { monthly_limit: '9000' });
+  await page.screenshot({ path: `${SHOTS}/83-money-alerts-phone.png`, fullPage: true });
+  // prices: set the rate, then the estimate shows in RM
+  await page.getByTestId('mtab2-prices').click();
+  await page.getByTestId('ms-rate').fill('4.4');
+  await page.getByTestId('ms-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Bank rate this week');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="ms-save"]')?.disabled === true);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_money_settings_set').args.p.usd_myr, '4.4');
+  await page.getByTestId('sku-edit-places_autocomplete').click();
+  await page.getByTestId('sku-price_per_1000').fill('2.83');
+  await page.getByTestId('sku-free_per_month').fill('10000');
+  await page.getByTestId('sku-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('From the Google bill');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('sku-table').getByText('US$ 2.83').waitFor();
+  await ctx.close();
+});
+
+test('compliance and admin read Money but cannot change it; compliance can export; viewer and regulator have no Money (phone)', async () => {
+  const c = await open({ role: 'compliance', width: 390 });
+  await c.page.getByTestId('tile-10').click();
+  await c.page.getByTestId('ledger-list').waitFor();
+  assert.equal(await c.page.getByTestId('ledger-new').count(), 0);
+  assert.equal(await c.page.getByTestId('ledger-void').count(), 0);
+  assert.equal(await c.page.getByTestId('ledger-repeat').count(), 0);
+  await c.page.getByTestId('money-readonly').waitFor();
+  assert.ok(await c.page.getByTestId('money-pdf').isEnabled(), 'compliance can export');
+  await c.page.getByTestId('mtab2-prices').click();
+  await c.page.getByTestId('sku-table').waitFor();
+  assert.ok(await c.page.getByTestId('ms-rate').isDisabled());
+  assert.equal(await c.page.getByTestId('sku-edit-dynamic_maps').count(), 0);
+  await c.ctx.close();
+  const a = await open({ role: 'admin', width: 390 });
+  await a.page.getByTestId('tile-40').click();
+  await a.page.getByTestId('alert-list').waitFor();
+  assert.equal(await a.page.getByTestId('alert-edit-dynamic_maps').count(), 0);
+  assert.equal(await a.page.getByTestId('money-pdf').count(), 0, 'admin cannot export');
+  await a.ctx.close();
+  for (const role of ['viewer', 'regulator']) {
+    const v = await open({ role, width: 390 });
+    await v.page.getByTestId(role === 'viewer' ? 'tile-54' : 'tile-my-case').waitFor();
+    for (const n of [2, 40, 10, 34, 33]) assert.equal(await v.page.getByTestId(`tile-${n}`).count(), 0, `${role} tile ${n}`);
+    await v.ctx.close();
+  }
 });

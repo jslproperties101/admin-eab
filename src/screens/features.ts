@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-010). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-011). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -114,11 +114,11 @@ export const SECTIONS: Section[] = [
     { n: 44, name: 'Push Delivery Rates', open: { k: 'health', tab: 'push' }, needs: 'viewHealth', note: 'Sent, delivered, opened' },
   ] },
   { title: 'Money', items: [
-    { n: 2, name: 'Google API Usage & Cost' },
-    { n: 40, name: 'API Quota Alerts' },
-    { n: 10, name: 'Billing & Expenses' },
-    { n: 34, name: 'Cost per User' },
-    { n: 33, name: 'Profit & Loss' },
+    { n: 2, name: 'Google API Usage & Cost', open: { k: 'money', tab: 'google' }, needs: 'viewMoney', note: 'Calls per product and the estimated bill' },
+    { n: 40, name: 'API Quota Alerts', open: { k: 'money', tab: 'alerts' }, needs: 'viewMoney', note: 'Warn before limits and free allowance' },
+    { n: 10, name: 'Billing & Expenses', open: { k: 'money', tab: 'ledger' }, needs: 'viewMoney', note: 'What is paid and received; never deleted' },
+    { n: 34, name: 'Cost per User', open: { k: 'money', tab: 'cost' }, needs: 'viewMoney', note: 'Money paid per active agent' },
+    { n: 33, name: 'Profit & Loss', open: { k: 'money', tab: 'pnl' }, needs: 'viewMoney', note: 'Received minus paid, per month' },
     { n: 30, name: 'Revenue', blocked: 'Needs subscriptions in the main app' },
     { n: 31, name: 'Failed & Overdue Payments', blocked: 'Needs subscriptions in the main app' },
     { n: 32, name: 'Refunds & Disputes', blocked: 'Needs subscriptions in the main app' },

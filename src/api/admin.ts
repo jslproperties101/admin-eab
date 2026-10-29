@@ -278,6 +278,54 @@ export interface MarketNews {
   best: { dow: number; hour: number; opens: number }[];
 }
 
+// ---------- AdminBatch011: Money (ledger, Google API usage and cost, quota alerts, profit & loss, cost per user) ----------
+export type LedgerKind = 'expense' | 'income';
+export type LedgerCategory = 'supabase' | 'aws' | 'google' | 'app_stores' | 'domain_hosting' | 'email_messaging' | 'software' | 'legal_compliance'
+  | 'marketing' | 'staff' | 'other_expense' | 'developer_partner' | 'advertising' | 'other_income';
+export interface LedgerEntry {
+  id: string; ref: string; kind: LedgerKind; category: LedgerCategory; payee: string; description: string | null;
+  amount: number; currency: string; fx_to_myr: number; amount_myr: number; paid_on: string; period_month: string; recurring: boolean;
+  invoice_ref: string | null; repeat_of: string | null; repeat_ref: string | null; voided_at: string | null; void_reason: string | null;
+  voided_by_email: string | null; created_by_email: string | null; created_at: string;
+}
+export interface NewLedgerEntry {
+  kind: LedgerKind; category: LedgerCategory; payee: string; description?: string; amount: number; currency: string; fx_to_myr?: number | null;
+  paid_on: string; period_month?: string; recurring: boolean; invoice_ref?: string;
+}
+export interface Ledger {
+  from: string; to: string; expenses_myr: number; income_myr: number; voided: number;
+  by_category: { kind: LedgerKind; category: LedgerCategory; entries: number; amount_myr: number }[]; entries: LedgerEntry[];
+}
+export interface ApiSku {
+  sku: string; label: string; names: string[]; price_per_1000: number | null; free_per_month: number | null;
+  monthly_limit: number | null; daily_limit: number | null; alert_pct: number; updated_at: string;
+}
+export interface MoneySettings { settings: { usd_myr: number | null; monthly_budget_myr: number | null; updated_at: string }; skus: ApiSku[] }
+export interface ApiProduct extends Omit<ApiSku, 'updated_at'> {
+  month_calls: number; today_calls: number; projected: number; level: 'ok' | 'amber' | 'red'; reasons: string[];
+  month_usd: number | null; projected_usd: number | null; month_myr: number | null; projected_myr: number | null;
+}
+export interface ApiUsage {
+  months: number; since: string; this_month: string; days_in_month: number; days_passed: number; usd_myr: number | null;
+  products: ApiProduct[]; alerts: number; month_usd: number | null; projected_usd: number | null; month_myr: number | null; projected_myr: number | null;
+  unpriced_calls: number;
+  by_month: { month: string; calls: number; failures: number; usd: number | null; myr: number | null }[];
+  by_month_sku: { month: string; sku: string; calls: number; failures: number }[];
+  by_name: { name: string; sku: string; calls: number; failures: number; agents: number }[];
+  by_day: { day: string; calls: number }[];
+  top_agents: (AgentRef & { calls: number })[];
+}
+export interface MoneyMonth {
+  month: string; income: number; expenses: number; net: number; active: number; cost_per_active: number | null;
+  google_usd: number | null; google_myr: number | null; google_billed: boolean; over_budget: boolean;
+}
+export interface MoneySummary {
+  months: number; since: string; usd_myr: number | null; monthly_budget_myr: number | null; income: number; expenses: number; net: number;
+  this_month: { income: number; expenses: number; net: number; active: number; cost_per_active: number | null; over_budget: boolean };
+  by_month: MoneyMonth[]; by_category: { kind: LedgerKind; category: LedgerCategory; amount_myr: number; per_active: number | null }[];
+  average_active: number | null; cost_per_active_avg: number | null;
+}
+
 // ---------- AdminBatch010: Content & Maps (moderation, photos, duplicates, maps, contacts, trends, AI, Studio) ----------
 export type ModStatus = 'open' | 'cleared' | 'confirmed' | 'referred';
 export type ModReason = 'price_far' | 'no_title_type' | 'no_price' | 'no_photos' | 'same_photo' | 'same_spot' | 'same_address'
@@ -736,6 +784,19 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   agentDevices: (user: string) => call<AgentDevice[]>('eab_admin_agent_devices', { p_user: user, p_device: device }),
   deviceRemove: (user: string, deviceId: string, reason: string) =>
     call<unknown>('eab_admin_device_remove', { p_user: user, p_device_id: deviceId, p_reason: reason, p_device: device }),
+  // AdminBatch011 — Money
+  ledger: (from: string, to: string, kind: LedgerKind | null = null, voided = false) =>
+    call<Ledger>('eab_admin_ledger', { p_from: from, p_to: to, p_kind: kind, p_voided: voided, p_device: device }),
+  ledgerAdd: (p: NewLedgerEntry) => call<LedgerEntry>('eab_admin_ledger_add', { p, p_device: device }),
+  ledgerVoid: (id: string, reason: string) => call<LedgerEntry>('eab_admin_ledger_void', { p_id: id, p_reason: reason, p_device: device }),
+  ledgerRepeat: (month: string, reason: string) => call<{ month: string; copied: number }>('eab_admin_ledger_repeat', { p_month: month, p_reason: reason, p_device: device }),
+  moneySettings: () => call<MoneySettings>('eab_admin_money_settings'),
+  moneySettingsSet: (p: Partial<{ usd_myr: number | string | null; monthly_budget_myr: number | string | null }>, reason: string) =>
+    call<MoneySettings>('eab_admin_money_settings_set', { p, p_reason: reason, p_device: device }),
+  apiSkuSet: (sku: string, p: Partial<Record<'price_per_1000' | 'free_per_month' | 'monthly_limit' | 'daily_limit' | 'alert_pct', number | string | null>>, reason: string) =>
+    call<MoneySettings>('eab_admin_api_sku_set', { p_sku: sku, p, p_reason: reason, p_device: device }),
+  apiUsage: (months = 6) => call<ApiUsage>('eab_admin_api_usage', { p_months: months, p_device: device }),
+  moneySummary: (months = 12) => call<MoneySummary>('eab_admin_money_summary', { p_months: months }),
   // AdminBatch010 — Content & Maps
   modCases: (status: ModStatus | 'closed' | null = null, agent: string | null = null) =>
     call<ModCases>('eab_admin_mod_cases', { p_status: status, p_agent: agent, p_device: device }),

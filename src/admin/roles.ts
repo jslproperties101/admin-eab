@@ -24,7 +24,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo'
   | 'scorecard' | 'funnel' | 'bulkActions' | 'duplicates' | 'viewDevices' | 'removeDevice'
   | 'viewMarket' | 'viewMarketAgents'
-  | 'moderate';
+  | 'moderate'
+  | 'viewMoney' | 'editMoney';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -91,6 +92,9 @@ const RULES: Record<Ability, Role[]> = {
   viewMarketAgents: ['owner', 'admin', 'compliance'],            // lists that name agents (needs work, deals, stuck, commission by agent)
   // AdminBatch010 — content insight uses viewMarket / viewMarketAgents; moderation, photos and duplicates are staff only
   moderate: ['owner', 'admin', 'compliance'],
+  // AdminBatch011 — Money: see (owner, admin, compliance); add, void, prices and settings (owner only)
+  viewMoney: ['owner', 'admin', 'compliance'],
+  editMoney: ['owner'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

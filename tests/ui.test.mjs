@@ -332,6 +332,76 @@ function marketFake() {
   };
 }
 
+/** AdminBatch010 fake Content & Maps: moderation register, automatic checks, photos, duplicates, maps and counts. */
+function contentFake() {
+  let n = 0; const now = '2026-10-30T02:00:00Z';
+  const staff = ['owner', 'admin', 'compliance'], view = [...staff, 'viewer'];
+  const siti = { user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent' };
+  const ali = { user_id: 'b2', email: 'ali@example.com', name: 'Ali' };
+  const L = (who, o) => ({ ...who, headline: null, type: 'Terrace house', state: 'Selangor', city: 'Kajang', status: 'available', asking: 500000, rent: null, photos: 3, updated_at: '2026-10-29T02:00:00Z', ...o });
+  const x1 = L(siti, { id: 'p1', ref: 'P1001', headline: 'Terrace in Kajang', asking: 1500000 });
+  const y1 = L(ali, { id: 'q1', ref: 'Q2001' });
+  const st = { cases: [], reviews: new Map(), seq: 0 };
+  const ev = (kind, body, from, to) => ({ id: ++n, kind, body, from_status: from ?? null, to_status: to ?? null, by_email: 'joe@example.com', at: now });
+  const cjson = c => ({ ...c, agent_email: 'agent@example.com', agent_name: 'Siti Agent', summary: c.details.slice(0, 160), listing: x1, agent_cases: st.cases.length, complaint_ref: null });
+  const suspects = () => ({ checked: 6, counts: { price_far: 1, no_title_type: 2, same_photo: 2 }, listings: [
+    { ...x1, reasons: [
+      { reason: 'price_far', detail: 'RM 1,500.00 per sq ft; others in Kajang (Terrace house): median RM 300.00', case_ref: st.cases.find(c => c.reason === 'price_far' && c.status === 'open')?.ref ?? null },
+      { reason: 'same_photo', detail: 'a photo is also in a listing of another agent', case_ref: null }] },
+    { ...y1, reasons: [{ reason: 'no_title_type', detail: 'no title type', case_ref: null }] }] });
+  const sha = 'a1'.repeat(32), own = 'b2'.repeat(32);
+  const photo = (s, l, other) => ({ workspace_id: 'w1', sha256: s, path: `aaaaaaaa-0000-4000-8000-000000000001/${s}`, mime: 'image/jpeg', bytes: 220287, uploaded_at: '2026-10-29T03:00:00Z',
+    other_agents: other, listing: l, ...(st.reviews.get(s) ?? { decision: null, reason: null, reviewed_at: null, reviewed_by: null, case_ref: null }) });
+  const queue = status => {
+    const all = [photo(sha, x1, 1), photo(own, x1, 0)];
+    const counts = { all: all.length, unreviewed: all.filter(p => !p.decision).length, ok: all.filter(p => p.decision === 'ok').length, flagged: all.filter(p => p.decision === 'flagged').length, shared: 1 };
+    return { counts, status, photos: all.filter(p => status === 'all' || (status === 'unreviewed' ? !p.decision : p.decision === status)) };
+  };
+  const create = p => {
+    const c = { id: `dddddddd-0000-4000-8000-${String(++n).padStart(12, '0')}`, ref: `MOD-2026-${String(++st.seq).padStart(4, '0')}`, kind: p.kind ?? 'listing', agent_user: p.agent_user,
+      workspace_id: p.workspace_id ?? 'w1', record_id: p.record_id ?? 'p1', listing_ref: 'P1001', file_sha: p.file_sha ?? null, reason: p.reason, source: p.source ?? 'admin',
+      details: p.details, status: 'open', outcome: null, complaint_id: null, created_at: now, updated_at: now, history: [ev('created', null, null, 'open')] };
+    st.cases.unshift(c); return c;
+  };
+  const points = names => [
+    { lat: 3.0, lng: 101.79, status: 'available', type: 'Terrace house', side: 'sale', price: 1500000, state: 'Selangor', city: 'Kajang', ...(names ? { id: 'p1', ref: 'P1001', headline: 'Terrace in Kajang', ...siti } : {}) },
+    { lat: 3.0001, lng: 101.7901, status: 'booked_pending_loan', type: 'Terrace house', side: 'sale', price: 520000, state: 'Selangor', city: 'Kajang', ...(names ? { id: 'q1', ref: 'Q2001', headline: null, ...ali } : {}) },
+    { lat: 1.49, lng: 103.74, status: 'available', type: 'Condominium', side: 'rent', price: 2500, state: 'Johor', city: 'Johor Bahru', ...(names ? { id: 'p3', ref: 'P1003', headline: null, ...siti } : {}) }];
+  return {
+    staff, view, st, sha, own, suspects, queue, create, cjson, ev, now,
+    dups: () => ({ counts: { photo: 1, address: 1, spot: 0 }, groups: [
+      { kind: 'photo', key: sha.slice(0, 12), agents: 2, listings: [x1, y1] },
+      { kind: 'address', key: '12 | jalan ujian | kajang', agents: 2, listings: [x1, y1] }] }),
+    map: (a, role) => {
+      const names = staff.includes(role);
+      const pts = points(names).filter(p => (!a.p_state || p.state === a.p_state) && (!a.p_side || p.side === a.p_side));
+      return { scope: a.p_scope ?? 'open', listings: pts.length + 2, with_pin: pts.length, names_hidden: !names, states: ['Johor', 'Selangor'], types: ['Condominium', 'Terrace house'], points: pts };
+    },
+    geo: () => ({ agents: 9, with_listings: 6, with_place: 7, by_country: [{ country: 'Malaysia', agents: 8 }, { country: 'Singapore', agents: 1 }],
+      by_state: [{ state: 'Selangor', agents: 5 }, { state: 'Johor', agents: 2 }, { state: 'No listings yet', agents: 2 }],
+      by_city: [{ state: 'Selangor', city: 'Kajang', agents: 3 }, { state: 'Selangor', city: 'Cheras', agents: 2 }, { state: 'Johor', city: 'Johor Bahru', agents: 2 }],
+      cells: [{ lat: 3.1, lng: 101.6, agents: 4 }, { lat: 3.0, lng: 101.8, agents: 3 }], cells_hidden: 2 }),
+    contacts: (a, role) => ({ from: a.p_from, to: a.p_to, contacts: 7, new_in_period: 2, by_role: [{ role: 'vendor', contacts: 6, new: 1 }, { role: 'buyer', contacts: 2, new: 1 }, { role: 'professional', contacts: 2, new: 0 }],
+      vendor_status: { pending_info: 2, not_set: 4 }, vendors: 6, vendors_with_listing: 3, buyers: 2, in_a_deal: 1, by_month: [{ month: '2026-09', buyers: 0, vendors: 2, others: 1 }, { month: '2026-10', buyers: 1, vendors: 1, others: 0 }],
+      enquiries: 3, enquiries_by_channel: [{ channel: 'whatsapp', enquiries: 2 }, { channel: 'phone', enquiries: 1 }], enquiries_with_contact: 2, agents_with_buyers: 1,
+      names_hidden: !staff.includes(role), agents: staff.includes(role) ? [{ ...siti, contacts: 7, buyers: 2, vendors: 6, new: 2, enquiries: 3 }] : null }),
+    trends: a => ({ months: a.p_months, since: '2025-11-01', listings: 10, no_date: 1, states: ['Johor', 'Selangor'], cities: [{ state: 'Johor', city: 'Johor Bahru' }, { state: 'Selangor', city: 'Kajang' }], types: ['Condominium', 'Terrace house'],
+      sale: { listings: 8, median_price: 520000, median_ppsf: 305 }, rent: { listings: 2, median_rent: 2500 },
+      by_month: [{ month: '2026-09', sale_listings: 2, median_price: 480000, median_ppsf: 290, rent_listings: 0, median_rent: null }, { month: '2026-10', sale_listings: 3, median_price: 500000, median_ppsf: 310, rent_listings: 1, median_rent: 2500 }],
+      by_area: [{ state: 'Selangor', city: 'Kajang', listings: 6, median_price: 500000, median_ppsf: 300, recent_ppsf: 310, before_ppsf: 290, change_pct: 6.9 }],
+      by_type: [{ type: 'Terrace house', listings: 6, median_price: 500000, median_ppsf: 300, median_rent: null }] }),
+    ai: (a, role) => ({ from: a.p_from, to: a.p_to, commands: 8, understood: 6, not_understood: 2, success_pct: 75, agents: 2, screen_opens: 9, screen_agents: 2,
+      by_day: [{ day: '2026-10-28', understood: 3, not_understood: 0 }, { day: '2026-10-29', understood: 3, not_understood: 2 }],
+      by_version: [{ version: '2.2.0', commands: 6, not_understood: 1, success_pct: 83.3 }, { version: '2.1.0', commands: 2, not_understood: 1, success_pct: 50 }],
+      by_language: [{ language: 'en', commands: 5, not_understood: 0, success_pct: 100 }, { language: 'ms', commands: 3, not_understood: 2, success_pct: 33.3 }],
+      heatmap: [{ dow: 3, hour: 10, events: 5 }], names_hidden: !staff.includes(role),
+      list: staff.includes(role) ? [{ ...siti, commands: 6, not_understood: 2, success_pct: 66.7, last_at: '2026-10-29T03:00:00Z' }] : null }),
+    studio: (a, role) => ({ from: a.p_from, to: a.p_to, opened: 22, created: 13, saved: 8, shared: 4, agents: 3, makers: 2, share_pct: 30.8,
+      by_day: [{ day: '2026-10-29', created: 2, saved: 1, shared: 1 }], names_hidden: !staff.includes(role),
+      list: staff.includes(role) ? [{ ...siti, opened: 10, created: 9, saved: 6, shared: 3, last_at: '2026-10-29T03:00:00Z' }] : null }),
+  };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
@@ -363,9 +433,11 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const rep = reportsFake();
   const ins = insightFake();
   const b8 = b8Fake();
+  const c10 = contentFake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
+  await page.route('https://tile.openstreetmap.org/**', route => { calls.push({ fn: 'osm_tile', args: {} }); return route.fulfill({ status: 404, body: '' }); });
   await page.route(`${SB}/**`, async route => {
     const url = route.request().url();
     const fn = url.split('/rpc/')[1];
@@ -382,6 +454,11 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       return route.fulfill(ok({ Key: `eab-feed-media/${path}` }));
     }
     if (url.includes('/storage/v1/object/public/eab-feed-media/')) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    if (url.includes('/storage/v1/object/authenticated/eab-files/')) {
+      if (!c10.staff.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
+      calls.push({ fn: 'photo_download', args: { path: url.split('/eab-files/')[1] } });
+      return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    }
     if (url.includes('/storage/v1/object/authenticated/bug-reports/')) {
       if (!ops.staff.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
       return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
@@ -841,6 +918,47 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         if (args.p_action === 'suspend') profile.status = 'suspended';
         return route.fulfill(ok({ ref: `BULK-2026-000${++ins.bulks}`, action: args.p_action, count: args.p_users.length }));
       }
+      // AdminBatch010 — Content & Maps
+      case 'eab_admin_mod_cases': {
+        if (!c10.staff.includes(role)) return route.fulfill(denied);
+        const f = args.p_status; const counts = {}, by = {};
+        for (const c of c10.st.cases) { counts[c.status] = (counts[c.status] ?? 0) + 1; if (c.status === 'open') by[c.reason] = (by[c.reason] ?? 0) + 1; }
+        return route.fulfill(ok({ counts, by_reason: by, cases: c10.st.cases.filter(c => !f || c.status === f || (f === 'closed' && c.status !== 'open')).map(c => { const j = c10.cjson(c); delete j.details; delete j.history; return j; }) }));
+      }
+      case 'eab_admin_mod_get': { const c = c10.st.cases.find(x => x.id === args.p_id); return c && c10.staff.includes(role) ? route.fulfill(ok(c10.cjson(c))) : route.fulfill(denied); }
+      case 'eab_admin_mod_create': {
+        if (!c10.staff.includes(role)) return route.fulfill(denied);
+        if (!args.p?.details || args.p.details.trim().length < 1) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'describe what is wrong' }) });
+        return route.fulfill(ok(c10.cjson(c10.create(args.p))));
+      }
+      case 'eab_admin_mod_update': {
+        const c = c10.st.cases.find(x => x.id === args.p_id);
+        if (!c || !c10.staff.includes(role)) return route.fulfill(denied);
+        if (!args.p_note) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'a reason is required' }) });
+        const from = c.status; Object.assign(c, args.p, { updated_at: c10.now });
+        c.history.push(c10.ev(from !== c.status ? 'status' : 'updated', args.p_note, from !== c.status ? from : null, from !== c.status ? c.status : null));
+        return route.fulfill(ok(c10.cjson(c)));
+      }
+      case 'eab_admin_mod_note': { const c = c10.st.cases.find(x => x.id === args.p_id); c.history.push(c10.ev('note', args.p_note)); return route.fulfill(ok(c10.cjson(c))); }
+      case 'eab_admin_mod_suspects': return c10.staff.includes(role) ? route.fulfill(ok(c10.suspects())) : route.fulfill(denied);
+      case 'eab_admin_photo_queue': return c10.staff.includes(role) ? route.fulfill(ok(c10.queue(args.p_status))) : route.fulfill(denied);
+      case 'eab_admin_photo_review': {
+        if (!c10.staff.includes(role)) return route.fulfill(denied);
+        let ref = null;
+        if (args.p_decision === 'flagged') {
+          if (!args.p_reason || args.p_reason.length < 5) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'say what is wrong with the photo (at least 5 characters)' }) });
+          ref = c10.create({ kind: 'photo', agent_user: AGENT, file_sha: args.p_sha, reason: args.p_case_reason, source: 'photo_review', details: args.p_reason }).ref;
+        }
+        c10.st.reviews.set(args.p_sha, { decision: args.p_decision, reason: args.p_reason, reviewed_at: c10.now, reviewed_by: 'joe@example.com', case_ref: ref });
+        return route.fulfill(ok({ decision: args.p_decision, case_ref: ref }));
+      }
+      case 'eab_admin_dup_listings': return c10.staff.includes(role) ? route.fulfill(ok(c10.dups())) : route.fulfill(denied);
+      case 'eab_admin_map_listings': return c10.view.includes(role) ? route.fulfill(ok(c10.map(args, role))) : route.fulfill(denied);
+      case 'eab_admin_geo_agents': return c10.view.includes(role) ? route.fulfill(ok(c10.geo())) : route.fulfill(denied);
+      case 'eab_admin_contacts_stats': return c10.view.includes(role) ? route.fulfill(ok(c10.contacts(args, role))) : route.fulfill(denied);
+      case 'eab_admin_price_trends': return c10.view.includes(role) ? route.fulfill(ok(c10.trends(args))) : route.fulfill(denied);
+      case 'eab_admin_ai_usage': return c10.view.includes(role) ? route.fulfill(ok(c10.ai(args, role))) : route.fulfill(denied);
+      case 'eab_admin_studio_usage': return c10.view.includes(role) ? route.fulfill(ok(c10.studio(args, role))) : route.fulfill(denied);
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -2318,4 +2436,160 @@ test('regulator: no Listings & market', async () => {
   await page.getByTestId('tile-my-case').waitFor();
   for (const n of [102, 103, 104, 105, 107, 108, 109, 110]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
   await ctx.close();
+});
+
+// ---------------- AdminBatch010: Content & Maps ----------------
+
+test('compliance: automatic checks → open a case → case screen; referred needs a complaint; confirm with a reason; duplicates (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 1366 });
+  for (const n of [16, 57, 56, 54, 28, 8, 55, 60, 61]) assert.ok(await page.getByTestId(`tile-${n}`).isEnabled(), `tile ${n}`);
+  await page.getByTestId('tile-16').click();
+  await page.getByTestId('mod-cases').waitFor();
+  assert.match(await page.locator('main').innerText(), /No cases here/);
+  await page.getByTestId('modtab-suspects').click();
+  await page.getByTestId('suspect-list').waitFor();
+  assert.match(await page.getByTestId('suspect-list').innerText(), /P1001[\s\S]*Siti Agent[\s\S]*Price far from the area[\s\S]*median RM 300/);
+  await page.screenshot({ path: `${SHOTS}/70-mod-suspects-laptop.png`, fullPage: true });
+  await page.getByTestId('suspect-raise').first().click();
+  await page.getByTestId('raise-case').waitFor();
+  assert.equal(await page.getByTestId('raise-reason').inputValue(), 'price_far');
+  assert.match(await page.getByTestId('raise-details').inputValue(), /Price far from the area: RM 1,500/);
+  await page.getByTestId('raise-save').click();
+  await page.getByTestId('mod-case').waitFor();
+  assert.match(await page.locator('h1').innerText(), /MOD-2026-0001/);
+  const cr = calls.find(c => c.fn === 'eab_admin_mod_create').args.p;
+  assert.equal(cr.agent_user, AGENT); assert.equal(cr.record_id, 'p1'); assert.equal(cr.reason, 'price_far'); assert.equal(cr.source, 'suspect');
+  // referred without a complaint: cannot save, and says where to log one
+  await page.getByTestId('mod-to-referred').click();
+  await page.getByTestId('mod-note').fill('Sent on');
+  assert.ok(await page.getByTestId('mod-apply').isDisabled());
+  assert.match(await page.getByTestId('mod-actions').innerText(), /no complaint yet/);
+  await page.getByTestId('mod-to-referred').click();
+  await page.getByTestId('mod-to-confirmed').click();
+  await page.getByTestId('mod-outcome').fill('Agent asked to correct the price');
+  await page.getByTestId('mod-note').fill('Price typed with an extra zero');
+  await page.getByTestId('mod-apply').click();
+  await page.getByTestId('mod-status').getByText(/Confirmed/).waitFor();
+  assert.match(await page.getByTestId('history').innerText(), /Open → Confirmed[\s\S]*extra zero/);
+  const up = calls.find(c => c.fn === 'eab_admin_mod_update').args;
+  assert.equal(up.p.status, 'confirmed'); assert.equal(up.p_note, 'Price typed with an extra zero');
+  await page.screenshot({ path: `${SHOTS}/71-mod-case-laptop.png`, fullPage: true });
+  // the check now shows the case is open
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-56').click();
+  await page.getByTestId('dup-photo').waitFor();
+  assert.match(await page.getByTestId('dup-photo').innerText(), /Same photo[\s\S]*2 agents[\s\S]*P1001[\s\S]*Q2001/);
+  await page.getByTestId('dup-address').waitFor();
+  await page.screenshot({ path: `${SHOTS}/72-mod-duplicates-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('admin: photo moderation — photos open through the photo rule; OK one; flag one with a reason → case (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  await page.getByTestId('tile-57').click();
+  await page.getByTestId('photo-grid').waitFor();
+  await page.getByTestId('photo-img').first().waitFor();
+  assert.equal(await page.getByTestId('photo-card').count(), 2);
+  assert.ok(calls.some(c => c.fn === 'photo_download' && /^aaaaaaaa-0000-4000-8000-000000000001\/[0-9a-f]{64}$/.test(c.args.path)));
+  assert.match(await page.getByTestId('photo-shared').innerText(), /also used by 1 other agent/);
+  await page.screenshot({ path: `${SHOTS}/73-mod-photos-phone.png`, fullPage: true });
+  // OK the second photo
+  await page.getByTestId('photo-card').nth(1).getByTestId('photo-ok').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="photo-card"]').length === 1);
+  // flag the shared one: reason too short, then right
+  await page.getByTestId('photo-flag').click();
+  assert.equal(await page.getByTestId('photo-reason').inputValue(), 'same_photo');
+  await page.getByTestId('photo-why').fill('bad');
+  assert.ok(await page.getByTestId('photo-flag-save').isDisabled());
+  await page.getByTestId('photo-why').fill('Same picture as Ali\'s listing Q2001');
+  await page.getByTestId('photo-flag-save').click();
+  await page.locator('main').getByText('No photos here.').waitFor();
+  const rv = calls.filter(c => c.fn === 'eab_admin_photo_review').map(c => c.args);
+  assert.deepEqual(rv.map(r => r.p_decision), ['ok', 'flagged']);
+  assert.equal(rv[1].p_case_reason, 'same_photo'); assert.match(rv[1].p_reason, /Q2001/);
+  await page.getByTestId('pfilter-flagged').click();
+  await page.getByTestId('photo-card').waitFor();
+  assert.match(await page.getByTestId('photo-card').innerText(), /Flagged[\s\S]*MOD-2026-0001/);
+  await ctx.close();
+});
+
+test('owner: Content insight — listings map bubbles and pick list, geography, buyers & vendors, price trends, AI, Studio; Excel report (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-54').click();
+  await page.getByTestId('listings-map').waitFor();
+  await page.getByTestId('map-bubble').first().waitFor();
+  assert.ok(calls.some(c => c.fn === 'osm_tile'), 'map tiles requested');
+  const bubbles = await page.getByTestId('map-bubble').count();
+  assert.equal(bubbles, 2, 'the two Kajang listings 10 m apart make one bubble, Johor Bahru another');
+  await page.getByTestId('map-bubble').filter({ hasText: '2' }).click();
+  await page.getByTestId('map-picked').waitFor();
+  assert.match(await page.getByTestId('map-picked').innerText(), /2 listings here[\s\S]*P1001[\s\S]*Q2001[\s\S]*Ali/);
+  await page.screenshot({ path: `${SHOTS}/74-content-map-laptop.png`, fullPage: true });
+  await page.getByTestId('map-state').selectOption('Johor');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="map-bubble"]').length === 1);
+  assert.equal(calls.filter(c => c.fn === 'eab_admin_map_listings').at(-1).args.p_state, 'Johor');
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.getByTestId('map-fit').waitFor();
+  // geography
+  await page.getByTestId('ctab-geo').click();
+  await page.getByTestId('geo-map').waitFor();
+  assert.match(await page.getByTestId('geo-countries').innerText(), /Malaysia[\s\S]*Singapore/);
+  assert.match(await page.getByTestId('geo-map').innerText(), /2 smaller areas hidden for privacy/);
+  await page.getByTestId('geo-states').getByText('Johor').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="geo-cities"]')?.textContent?.includes('Kajang'));
+  // buyers & vendors
+  await page.getByTestId('ctab-contacts').click();
+  await page.getByTestId('contact-agents').waitFor();
+  assert.match(await page.getByTestId('c-contacts').innerText(), /Vendors \(owners\)\s*6[\s\S]*3 linked to a listing/);
+  assert.match(await page.getByTestId('contact-channels').innerText(), /WhatsApp/);
+  // price trends
+  await page.getByTestId('ctab-trends').click();
+  await page.getByTestId('trend-areas').waitFor();
+  assert.match(await page.getByTestId('trend-areas').innerText(), /Kajang[\s\S]*RM 300 psf[\s\S]*\+6\.9%/);
+  await page.getByTestId('trend-24').click();
+  await page.waitForFunction(() => true);
+  assert.ok(calls.some(c => c.fn === 'eab_admin_price_trends' && c.args.p_months === 24));
+  await page.getByTestId('trend-state').selectOption('Selangor');
+  assert.equal(await page.getByTestId('trend-city').locator('option').count(), 2, 'only Selangor cities');
+  // AI and Studio
+  await page.getByTestId('ctab-ai').click();
+  await page.getByTestId('ai-agents').waitFor();
+  assert.match(await page.getByTestId('c-ai').innerText(), /Understood\s*75%/);
+  assert.match(await page.getByTestId('ai-languages').innerText(), /Bahasa Melayu[\s\S]*33 %/);
+  await page.screenshot({ path: `${SHOTS}/75-content-ai-laptop.png`, fullPage: true });
+  await page.getByTestId('ctab-studio').click();
+  await page.getByTestId('studio-agents').waitFor();
+  assert.match(await page.getByTestId('c-studio').innerText(), /Posters made\s*13[\s\S]*31% of posters made/);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('c-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^Content-EAB-20261021-000007\.xlsx$/);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_export').args.p_kind, 'content_report');
+  await ctx.close();
+});
+
+test('viewer: Content insight counts and anonymous dots only; no moderation; regulator sees neither (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'viewer', width: 390 });
+  for (const n of [16, 57, 56]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
+  await page.getByTestId('tile-54').click();
+  await page.getByTestId('map-bubble').first().waitFor();
+  await page.getByTestId('map-bubble').first().click();
+  await page.getByTestId('map-picked').waitFor();
+  const picked = await page.getByTestId('map-picked').innerText();
+  assert.doesNotMatch(picked, /P1001|Siti|Agent\b/);
+  assert.match(picked, /Terrace house|Condominium/);
+  await page.screenshot({ path: `${SHOTS}/76-content-map-viewer-phone.png`, fullPage: true });
+  await page.getByTestId('ctab-contacts').click();
+  await page.getByTestId('c-contacts').waitFor();
+  assert.equal(await page.getByTestId('contact-agents').count(), 0);
+  await page.getByTestId('names-hidden').waitFor();
+  await page.getByTestId('ctab-ai').click();
+  await page.getByTestId('c-ai').waitFor();
+  assert.equal(await page.getByTestId('ai-agents').count(), 0);
+  assert.equal(await page.getByTestId('c-xlsx').count(), 0, 'viewer cannot export');
+  assert.doesNotMatch(await page.locator('main').innerText(), /agent@example\.com|Siti Agent/);
+  assert.ok(!calls.some(c => c.fn === 'photo_download'));
+  await ctx.close();
+  const r = await open({ role: 'regulator', width: 390 });
+  await r.page.getByTestId('tile-my-case').waitFor();
+  for (const n of [16, 57, 56, 54, 28, 8, 55, 60, 61]) assert.equal(await r.page.getByTestId(`tile-${n}`).count(), 0, `regulator tile ${n}`);
+  await r.ctx.close();
 });

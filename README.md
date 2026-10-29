@@ -67,6 +67,16 @@ AdminBatch009 Merged (0.9.1): one app with both Agent insight and Market. Databa
 `20261027000000_admin_batch_009_agents.sql`, then `20261027100000_admin_batch_009_market.sql` (either order works;
 no shared function names). Main repo branch: feature/admin-batch-009-merged-db.
 
+AdminBatch010 "Content & Maps" (0.10.0): Moderation screen (Owner / Admin / Compliance) — moderation cases MOD-YYYY-####
+(16, never deleted; open, cleared, confirmed, referred to a complaint), automatic checks (price far from the area, no
+title type, no price, no photos after 14 days, same photo or same spot as another agent), photo moderation (57: OK or
+Flag; a flag opens a case; a storage rule lets staff open listing PHOTOS only) and duplicate listings (56). Content insight
+screen — Listings map (54) and Geography map (28; sign-in places rounded to ~10 km, only areas with 3+ agents), Buyers &
+vendors (8; counts only, no contact names or phones), Price trends (55), AI command usage (60; understood or not — the
+words are not recorded) and Marketing Studio usage (61). Maps are drawn by the app over OpenStreetMap tiles (internet
+needed for the background; dots still show offline). PDF / Excel for Owner / Compliance. Nothing in the main app changes.
+Needs `20261028000000_admin_batch_010_content.sql` (main repo branch feature/admin-batch-010-db, after both 009 files).
+
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,

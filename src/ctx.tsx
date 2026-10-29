@@ -42,7 +42,15 @@ export type View =
   | { k: 'scorecard' }
   | { k: 'funnel' }
   | { k: 'duplicates' }
-  | { k: 'market'; tab: MarketTab };
+  | { k: 'market'; tab: MarketTab }
+  // AdminBatch010
+  | { k: 'moderation'; tab: ModTab }
+  | { k: 'modcase'; id: string }
+  | { k: 'content'; tab: ContentTab };
+
+/** AdminBatch010 — Moderation tabs (16, 57, 56) and Content insight tabs (54, 28, 8, 55, 60, 61). */
+export type ModTab = 'cases' | 'suspects' | 'photos' | 'duplicates';
+export type ContentTab = 'map' | 'geo' | 'contacts' | 'trends' | 'ai' | 'studio';
 
 /** AdminBatch009 — Listings & market tabs. */
 export type MarketTab = 'quality' | 'dom' | 'price' | 'areas' | 'stuck' | 'commission' | 'projects' | 'news';

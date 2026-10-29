@@ -1,5 +1,5 @@
 // Every Admin EAB feature agreed with Joe (JoyChange004-Admin Parts 1-6), grouped into home-screen sections.
-// `open` = built and usable now (AdminBatch001-009 Merged). The rest show "Coming soon" so the whole plan is visible.
+// `open` = built and usable now (AdminBatch001-010). The rest show "Coming soon" so the whole plan is visible.
 import { Ability } from '../admin/roles';
 import { View } from '../ctx';
 
@@ -27,8 +27,8 @@ export const SECTIONS: Section[] = [
     { n: 82, name: 'Licence Expiry', open: { k: 'licences' }, needs: 'licences', note: 'Warnings at 60 / 30 / 7 days' },
     { n: 52, name: 'Licence Verification', open: { k: 'agents', filter: 'licence' }, needs: 'listAgents', note: 'Unverified first' },
     { n: 53, name: 'Terms Acceptance Log', open: { k: 'agents', filter: 'all' }, needs: 'listAgents', note: 'Version per agent; history in profile' },
-    { n: 16, name: 'Content Moderation' },
-    { n: 57, name: 'Photo Moderation' },
+    { n: 16, name: 'Content Moderation', open: { k: 'moderation', tab: 'cases' }, needs: 'moderate', note: 'Cases and automatic checks' },
+    { n: 57, name: 'Photo Moderation', open: { k: 'moderation', tab: 'photos' }, needs: 'moderate', note: 'Review listing photos' },
   ] },
   { title: 'Reports', items: [
     { n: 90, name: 'Monthly Board Report', open: { k: 'reports', tab: 'board' }, needs: 'boardReport', note: 'Compared with last month; kept in the vault' },
@@ -67,7 +67,7 @@ export const SECTIONS: Section[] = [
     { n: 26, name: 'Inactive Agents', open: { k: 'dash', tab: 'inactive' }, needs: 'viewDash', note: 'No activity 30/60/90 days' },
     { n: 20, name: 'App Version Tracking', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'Agents per version' },
     { n: 27, name: 'Device & OS Breakdown', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'Platforms and phone models' },
-    { n: 28, name: 'Geography Map' },
+    { n: 28, name: 'Geography Map', open: { k: 'content', tab: 'geo' }, needs: 'viewMarket', note: 'Agents by country, state, city' },
     { n: 29, name: 'Language Usage', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'English, BM, Chinese' },
   ] },
   { title: 'Agent Insight', items: [
@@ -80,15 +80,15 @@ export const SECTIONS: Section[] = [
   { title: 'Content & Business', items: [
     { n: 7, name: 'Listings Analytics', open: { k: 'dash', tab: 'listings' }, needs: 'viewDash', note: 'By status; stale listings' },
     { n: 59, name: 'Deal Pipeline (Sale & Rent)', open: { k: 'dash', tab: 'pipeline' }, needs: 'viewDash', note: 'Sale lane and rent lane' },
-    { n: 8, name: 'Buyer & Vendor Analytics' },
-    { n: 54, name: 'Listings Map' },
-    { n: 55, name: 'Price Trends by Area' },
-    { n: 56, name: 'Duplicate Listings' },
+    { n: 8, name: 'Buyer & Vendor Analytics', open: { k: 'content', tab: 'contacts' }, needs: 'viewMarket', note: 'Counts only; no contact names' },
+    { n: 54, name: 'Listings Map', open: { k: 'content', tab: 'map' }, needs: 'viewMarket', note: 'Every listing with a map pin' },
+    { n: 55, name: 'Price Trends by Area', open: { k: 'content', tab: 'trends' }, needs: 'viewMarket', note: 'Median price and price per sq ft' },
+    { n: 56, name: 'Duplicate Listings', open: { k: 'moderation', tab: 'duplicates' }, needs: 'moderate', note: 'Same photo, address or spot' },
     { n: 58, name: 'Top Agents', open: { k: 'top' }, needs: 'viewDashAgents', note: 'Sold, rented, new listings' },
     { n: 6, name: 'User Activity', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'When agents use the app' },
     { n: 62, name: 'Feature Usage', open: { k: 'dash', tab: 'usage' }, needs: 'viewDash', note: 'Most used and not used' },
-    { n: 60, name: 'AI Command Usage' },
-    { n: 61, name: 'Marketing Studio Usage' },
+    { n: 60, name: 'AI Command Usage', open: { k: 'content', tab: 'ai' }, needs: 'viewMarket', note: 'Commands and how many were understood' },
+    { n: 61, name: 'Marketing Studio Usage', open: { k: 'content', tab: 'studio' }, needs: 'viewMarket', note: 'Posters made, saved, shared' },
   ] },
   { title: 'Listings & Market', items: [
     { n: 102, name: 'Listing Quality Score', open: { k: 'market', tab: 'quality' }, needs: 'viewMarket', note: 'Score out of 100; needs photos / details' },

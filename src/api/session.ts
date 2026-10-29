@@ -170,6 +170,19 @@ export async function screenshotDownload(c: Conn, s: Session, path: string, onSe
   return r.blob();
 }
 
+/** AdminBatch010: a listing photo in the agents' cloud folder 'eab-files' (path = workspace id / sha256). */
+export const FILES_BUCKET = 'eab-files';
+export const PHOTO_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{64}$/;
+export async function photoDownload(c: Conn, s: Session, path: string, onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<Blob> {
+  if (!PHOTO_PATH.test(path)) throw new ApiError('not-found', 'not a listing photo');
+  const url = `${c.supabaseUrl}/storage/v1/object/authenticated/${FILES_BUCKET}/${path}`;
+  const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(url, { headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}` } }));
+  if (r.status === 400 || r.status === 404) throw new ApiError('not-found', 'photo not found');
+  if (r.status === 403) throw new ApiError('not-allowed');
+  if (!r.ok) throw new ApiError('server', `download HTTP ${r.status}`);
+  return r.blob();
+}
+
 export interface PushSendItem { item_id: string; targeted?: number; sent?: number; failed?: number; no_phone?: number; skipped?: string }
 /**
  * Sends waiting push alerts through the main app's server function send-push (JoyChange010-03). The function checks

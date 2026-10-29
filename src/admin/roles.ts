@@ -22,7 +22,8 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'pdpa' | 'complaints' | 'viewHolds' | 'placeHold' | 'licences' | 'internal' | 'viewRetention' | 'reviewRetention'
   | 'boardReport' | 'auditBundle' | 'reportBuilder' | 'reportNames'
   | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo'
-  | 'scorecard' | 'funnel' | 'bulkActions' | 'duplicates' | 'viewDevices' | 'removeDevice';
+  | 'scorecard' | 'funnel' | 'bulkActions' | 'duplicates' | 'viewDevices' | 'removeDevice'
+  | 'viewMarket' | 'viewMarketAgents';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -84,6 +85,9 @@ const RULES: Record<Ability, Role[]> = {
   duplicates: ['owner', 'admin', 'compliance'],
   viewDevices: ['owner', 'admin', 'compliance', 'regulator'],    // a regulator only for agents in their case
   removeDevice: ['owner', 'admin'],                              // sign one phone out (MainForAdmin-G)
+  // AdminBatch009 — same rules as the eab_admin_market_* database functions
+  viewMarket: ['owner', 'admin', 'compliance', 'viewer'],        // totals and charts
+  viewMarketAgents: ['owner', 'admin', 'compliance'],            // lists that name agents (needs work, deals, stuck, commission by agent)
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

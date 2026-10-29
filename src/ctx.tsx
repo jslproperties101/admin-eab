@@ -41,8 +41,11 @@ export type View =
   // AdminBatch009
   | { k: 'scorecard' }
   | { k: 'funnel' }
-  | { k: 'duplicates' };
+  | { k: 'duplicates' }
+  | { k: 'market'; tab: MarketTab };
 
+/** AdminBatch009 — Listings & market tabs. */
+export type MarketTab = 'quality' | 'dom' | 'price' | 'areas' | 'stuck' | 'commission' | 'projects' | 'news';
 /** AdminBatch008 */
 export type ReportsTab = 'board' | 'audit' | 'builder';
 /** AdminBatch006 */

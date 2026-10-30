@@ -10,9 +10,10 @@ import { exportAgentProfile } from '../export/run';
 import { ConfirmDialog, ErrorBox, Kv, Loading } from './ui';
 import { EVENT_LABEL, LicenceTag, STATUS_LABEL, StatusTag, isBadEvent, platformLabel } from './status';
 import { InternalBox } from './Compliance';
+import { AgentScoreBox, DevicesTab } from './Insight';
 
 // Special tabs next to the record types (AdminBatch002).
-const LOGIN_TAB = '__login', TERMS_TAB = '__terms';
+const LOGIN_TAB = '__login', TERMS_TAB = '__terms', DEVICES_TAB = '__devices';
 
 export function AgentScreen({ id, openCollection, openRecord }: { id: string; openCollection?: string; openRecord?: string }) {
   const { api, me, go } = useAdmin();
@@ -52,6 +53,7 @@ export function AgentScreen({ id, openCollection, openRecord }: { id: string; op
             { k: 'Workspaces', v: p.workspaces.map(w => `${w.name} (${w.role})`).join(', ') },
           ]} />
         </div>
+        {can(me.role, 'internal') && <AgentScoreBox userId={p.user_id} />}
         {can(me.role, 'internal') && <InternalBox userId={p.user_id} email={p.email} />}
         {can(me.role, 'accountActions') && <AccountBox profile={p} onChanged={() => void load()} />}
         {can(me.role, 'verifyLicence') && p.licence_detail && <LicenceBox profile={p} onChanged={() => void load()} />}
@@ -70,10 +72,12 @@ export function AgentScreen({ id, openCollection, openRecord }: { id: string; op
           ))}
           <button aria-pressed={coll === LOGIN_TAB} onClick={() => setColl(LOGIN_TAB)} data-testid="tab-login">Sign-in history</button>
           <button aria-pressed={coll === TERMS_TAB} onClick={() => setColl(TERMS_TAB)} data-testid="tab-terms">Terms & consent</button>
+          {can(me.role, 'viewDevices') && <button aria-pressed={coll === DEVICES_TAB} onClick={() => setColl(DEVICES_TAB)} data-testid="tab-devices">Phones</button>}
         </div>
         {coll === LOGIN_TAB && <LoginHistory agent={p.user_id} />}
         {coll === TERMS_TAB && <TermsHistory agent={p.user_id} />}
-        {coll && coll !== LOGIN_TAB && coll !== TERMS_TAB && (
+        {coll === DEVICES_TAB && <DevicesTab agent={p.user_id} />}
+        {coll && coll !== LOGIN_TAB && coll !== TERMS_TAB && coll !== DEVICES_TAB && (
           <>
             <label className="row small"><input type="checkbox" checked={showDeleted} onChange={e => setShowDeleted(e.target.checked)} /> Show deleted records</label>
             <RecordList key={coll} agent={p.user_id} collection={coll} includeDeleted={showDeleted} openRecord={coll === openCollection ? openRecord : undefined} />

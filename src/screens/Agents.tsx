@@ -4,9 +4,14 @@
 //   Not active        — suspended, banned or closed accounts, newest change first
 //   Licence           — agents who entered a licence number, unverified first
 // Opening an agent goes to the Agent Profile, where the actions are. The list is written to the access log.
+// AdminBatch009 (feature 95): Owner / Admin can tick up to 50 agents and suspend, re-activate, sign out, tag or message
+// them in one go, with one reason (two steps; one batch reference plus one Master Audit Log line per agent).
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { can } from '../admin/roles';
+import { BULK_LABEL, BULK_MAX, bulkProblems } from '../admin/insight';
+import { cleanTag } from '../admin/compliance';
 import { useAdmin, errText } from '../ctx';
-import { AgentFilter, AgentRow } from '../api/admin';
+import { AgentFilter, AgentRow, BulkAction } from '../api/admin';
 import { fmtTime } from '../export/reports';
 import { ErrorBox, Loading } from './ui';
 import { StatusTag, LicenceTag, platformLabel } from './status';
@@ -20,8 +25,10 @@ const TABS: { f: AgentFilter; label: string; help: string }[] = [
 const PAGE = 100;
 
 export function AgentsScreen({ filter }: { filter: AgentFilter }) {
-  const { api, go } = useAdmin();
+  const { api, go, me } = useAdmin();
   const [q, setQ] = useState('');
+  const [picking, setPicking] = useState(false);
+  const [sel, setSel] = useState<Record<string, string>>({});
   const [applied, setApplied] = useState<string | null>(null);
   const [rows, setRows] = useState<AgentRow[] | null>(null);
   const [more, setMore] = useState(false);
@@ -42,7 +49,9 @@ export function AgentsScreen({ filter }: { filter: AgentFilter }) {
 
   return (
     <div className="stack">
-      <h1>Agents</h1>
+      <div className="row"><h1 className="spacer">Agents</h1>
+        {can(me.role, 'bulkActions') && <button className="btn" aria-pressed={picking} onClick={() => { setPicking(!picking); setSel({}); }} data-testid="bulk-toggle">{picking ? 'Stop choosing' : 'Choose agents'}</button>}</div>
+      {picking && <BulkBar sel={sel} rows={rows ?? []} setSel={setSel} onDone={() => { setSel({}); void load(0); }} />}
       <div className="tabs" role="toolbar" aria-label="Agent lists">
         {TABS.map(t => <button key={t.f} aria-pressed={t.f === filter} onClick={() => go({ k: 'agents', filter: t.f })} data-testid={`agents-tab-${t.f}`}>{t.label}</button>)}
       </div>
@@ -58,7 +67,10 @@ export function AgentsScreen({ filter }: { filter: AgentFilter }) {
       {rows && rows.length > 0 && (
         <div className="list" data-testid="agents-list">
           {rows.map(a => (
-            <button key={a.user_id} className="item" onClick={() => go({ k: 'agent', id: a.user_id })} data-testid="agent-row">
+            <button key={a.user_id} className={`item${picking && sel[a.user_id] ? ' picked' : ''}`} aria-pressed={picking ? !!sel[a.user_id] : undefined}
+              onClick={() => picking ? setSel(s => { const n = { ...s }; if (n[a.user_id]) delete n[a.user_id]; else if (Object.keys(n).length < BULK_MAX) n[a.user_id] = a.name || a.email; return n; })
+                : go({ k: 'agent', id: a.user_id })} data-testid="agent-row">
+              {picking && <span className="row small"><span className={`tick${sel[a.user_id] ? ' on' : ''}`} aria-hidden="true">{sel[a.user_id] ? '☑' : '☐'}</span> {sel[a.user_id] ? 'Chosen' : 'Tap to choose'}</span>}
               <span className="row">
                 <b className="spacer">{a.name || a.email}</b>
                 <StatusTag status={a.status} />
@@ -79,6 +91,65 @@ export function AgentsScreen({ filter }: { filter: AgentFilter }) {
         </div>
       )}
       {more && rows && <button className="btn" onClick={() => void load(rows.length)}>Show more</button>}
+    </div>
+  );
+}
+
+/** AdminBatch009 — what to do with the ticked agents. Two steps; the database does all or nothing. */
+function BulkBar({ sel, rows, setSel, onDone }: { sel: Record<string, string>; rows: AgentRow[]; setSel: (s: Record<string, string>) => void; onDone: () => void }) {
+  const { api, go } = useAdmin();
+  const [action, setAction] = useState<BulkAction | 'message' | ''>('');
+  const [reason, setReason] = useState('');
+  const [tag, setTag] = useState('');
+  const [step, setStep] = useState<1 | 2>(1);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const ids = Object.keys(sel);
+  const problems = bulkProblems(action, ids.length, reason, tag);
+  const pickAll = () => { const n: Record<string, string> = { ...sel }; for (const r of rows) { if (Object.keys(n).length >= BULK_MAX) break; n[r.user_id] = r.name || r.email; } setSel(n); };
+  const go2 = () => {
+    if (action === 'message') { go({ k: 'broadcasts', to: ids.map(id => ({ id, label: sel[id] })) }); return; }
+    setStep(2);
+  };
+  const run = async () => {
+    if (!action || action === 'message') return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await api.bulkAction(action, ids, reason.trim(), action === 'tag_add' || action === 'tag_remove' ? cleanTag(tag) : null);
+      setMsg({ ok: true, text: `${r.ref}: done for ${r.count} agent${r.count === 1 ? '' : 's'}. Each one is in the Master Audit Log.` });
+      setStep(1); setReason(''); setAction(''); onDone();
+    } catch (e) { setMsg({ ok: false, text: errText(e) }); setStep(1); } finally { setBusy(false); }
+  };
+  return (
+    <div className="card boxed stack" data-testid="bulk-bar">
+      <div className="row"><b className="spacer" data-testid="bulk-count">{ids.length} of at most {BULK_MAX} agents chosen</b>
+        <button className="btn small" onClick={pickAll} data-testid="bulk-all">Choose all shown</button>
+        <button className="btn small" onClick={() => setSel({})}>Clear</button></div>
+      {step === 1 ? (
+        <>
+          <div className="grid2">
+            <label className="field"><span>What to do</span>
+              <select value={action} onChange={e => setAction(e.target.value as BulkAction | 'message' | '')} data-testid="bulk-action">
+                <option value="">— choose —</option>
+                {(Object.keys(BULK_LABEL) as (BulkAction | 'message')[]).map(k => <option key={k} value={k}>{BULK_LABEL[k]}</option>)}
+              </select></label>
+            {(action === 'tag_add' || action === 'tag_remove') && <label className="field"><span>Tag</span><input value={tag} onChange={e => setTag(e.target.value)} placeholder="e.g. vip" data-testid="bulk-tag" /></label>}
+          </div>
+          {action && action !== 'message' && <label className="field"><span>Reason (saved in the Master Audit Log for every agent)</span>
+            <textarea rows={2} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} data-testid="bulk-reason" /></label>}
+          {action === 'message' && <small className="muted">Opens a new email or WhatsApp broadcast for exactly these agents. You write it and send it there.</small>}
+          {problems.length > 0 && ids.length > 0 && action && <ul className="error small" data-testid="bulk-problems">{problems.map(p => <li key={p}>{p}</li>)}</ul>}
+          <div className="row"><span className="spacer" /><button className="btn gold" disabled={problems.length > 0} onClick={go2} data-testid="bulk-continue">Continue</button></div>
+        </>
+      ) : (
+        <>
+          <div className="notice warn" data-testid="bulk-confirm">Please confirm: <b>{BULK_LABEL[action as BulkAction]}</b>{action === 'tag_add' || action === 'tag_remove' ? ` “${cleanTag(tag)}”` : ''} for {ids.length} agent{ids.length === 1 ? '' : 's'}:
+            {' '}{ids.slice(0, 10).map(id => sel[id]).join(', ')}{ids.length > 10 ? ` and ${ids.length - 10} more` : ''}.<br />Reason: <i>“{reason.trim()}”</i></div>
+          <div className="row"><button className="btn" disabled={busy} onClick={() => setStep(1)}>Back</button><span className="spacer" />
+            <button className={`btn ${action === 'suspend' ? 'danger' : 'gold'}`} disabled={busy} onClick={() => void run()} data-testid="bulk-do">{busy ? 'Working…' : 'Do it'}</button></div>
+        </>
+      )}
+      {msg && <p className={`small ${msg.ok ? '' : 'error'}`} role="status" data-testid="bulk-msg">{msg.text}</p>}
     </div>
   );
 }

@@ -229,3 +229,6 @@ fieldset > legend { font-weight: 700; padding: 0 6px; }
 .cal button[aria-pressed=true] { background: var(--gold-grad); color: var(--on-gold); }
 .cal .dot { display: block; font-size: .7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task.done .t { text-decoration: line-through; opacity: .7; }
+/* AdminBatch009 — choosing agents for bulk actions */
+.item.picked { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.tick { color: var(--gold); font-size: 1.1rem; }

@@ -55,6 +55,14 @@ lists naming agents for Owner / Admin / Compliance (access log); PDF / Excel for
 `20261027100000_admin_batch_009_market.sql` (main repo branch feature/admin-batch-009-market-db, after AdminBatch008 Reports).
 Buyer Demand vs Supply (106) waits for buyer requirements in the main app.
 
+AdminBatch009 "Agent insight": Agent scorecard (Listings 40 + Activity 30 + Compliance 30, lowest first, with the reasons;
+score card on each Agent Profile; Viewer sees the spread only), Onboarding funnel (sign-up → opened → Terms → licence →
+verified → first listing → first deal; "who is stuck" for Owner / Admin / Compliance), Bulk actions in the Agents list
+(up to 50 agents: suspend, re-activate, sign out, tag, or message them as a broadcast for just those agents; one reason,
+two steps, batch reference BULK-YYYY-####), Duplicate accounts (same phone number, phone or licence), Phones tab on the
+Agent Profile (every phone used; Owner / Admin can remove one, which signs it out — needs the main app MainForAdmin-G).
+Needs `20261027000000_admin_batch_009_agents.sql` (after 007, 008 Comms and 008 Reports).
+
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,

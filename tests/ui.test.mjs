@@ -251,6 +251,32 @@ function b8Fake() {
   return { st, id, now, agents, cand, json, detail, settingsJson, workspaces, workspace, admins };
 }
 
+/** AdminBatch009 fake agent insight: scores, funnel, duplicates, devices (answers like the 009 functions). */
+function insightFake() {
+  const now = '2026-10-23T04:00:00Z';
+  const score = (o) => ({ joined: '2026-10-01', status: 'active', listings: 2, incomplete: 1, completeness: 0.556, active_days: 5, licence: true, verified: true,
+    expires_on: '2027-01-31', open_complaints: 0, on_hold: false, ...o });
+  const agents = [
+    score({ user_id: 'b2', email: 'ali@example.com', name: 'Ali', listings: 0, incomplete: 0, active_days: 0, licence: false, verified: false, expires_on: null,
+      p_listings: 0, p_activity: 0, p_compliance: 10, score: 10, reasons: ['no listings yet', 'used the app 0 of the last 30 days', 'no licence entered', 'no licence expiry date'] }),
+    score({ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', p_listings: 22, p_activity: 8, p_compliance: 30, score: 60,
+      reasons: ['1 of 2 listings are missing details', 'used the app 5 of the last 30 days'] }),
+  ];
+  const card = (names) => ({ agents_count: 2, average: 35, names_hidden: !names, parts_average: { listings: 11, activity: 4, compliance: 20 },
+    bands: [{ band: '0-19', agents: 1 }, { band: '20-39', agents: 0 }, { band: '40-59', agents: 0 }, { band: '60-79', agents: 1 }, { band: '80-100', agents: 0 }],
+    ...(names ? { agents } : {}) });
+  const funnel = (from, to, names) => ({ from, to, names_hidden: !names, steps: [
+    { step: 1, key: 'signed_up', agents: 10 }, { step: 2, key: 'opened', agents: 8 }, { step: 3, key: 'terms', agents: 8 }, { step: 4, key: 'licence', agents: 5 },
+    { step: 5, key: 'verified', agents: 3 }, { step: 6, key: 'listing', agents: 2 }, { step: 7, key: 'deal', agents: 1 }] });
+  const devices = [{ device_id: 'd1', device: 'Samsung S23', platform: 'android', app_version: '2.2.0', first_seen: '2026-10-01T02:00:00Z', last_seen: '2026-10-20T06:00:00Z',
+    sign_ins: 3, opens: 9, failed: 2, last_lat: 3.1579, last_lng: 101.7116, removed: null, signed_in_after_removal: false }];
+  const dups = [{ kind: 'phone', value: '60123456789', agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', joined: '2026-10-01', status: 'active' },
+    { user_id: 'b2', email: 'ali@example.com', name: 'Ali', joined: '2026-10-05', status: 'active' }] },
+    { kind: 'licence', value: 'REN 31234', agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', joined: '2026-10-01', status: 'active' },
+    { user_id: 'b3', email: 'gone@example.com', name: 'Banned Bob', joined: '2026-10-07', status: 'banned' }] }];
+  return { now, agents, card, funnel, devices, dups, bulks: 0, staff: ['owner', 'admin', 'compliance'] };
+}
+
 /** AdminBatch009 fake Listings & market data (lists with names only for owner / admin / compliance, like the database). */
 function marketFake() {
   const staff = ['owner', 'admin', 'compliance'], view = [...staff, 'viewer'];
@@ -306,7 +332,7 @@ function marketFake() {
   };
 }
 
-async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true } = {}) {
+async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
   const calls = [];
@@ -335,6 +361,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const ops = opsFake();
   const cmp = complianceFake();
   const rep = reportsFake();
+  const ins = insightFake();
   const b8 = b8Fake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
@@ -424,7 +451,8 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         const row = agentRow(profile);
         const keep = args.p_filter === 'all' || (args.p_filter === 'not_active' && row.status !== 'active')
           || (args.p_filter === 'licence' && row.licence) || (args.p_filter === 'security' && row.failed_30d + row.lockouts_30d > 0);
-        return route.fulfill(ok(keep ? [row] : []));
+        const ali = { ...row, user_id: 'b2', email: 'ali@example.com', name: 'Ali', status: 'active', licence: null };
+        return route.fulfill(ok(keep ? (extraAgent && args.p_filter === 'all' ? [row, ali] : [row]) : []));
       }
       case 'eab_admin_login_log': return route.fulfill(ok(loginLog));
       case 'eab_admin_terms_log': return route.fulfill(ok(termsLog));
@@ -795,6 +823,23 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
           const e = { id: b8.id(), owner_user: 'me', shared: !!p.shared, title: p.title, notes: p.notes, place: p.place, starts_at: p.starts_at, ends_at: p.ends_at,
             all_day: !!p.all_day, created_at: b8.now, updated_at: b8.now, owner_email: 'joe@example.com' }; b8.st.events.push(e); return route.fulfill(ok(e)); }
         const e = b8.st.events.find(x => x.id === p.id); if (p.removed) e.removed = true; return route.fulfill(ok(e));
+      }
+      // AdminBatch009 — agent insight
+      case 'eab_admin_scorecard': return ['owner', 'admin', 'compliance', 'viewer'].includes(role) ? route.fulfill(ok(ins.card(ins.staff.includes(role)))) : route.fulfill(denied);
+      case 'eab_admin_agent_score': return ins.staff.includes(role) ? route.fulfill(ok(ins.agents.find(a => a.user_id === args.p_user) ?? ins.agents[1])) : route.fulfill(denied);
+      case 'eab_admin_funnel': return ['owner', 'admin', 'compliance', 'viewer'].includes(role) ? route.fulfill(ok(ins.funnel(args.p_from, args.p_to, ins.staff.includes(role)))) : route.fulfill(denied);
+      case 'eab_admin_funnel_stuck': return ins.staff.includes(role) ? route.fulfill(ok(args.p_step === 5 ? [{ user_id: 'b2', email: 'ali@example.com', name: 'Ali', joined: '2026-10-05', days_since_joined: 18 }] : [])) : route.fulfill(denied);
+      case 'eab_admin_duplicates': return ins.staff.includes(role) ? route.fulfill(ok(ins.dups)) : route.fulfill(denied);
+      case 'eab_admin_agent_devices': return [...ins.staff, 'regulator'].includes(role) ? route.fulfill(ok(ins.devices)) : route.fulfill(denied);
+      case 'eab_admin_device_remove': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        Object.assign(ins.devices.find(d => d.device_id === args.p_device_id), { removed: { at: ins.now, by: 'joe@example.com', reason: args.p_reason } });
+        return route.fulfill(ok({ id: 1 }));
+      }
+      case 'eab_admin_bulk_action': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        if (args.p_action === 'suspend') profile.status = 'suspended';
+        return route.fulfill(ok({ ref: `BULK-2026-000${++ins.bulks}`, action: args.p_action, count: args.p_users.length }));
       }
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
@@ -2171,5 +2216,106 @@ test('regulator: no Listings & market', async () => {
   const { page, ctx } = await open({ role: 'regulator', width: 390 });
   await page.getByTestId('tile-my-case').waitFor();
   for (const n of [102, 103, 104, 105, 107, 108, 109, 110]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
+  await ctx.close();
+});
+
+// ======================================================================================== AdminBatch009
+test('compliance: scorecard lowest first → Agent Profile score card and Phones tab (no remove); funnel "who is stuck"; duplicate accounts (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 1366 });
+  await page.getByTestId('tile-92').click();
+  await page.getByTestId('score-list').waitFor();
+  const t = await page.getByTestId('score-list').innerText();
+  assert.ok(t.indexOf('Ali') < t.indexOf('Siti Agent'), 'lowest score first');
+  assert.match(t, /no listings yet; used the app 0 of the last 30 days/);
+  await page.screenshot({ path: `${SHOTS}/49-scorecard-laptop.png`, fullPage: true });
+  await page.getByTestId('score-agent').filter({ hasText: 'Siti Agent' }).click();
+  await page.getByTestId('agent-score').waitFor();
+  assert.match(await page.getByTestId('agent-score').innerText(), /60[\s\S]*Listings 22\/40[\s\S]*Activity 8\/30[\s\S]*Compliance 30\/30[\s\S]*1 of 2 listings are missing details/);
+  await page.getByTestId('tab-devices').click();
+  await page.getByTestId('device').waitFor();
+  assert.match(await page.getByTestId('device').innerText(), /Samsung S23[\s\S]*v2\.2\.0[\s\S]*3 sign-ins, 9 opens · 2 failed/);
+  assert.equal(await page.getByTestId('device-remove').count(), 0, 'compliance cannot remove a phone');
+  // funnel
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-93').click();
+  await page.getByTestId('funnel-table').waitFor();
+  assert.match(await page.getByTestId('funnel-table').innerText(), /5\. Licence verified\s+3\s+30%\s+60%/);
+  await page.getByTestId('stuck-5').click();
+  await page.getByTestId('stuck-agent').filter({ hasText: 'Ali' }).waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_funnel_stuck').args.p_step, 5);
+  await page.screenshot({ path: `${SHOTS}/50-funnel-laptop.png`, fullPage: true });
+  // duplicates
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-97').click();
+  await page.getByTestId('dup-phone').waitFor();
+  assert.equal(await page.getByTestId('dup-phone').getByTestId('dup-agent').count(), 2);
+  assert.match(await page.getByTestId('dup-licence').innerText(), /REN 31234[\s\S]*Banned Bob/);
+  await ctx.close();
+});
+
+test('admin: choose 2 agents → suspend with one reason (two steps) → then message them as a broadcast for just them; remove a phone with a reason (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390, extraAgent: true });
+  await page.getByTestId('tile-95').click();
+  await page.getByTestId('agents-list').waitFor();
+  await page.getByTestId('bulk-toggle').click();
+  await page.getByTestId('agent-row').nth(0).click();
+  await page.getByTestId('agent-row').nth(1).click();
+  assert.match(await page.getByTestId('bulk-count').innerText(), /^2 of at most 50/);
+  assert.equal(calls.filter(c => c.fn === 'eab_admin_agent').length, 0, 'choosing does not open profiles');
+  await page.getByTestId('bulk-action').selectOption('suspend');
+  await page.getByTestId('bulk-reason').fill('abc');
+  await page.getByTestId('bulk-problems').getByText(/Write the reason/).waitFor();
+  assert.ok(await page.getByTestId('bulk-continue').isDisabled());
+  await page.getByTestId('bulk-reason').fill('Fake documents found');
+  await page.getByTestId('bulk-continue').click();
+  assert.match(await page.getByTestId('bulk-confirm').innerText(), /Suspend[\s\S]*2 agents: Siti Agent, Ali[\s\S]*Fake documents found/);
+  await page.screenshot({ path: `${SHOTS}/51-bulk-phone.png`, fullPage: true });
+  await page.getByTestId('bulk-do').click();
+  await page.getByTestId('bulk-msg').getByText(/BULK-2026-0001: done for 2 agents/).waitFor();
+  const b = calls.find(c => c.fn === 'eab_admin_bulk_action').args;
+  assert.equal(b.p_action, 'suspend'); assert.deepEqual(b.p_users.sort(), [AGENT, 'b2'].sort()); assert.equal(b.p_reason, 'Fake documents found');
+  // message the same two
+  await page.getByTestId('agent-row').nth(0).click();
+  await page.getByTestId('agent-row').nth(1).click();
+  await page.getByTestId('bulk-action').selectOption('message');
+  await page.getByTestId('bulk-continue').click();
+  await page.getByTestId('bc-editor').waitFor();
+  assert.ok(await page.getByTestId('bc-agents').isChecked(), 'audience = the ticked agents');
+  assert.match(await page.getByTestId('bc-editor').innerText(), /The 2 agents ticked in the Agents list: Siti Agent, Ali/);
+  await page.getByTestId('bc-subject-en').fill('Your documents');
+  await page.getByTestId('bc-body-en').fill('Please call the office.');
+  await page.getByTestId('bc-save').click();
+  await page.getByTestId('broadcast').waitFor();
+  const sv = calls.find(c => c.fn === 'eab_admin_broadcast_save').args.p;
+  assert.equal(sv.audience, 'agents'); assert.deepEqual(sv.user_ids.sort(), [AGENT, 'b2'].sort());
+  assert.match(await page.getByTestId('broadcast').innerText(), /2 chosen agents/);
+  // remove a phone
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-1').click();
+  await page.getByTestId('agent-row').nth(0).click();
+  await page.getByTestId('tab-devices').click();
+  await page.getByTestId('device-remove').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Phone stolen at the office');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('device-state').getByText(/Removed — signed out at its next open or sync/).waitFor();
+  const rm = calls.find(c => c.fn === 'eab_admin_device_remove').args;
+  assert.equal(rm.p_device_id, 'd1'); assert.equal(rm.p_reason, 'Phone stolen at the office');
+  await page.screenshot({ path: `${SHOTS}/52-devices-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('viewer: scorecard spread and funnel counts only — no names, no "who is stuck", no bulk, no duplicates (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'viewer', width: 390 });
+  assert.equal(await page.getByTestId('tile-97').count(), 0); assert.equal(await page.getByTestId('tile-95').count(), 0); assert.equal(await page.getByTestId('tile-98').count(), 0);
+  await page.getByTestId('tile-92').click();
+  await page.getByTestId('score-bands').waitFor();
+  await page.getByTestId('names-hidden').waitFor();
+  assert.equal(await page.getByTestId('score-list').count(), 0);
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-93').click();
+  await page.getByTestId('funnel-table').waitFor();
+  assert.equal(await page.getByTestId('stuck-5').count(), 0);
+  assert.ok(!calls.some(c => c.fn === 'eab_admin_funnel_stuck'));
   await ctx.close();
 });

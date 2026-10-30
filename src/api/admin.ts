@@ -421,7 +421,9 @@ export interface Broadcast {
   id: string; ref: string; channel: BcChannel; kind: BcKind;
   subject_en: string | null; subject_bm: string | null; subject_zh: string | null;
   body_en: string; body_bm: string | null; body_zh: string | null;
-  audience: 'all' | 'groups'; group_ids: string[]; status: BcStatus;
+  audience: 'all' | 'groups' | 'agents'; group_ids: string[]; status: BcStatus;
+  /** AdminBatch009: the chosen agents when audience = 'agents'. */
+  user_ids?: string[];
   created_by: string; created_at: string; updated_at: string; queued_at: string | null; queued_by: string | null; queue_reason?: string | null;
   claimed_at: string | null; finished_at: string | null; created_by_email?: string | null; queued_by_email?: string | null;
   counts: Partial<Record<BcRecipientStatus, number>>;
@@ -431,7 +433,7 @@ export interface BcRecipient {
   id: number; user_id: string; email: string; name: string | null; address: string | null; lang: 'en' | 'bm' | 'zh';
   status: BcRecipientStatus; error: string | null; sent_at: string | null; sent_by_email: string | null;
 }
-export type BroadcastDraft = Pick<Broadcast, 'channel' | 'kind' | 'body_en' | 'audience' | 'group_ids'> & Partial<Pick<Broadcast, 'id' | 'subject_en' | 'subject_bm' | 'subject_zh' | 'body_bm' | 'body_zh'>>;
+export type BroadcastDraft = Pick<Broadcast, 'channel' | 'kind' | 'body_en' | 'audience' | 'group_ids'> & Partial<Pick<Broadcast, 'id' | 'subject_en' | 'subject_bm' | 'subject_zh' | 'body_bm' | 'body_zh' | 'user_ids'>>;
 export interface BcPreview { matched: number; reach: number; no_address: number; no_consent: number; not_active: number }
 export interface ReportAdmin { user_id: string; email: string; role: Role }
 export interface ReportSettings {
@@ -460,6 +462,30 @@ export interface AdminTask {
 export interface AdminEvent {
   id: string; owner_user: string; shared: boolean; title: string; notes: string | null; place: string | null;
   starts_at: string; ends_at: string | null; all_day: boolean; created_at: string; updated_at: string; owner_email?: string | null; mine?: boolean;
+}
+
+// ---------- AdminBatch009: agent insight ----------
+export interface AgentScore {
+  user_id: string; email: string; name: string | null; joined: string; status: AccountStatus; listings: number; incomplete: number;
+  completeness: number; active_days: number; licence: boolean; verified: boolean; expires_on: string | null; open_complaints: number;
+  on_hold: boolean; p_listings: number; p_activity: number; p_compliance: number; score: number; reasons: string[];
+}
+export interface Scorecard {
+  agents_count: number; average: number | null; bands: { band: string; agents: number }[];
+  parts_average: { listings: number | null; activity: number | null; compliance: number | null }; names_hidden: boolean; agents?: AgentScore[];
+}
+export type FunnelKey = 'signed_up' | 'opened' | 'terms' | 'licence' | 'verified' | 'listing' | 'deal';
+export interface Funnel { from: string; to: string; names_hidden: boolean; steps: { step: number; key: FunnelKey; agents: number }[] }
+export interface StuckAgent { user_id: string; email: string; name: string | null; joined: string; days_since_joined: number }
+export type BulkAction = 'suspend' | 'reactivate' | 'sign_out' | 'tag_add' | 'tag_remove';
+export interface DuplicateGroup {
+  kind: 'phone' | 'device' | 'licence'; value: string;
+  agents: { user_id: string; email: string; name: string | null; joined: string; status: AccountStatus }[];
+}
+export interface AgentDevice {
+  device_id: string; device: string | null; platform: string | null; app_version: string | null; first_seen: string; last_seen: string;
+  sign_ins: number; opens: number; failed: number; last_lat: number | null; last_lng: number | null;
+  removed: { at: string; by: string | null; reason: string } | null; signed_in_after_removal: boolean;
 }
 
 export type Call = <T>(fn: string, args?: Record<string, unknown>) => Promise<T>;
@@ -627,6 +653,17 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   todo: () => call<{ tasks: AdminTask[]; events: AdminEvent[] }>('eab_admin_todo'),
   taskSave: (p: Partial<AdminTask> & { removed?: boolean }) => call<AdminTask>('eab_admin_task_save', { p, p_device: device }),
   eventSave: (p: Partial<AdminEvent> & { removed?: boolean }) => call<AdminEvent>('eab_admin_event_save', { p, p_device: device }),
+  // AdminBatch009 — agent insight
+  scorecard: (limit = 500) => call<Scorecard>('eab_admin_scorecard', { p_limit: limit, p_device: device }),
+  agentScore: (user: string) => call<AgentScore>('eab_admin_agent_score', { p_user: user, p_device: device }),
+  funnel: (from: string, to: string) => call<Funnel>('eab_admin_funnel', { p_from: from, p_to: to }),
+  funnelStuck: (from: string, to: string, step: number) => call<StuckAgent[]>('eab_admin_funnel_stuck', { p_from: from, p_to: to, p_step: step, p_device: device }),
+  bulkAction: (action: BulkAction, users: string[], reason: string, tag: string | null = null) =>
+    call<{ ref: string; action: BulkAction; count: number }>('eab_admin_bulk_action', { p_action: action, p_users: users, p_reason: reason, p_tag: tag, p_device: device }),
+  duplicates: () => call<DuplicateGroup[]>('eab_admin_duplicates', { p_device: device }),
+  agentDevices: (user: string) => call<AgentDevice[]>('eab_admin_agent_devices', { p_user: user, p_device: device }),
+  deviceRemove: (user: string, deviceId: string, reason: string) =>
+    call<unknown>('eab_admin_device_remove', { p_user: user, p_device_id: deviceId, p_reason: reason, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

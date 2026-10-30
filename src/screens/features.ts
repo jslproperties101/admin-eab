@@ -70,6 +70,13 @@ export const SECTIONS: Section[] = [
     { n: 28, name: 'Geography Map' },
     { n: 29, name: 'Language Usage', open: { k: 'dash', tab: 'versions' }, needs: 'viewDash', note: 'English, BM, Chinese' },
   ] },
+  { title: 'Agent Insight', items: [
+    { n: 92, name: 'Agent Scorecard', open: { k: 'scorecard' }, needs: 'scorecard', note: 'Listings 40 + activity 30 + compliance 30' },
+    { n: 93, name: 'Onboarding Funnel', open: { k: 'funnel' }, needs: 'funnel', note: 'Sign-up to first deal; who is stuck' },
+    { n: 95, name: 'Bulk Actions', open: { k: 'agents', filter: 'all' }, needs: 'bulkActions', note: 'Tap "Choose agents" in the list' },
+    { n: 97, name: 'Duplicate Accounts', open: { k: 'duplicates' }, needs: 'duplicates', note: 'Same phone number, phone or licence' },
+    { n: 98, name: 'Devices per Agent', open: SEARCH, needs: 'viewDevices', note: 'Phones tab in each Agent Profile' },
+  ] },
   { title: 'Content & Business', items: [
     { n: 7, name: 'Listings Analytics', open: { k: 'dash', tab: 'listings' }, needs: 'viewDash', note: 'By status; stale listings' },
     { n: 59, name: 'Deal Pipeline (Sale & Rent)', open: { k: 'dash', tab: 'pipeline' }, needs: 'viewDash', note: 'Sale lane and rent lane' },

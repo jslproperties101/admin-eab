@@ -32,14 +32,17 @@ export type View =
   | { k: 'retention' }
   | { k: 'reports'; tab: ReportsTab }
   // AdminBatch008
-  | { k: 'broadcasts' }
+  | { k: 'broadcasts'; to?: { id: string; label: string }[] }
   | { k: 'broadcast'; id: string }
   | { k: 'weeklyReports' }
   | { k: 'workspaces' }
   | { k: 'workspace'; id: string }
   | { k: 'todo'; tab: 'todo' | 'calendar' }
   // AdminBatch009
-  | { k: 'market'; tab: MarketTab };
+  | { k: 'market'; tab: MarketTab }
+  | { k: 'scorecard' }
+  | { k: 'funnel' }
+  | { k: 'duplicates' };
 
 /** AdminBatch009 — Listings & market tabs. */
 export type MarketTab = 'quality' | 'dom' | 'price' | 'areas' | 'stuck' | 'commission' | 'projects' | 'news';

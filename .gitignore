@@ -6,3 +6,4 @@ ios/
 .env
 tests/screens/
 *.log
+dist-all/

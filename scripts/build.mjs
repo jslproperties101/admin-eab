@@ -2,15 +2,16 @@
 // Settings come from environment variables (or .env, which Git ignores), never from the code:
 //   EAB_SUPABASE_URL       the Supabase project shared with Estate Agent AI Buddy (TEST project while building)
 //   EAB_SUPABASE_ANON_KEY  its public (anon / publishable) key. NEVER the service-role key.
+//   EAB_APP                which admin to build: all (combined) | eab (default) | pos | mm2h | odw | biz
 // Both can also be typed on the sign-in screen (kept on that device only).
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { capacitorPlugin } from './capacitor-resolve.mjs';
 
 const env = { ...process.env };
 const noEnv = process.argv.includes('--no-env');
-if (noEnv) for (const k of Object.keys(env)) if (k.startsWith('EAB_')) delete env[k];
+if (noEnv) for (const k of Object.keys(env)) if (k.startsWith('EAB_') && k !== 'EAB_APP') delete env[k];
 if (!noEnv && existsSync('.env')) {
   for (const line of readFileSync('.env', 'utf8').split(/\r?\n/)) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
@@ -26,6 +27,11 @@ if (/eyJ/.test(config.supabaseAnonKey)) {
   } catch (e) { if (String(e).includes('SERVICE-ROLE')) throw e; }
 }
 if (/^sb_secret_/.test(config.supabaseAnonKey)) throw new Error('EAB_SUPABASE_ANON_KEY is a SECRET key. Use the publishable key.');
+
+const APPS = ['all', 'eab', 'pos', 'mm2h', 'odw', 'biz'];
+const app = (env.EAB_APP ?? 'eab').trim().toLowerCase() || 'eab';
+if (!APPS.includes(app)) throw new Error(`EAB_APP must be one of ${APPS.join(', ')}`);
+const TITLES = { all: 'Admin AI Buddy', eab: 'Admin EAB', pos: 'Admin POS', mm2h: 'Admin MM2H', odw: 'Admin On Da Way', biz: 'Admin Biz' };
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 let sha = (env.GITHUB_SHA ?? '').slice(0, 7);
@@ -45,11 +51,11 @@ await build({
   minify: !process.env.EAB_NOMINIFY,
   sourcemap: true,
   outdir: OUT,
-  define: { 'process.env.NODE_ENV': '"production"', __EAB_CONFIG__: JSON.stringify(config), __EAB_BUILD__: JSON.stringify(buildInfo) },
+  define: { 'process.env.NODE_ENV': '"production"', __EAB_CONFIG__: JSON.stringify(config), __EAB_BUILD__: JSON.stringify(buildInfo), __EAB_APP__: JSON.stringify(app) },
   loader: { '.webp': 'dataurl' },
   plugins: [capacitorPlugin()],
   logLevel: 'info',
 });
-copyFileSync('index.html', `${OUT}/index.html`);
+writeFileSync(`${OUT}/index.html`, readFileSync('index.html', 'utf8').replace('<title>Admin EAB</title>', `<title>${TITLES[app]}</title>`));
 const set = Object.entries(config).filter(([, v]) => v).map(([k]) => k);
-console.log(`Build finished: ${OUT}/ (configured: ${set.length ? set.join(', ') : 'none — type the connection on the sign-in screen'}; Capacitor: ${capacitorPlugin.real() ? 'real' : 'browser stand-in'})`);
+console.log(`Build finished: ${TITLES[app]} in ${OUT}/ (configured: ${set.length ? set.join(', ') : 'none — type the connection on the sign-in screen'}; Capacitor: ${capacitorPlugin.real() ? 'real' : 'browser stand-in'})`);

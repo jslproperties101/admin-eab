@@ -6,19 +6,26 @@ import { mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 import { serve } from '../scripts/serve.mjs';
+import { spawnSync } from 'node:child_process';
 
 const PORT = 5199;
 const BASE = `http://localhost:${PORT}/`;
 const SB = 'https://fake.supabase.co';
 const SHOTS = 'tests/screens';
-let server, browser;
+let server, serverAll, browser;
+const PORT_ALL = 5198;
+const BASE_ALL = `http://localhost:${PORT_ALL}/`;
 
 before(async () => {
   mkdirSync(SHOTS, { recursive: true });
   server = await serve('dist', PORT);
+  // AdminBatch010: the combined admin (all apps) is built separately from the same code.
+  const b = spawnSync(process.execPath, ['scripts/build.mjs', '--no-env'], { env: { ...process.env, EAB_APP: 'all', EAB_OUTDIR: 'dist-all', EAB_NOMINIFY: '1' }, stdio: 'inherit' });
+  assert.equal(b.status, 0, 'combined build');
+  serverAll = await serve('dist-all', PORT_ALL);
   browser = await chromium.launch();
 });
-after(async () => { await browser?.close(); server?.close(); });
+after(async () => { await browser?.close(); server?.close(); serverAll?.close(); });
 
 const AGENT = 'a1111111-1111-1111-1111-111111111111';
 const baseProfile = () => ({
@@ -332,7 +339,7 @@ function marketFake() {
   };
 }
 
-async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false } = {}) {
+async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false, base = BASE } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
   const calls = [];
@@ -844,7 +851,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
-  await page.goto(BASE);
+  await page.goto(base);
   return { page, ctx, calls, b8 };
 }
 
@@ -2317,5 +2324,51 @@ test('viewer: scorecard spread and funnel counts only — no names, no "who is s
   await page.getByTestId('funnel-table').waitFor();
   assert.equal(await page.getByTestId('stuck-5').count(), 0);
   assert.ok(!calls.some(c => c.fn === 'eab_admin_funnel_stuck'));
+  await ctx.close();
+});
+
+test('standalone Admin EAB shows only Estate Agent AI Buddy, no app switcher', async () => {
+  const { page, ctx } = await open();
+  await page.getByTestId('app-title').waitFor();
+  assert.equal(await page.getByTestId('app-title').innerText(), 'Estate Agent AI Buddy');
+  assert.equal(await page.getByTestId('app-pos').count(), 0, 'no switcher in a standalone admin');
+  assert.equal(await page.title(), 'Admin EAB');
+  await ctx.close();
+});
+
+test('combined admin: switch between all five apps; shared tools open in each; choice is remembered', async () => {
+  const { page, ctx } = await open({ base: BASE_ALL });
+  await page.getByTestId('app-eab').waitFor();
+  assert.equal(await page.title(), 'Admin AI Buddy');
+  assert.match(await page.locator('.brand b').innerText(), /Admin AI Buddy/);
+  for (const [id, title] of [['pos', 'AI Buddy POS'], ['mm2h', 'Malaysia Welcome AI Buddy (MM2H)'], ['odw', 'On Da Way'], ['biz', 'AI Buddy Biz'], ['eab', 'Estate Agent AI Buddy']]) {
+    await page.getByTestId(`app-${id}`).click();
+    assert.equal(await page.getByTestId('app-title').innerText(), title);
+    assert.equal(await page.getByTestId(`app-${id}`).getAttribute('aria-selected'), 'true');
+    assert.ok(await page.getByTestId('tile-18').isEnabled(), `audit log opens in ${id}`);
+    assert.ok(await page.getByTestId('tile-17').isEnabled(), `admins & roles opens in ${id}`);
+  }
+  await page.getByTestId('app-pos').click();
+  assert.ok(await page.getByTestId('tile-P1').isEnabled(), 'POS owner records open the search');
+  assert.match(await page.getByText('LHDN MyInvois Status (sandbox)').locator('..').innerText(), /Needs the POS module synced/);
+  await page.screenshot({ path: `${SHOTS}/20-combined-pos-phone.png`, fullPage: true });
+  await page.getByTestId('tile-P1').click();
+  await page.getByTestId('global-search').waitFor();
+  await page.reload();
+  await page.getByTestId('app-title').waitFor();
+  assert.equal(await page.getByTestId('app-title').innerText(), 'AI Buddy POS', 'last app remembered');
+  await page.getByTestId('app-mm2h').click();
+  assert.match(await page.getByTestId('app-where').innerText(), /phone only/);
+  await page.screenshot({ path: `${SHOTS}/21-combined-mm2h-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('combined admin, viewer role: no personal-data tiles in any app', async () => {
+  const { page, ctx } = await open({ base: BASE_ALL, role: 'viewer', width: 1366 });
+  await page.getByTestId('app-pos').waitFor();
+  await page.getByTestId('app-pos').click();
+  assert.equal(await page.getByTestId('tile-P1').count(), 0);
+  assert.equal(await page.getByTestId('tile-18').count(), 0);
+  await page.screenshot({ path: `${SHOTS}/22-combined-viewer-laptop.png`, fullPage: true });
   await ctx.close();
 });

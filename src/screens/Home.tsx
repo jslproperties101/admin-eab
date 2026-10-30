@@ -1,23 +1,40 @@
-// Home: every feature as an icon tile, grouped in sections. Built features open; the rest say "Coming soon".
+// Home: every feature as an icon tile, grouped in sections. Built features open; the rest say what they still need.
+// AdminBatch010: the combined admin shows a row of app buttons at the top; a standalone admin shows only its own app.
 import { useState } from 'react';
 import { useAdmin } from '../ctx';
 import { can, ROLE_HELP } from '../admin/roles';
-import { SECTIONS } from './features';
+import { AppId, appsFor } from '../apps';
+
+const PICK = 'admin-eab-app';
+const readPick = (): string | null => { try { return localStorage.getItem(PICK); } catch { return null; } };
+const savePick = (id: AppId) => { try { localStorage.setItem(PICK, id); } catch { /* storage blocked */ } };
 
 export function Home() {
   const { me, go } = useAdmin();
   // AdminBatch008: To-Do & Calendar asks which one first, like the main app's Agenda card.
   const [ask, setAsk] = useState(false);
+  const apps = appsFor();
+  const [pick, setPick] = useState<AppId>(() => (apps.find(a => a.id === readPick()) ?? apps[0]).id);
   if (me.role === 'regulator') return <RegulatorHome />;
-  const ready = SECTIONS.flatMap(s => s.items).filter(f => f.open && (!f.needs || can(me.role, f.needs))).length;
+  const app = apps.find(a => a.id === pick) ?? apps[0];
+  const ready = app.sections.flatMap(s => s.items).filter(f => f.open && (!f.needs || can(me.role, f.needs))).length;
   return (
     <div>
+      {apps.length > 1 && (
+        <div className="apppick" role="tablist" aria-label="Choose an app">
+          {apps.map(a => (
+            <button key={a.id} role="tab" aria-selected={a.id === app.id} className={`btn small ${a.id === app.id ? 'gold' : ''}`}
+              data-testid={`app-${a.id}`} onClick={() => { setPick(a.id); savePick(a.id); }}>{a.product}</button>
+          ))}
+        </div>
+      )}
       <div className="card boxed stack" style={{ marginBottom: 18 }}>
         <h1>Welcome</h1>
+        <p className="small muted" style={{ margin: 0 }}><b data-testid="app-title">{app.product}</b> · <span data-testid="app-where">Data: {app.where}</span></p>
         <p className="muted" style={{ margin: 0 }}>{ROLE_HELP[me.role]} {ready} feature{ready === 1 ? '' : 's'} available to you now.</p>
         {me.expires_at && <p className="notice warn" style={{ margin: 0 }}>Your access ends {new Date(me.expires_at).toLocaleString()}.</p>}
       </div>
-      {SECTIONS.map(s => (
+      {app.sections.map(s => (
         <section className="section" key={s.title} aria-label={s.title}>
           <h2>{s.title}</h2>
           <div className="tiles">
@@ -26,7 +43,7 @@ export function Home() {
               const isReady = !!f.open && allowed;
               const status = f.blocked ? f.blocked : f.open && !allowed ? 'Not for your role' : f.open ? f.note ?? 'Open' : 'Coming soon';
               return (
-                <button key={`${s.title}-${f.n}`} className={`tile ${isReady ? 'ready' : 'soon'}`} disabled={!isReady}
+                <button key={`${app.id}-${s.title}-${f.n}`} className={`tile ${isReady ? 'ready' : 'soon'}`} disabled={!isReady}
                   onClick={() => { if (f.choose) setAsk(true); else if (f.open) go(f.open); }} data-testid={isReady ? `tile-${f.n}` : undefined}>
                   <span className="ico" aria-hidden="true">{String(f.n)}</span>
                   <span className="t">{f.name}</span>

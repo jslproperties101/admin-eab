@@ -1,4 +1,5 @@
 // The signed-in frame: top bar (brand, global search, who is signed in, sign out) and the current screen.
+import { adminName } from '../apps';
 import { FormEvent, useState } from 'react';
 import { useAdmin } from '../ctx';
 import { ROLE_LABEL, can } from '../admin/roles';
@@ -36,8 +37,8 @@ export function Shell() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand" onClick={() => go({ k: 'home' })} aria-label="Admin EAB home">
-          <img src={logo} alt="" /><b>Admin EAB</b>
+        <button className="brand" onClick={() => go({ k: 'home' })} aria-label={`${adminName()} home`}>
+          <img src={logo} alt="" /><b>{adminName()}</b>
         </button>
         {can(me.role, 'search') && (
           <form className="topsearch" role="search" onSubmit={submit}>
@@ -96,7 +97,7 @@ export function Shell() {
         {view.k === 'funnel' && <FunnelScreen />}
         {view.k === 'duplicates' && <DuplicatesScreen />}
         <footer className="small muted" style={{ marginTop: 32 }}>
-          Admin EAB {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
+          {adminName()} {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>
       </main>
     </div>

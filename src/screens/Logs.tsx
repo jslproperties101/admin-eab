@@ -1,5 +1,6 @@
 // Master Audit Log (feature 18: what admins DID) and Who Viewed What (feature 74: what admins SAW, searched or
 // exported), with the integrity check (feature 73) that re-computes the hash chain of both logs.
+import { adminName } from '../apps';
 import { useCallback, useEffect, useState } from 'react';
 import { useAdmin, errText } from '../ctx';
 import { AccessRow, ActionRow, ChainCheck } from '../api/admin';
@@ -80,7 +81,7 @@ function ChainResult({ c }: { c: { actions: ChainCheck; access: ChainCheck } }) 
   const line = (name: string, x: ChainCheck) => x.ok ? `${name}: ${x.checked} entries, all intact.` : `${name}: BROKEN at entry #${x.first_bad_seq} (checked ${x.checked}).`;
   return (
     <div className={`notice ${ok ? 'ok' : 'error'}`} role="status" data-testid="chain-result">
-      <b>{ok ? 'Both logs are intact.' : 'WARNING: a log entry was changed outside Admin EAB.'}</b><br />
+      <b>{ok ? 'Both logs are intact.' : `WARNING: a log entry was changed outside ${adminName()}.`}</b><br />
       {line('Admin actions', c.actions)}<br />{line('Views, searches & exports', c.access)}
     </div>
   );

@@ -23,14 +23,32 @@ Works on phone, tablet, laptop and desktop: the same build is the web version an
 The database side lives in the main repo: `supabase/migrations/20261021000000_admin_eab_foundation.sql`
 (tests: `supabase/tests/admin_eab_foundation_test.sql`).
 
+## One codebase, six admin apps (AdminBatch010)
+`EAB_APP` picks which admin is built. Each is its own Android app, so all install side by side.
+
+| EAB_APP | Admin app | Android package | For |
+|---|---|---|---|
+| `eab` (default) | Admin EAB | com.jslproperties.admineab | Estate Agent AI Buddy |
+| `all` | Admin AI Buddy | com.jslproperties.adminhub | Every app below, with an app switcher |
+| `pos` | Admin POS | com.jslproperties.adminpos | AI Buddy POS |
+| `mm2h` | Admin MM2H | com.jslproperties.adminmm2h | Malaysia Welcome AI Buddy |
+| `odw` | Admin On Da Way | com.jslproperties.adminodw | On Da Way |
+| `biz` | Admin Biz | com.jslproperties.adminbiz | AI Buddy Biz |
+
+Sign-in, roles, the allow-list and both tamper-proof logs are shared. Feature lists live in `src/apps.ts`; tiles that
+are not working yet say what they need (POS synced to the server; MM2H app data is on the phone only; On Da Way not
+linked; AI Buddy Biz has its own database, not linked yet).
+
 ## Build and test
 ```
 npm install            # needs internet
 npm test               # type check + unit tests + build + browser screen tests (fake database)
+EAB_APP=all npm run build   # combined admin; default is eab
 npm run build          # dist/ — set EAB_SUPABASE_URL and EAB_SUPABASE_ANON_KEY (public key) in .env first
 npm run serve          # http://localhost:5174
 ```
-The Android APK is built by GitHub Actions on every push and attached to a GitHub Release `admin-<commit>`.
+GitHub Actions builds one APK per admin on every push: Admin EAB in Release `admin-<commit>` (unchanged), the others in
+`admin-<app>-<commit>` (e.g. `admin-all-<commit>` for the combined Admin AI Buddy).
 
 ## First owner
 Run once in the Supabase SQL editor (the person must have signed in with Google once):

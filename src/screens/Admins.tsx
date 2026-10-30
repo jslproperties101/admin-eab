@@ -1,6 +1,7 @@
 // Admins & Roles (feature 17), Owner only. Add a Google account to Admin EAB, change its role, switch it off, or give a
 // regulator temporary access with an expiry date. Every change needs a reason and a second confirmation (feature 76)
 // and is written to the Master Audit Log by the database.
+import { adminName } from '../apps';
 import { useCallback, useEffect, useState } from 'react';
 import { useAdmin, errText } from '../ctx';
 import { AdminRow } from '../api/admin';
@@ -30,7 +31,7 @@ export function AdminsScreen() {
   return (
     <div className="stack">
       <h1>Admins & Roles</h1>
-      <p className="muted" style={{ margin: 0 }}>Only Google accounts on this list can open Admin EAB. The person must have signed in once (to the main app or Admin EAB) before they can be added.</p>
+      <p className="muted" style={{ margin: 0 }}>Only Google accounts on this list can open {adminName()}. The person must have signed in once (to the main app or {adminName()}) before they can be added.</p>
       {err && <ErrorBox text={err} onRetry={() => void load()} />}
       {!rows && !err && <Loading />}
       {rows && (

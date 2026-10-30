@@ -40,7 +40,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_EAB_BUILD_default;
 var init_define_EAB_BUILD = __esm({
   "<define:__EAB_BUILD__>"() {
-    define_EAB_BUILD_default = { sha: "3909bab", version: "0.1.0", release: "AdminBatch001", builtAt: "2026-10-30T09:44:01.751Z" };
+    define_EAB_BUILD_default = { sha: "44da71c", version: "0.9.0", release: "AdminBatch010", builtAt: "2026-10-30T10:02:11.587Z" };
   }
 });
 
@@ -3165,34 +3165,34 @@ var require_react_dom_client_production = __commonJS({
       var fiber = workInProgress2.child;
       null !== fiber && (fiber.return = workInProgress2);
       for (; null !== fiber; ) {
-        var list = fiber.dependencies;
-        if (null !== list) {
+        var list2 = fiber.dependencies;
+        if (null !== list2) {
           var nextFiber = fiber.child;
-          list = list.firstContext;
-          a: for (; null !== list; ) {
-            var dependency = list;
-            list = fiber;
+          list2 = list2.firstContext;
+          a: for (; null !== list2; ) {
+            var dependency = list2;
+            list2 = fiber;
             for (var i = 0; i < contexts.length; i++)
               if (dependency.context === contexts[i]) {
-                list.lanes |= renderLanes2;
-                dependency = list.alternate;
+                list2.lanes |= renderLanes2;
+                dependency = list2.alternate;
                 null !== dependency && (dependency.lanes |= renderLanes2);
                 scheduleContextWorkOnParentPath(
-                  list.return,
+                  list2.return,
                   renderLanes2,
                   workInProgress2
                 );
                 forcePropagateEntireTree || (nextFiber = null);
                 break a;
               }
-            list = dependency.next;
+            list2 = dependency.next;
           }
         } else if (18 === fiber.tag) {
           nextFiber = fiber.return;
           if (null === nextFiber) throw Error(formatProdErrorMessage(341));
           nextFiber.lanes |= renderLanes2;
-          list = nextFiber.alternate;
-          null !== list && (list.lanes |= renderLanes2);
+          list2 = nextFiber.alternate;
+          null !== list2 && (list2.lanes |= renderLanes2);
           scheduleContextWorkOnParentPath(nextFiber, renderLanes2, workInProgress2);
           nextFiber = null;
         } else nextFiber = fiber.child;
@@ -12797,13 +12797,13 @@ var require_jsx_runtime = __commonJS({
 // src/main.tsx
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var import_react11 = __toESM(require_react(), 1);
+var import_react30 = __toESM(require_react(), 1);
 var import_client = __toESM(require_client(), 1);
 
 // src/App.tsx
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var import_react10 = __toESM(require_react(), 1);
+var import_react29 = __toESM(require_react(), 1);
 
 // src/config.ts
 init_define_EAB_BUILD();
@@ -12972,11 +12972,149 @@ async function signOutRemote(c, s, fetchFn = fetch) {
   } catch {
   }
 }
+var VAULT_BUCKET = "eab-vault";
+var objectUrl = (c, path, read = false) => `${c.supabaseUrl}/storage/v1/object/${read ? "authenticated/" : ""}${VAULT_BUCKET}/${path.split("/").map(encodeURIComponent).join("/")}`;
+async function withSession(c, s, onSession, fetchFn, go) {
+  let session = s;
+  if (session.expiresAt - Date.now() < 6e4) {
+    try {
+      session = await refresh(c, session, fetchFn);
+      onSession(session);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "expired") onSession(null);
+      throw e;
+    }
+  }
+  let r;
+  try {
+    r = await go(session.accessToken);
+  } catch {
+    throw new ApiError("network");
+  }
+  if (r.status === 401) {
+    try {
+      session = await refresh(c, session, fetchFn);
+      onSession(session);
+    } catch (e) {
+      onSession(null);
+      throw e;
+    }
+    try {
+      r = await go(session.accessToken);
+    } catch {
+      throw new ApiError("network");
+    }
+  }
+  return r;
+}
+async function vaultUpload(c, s, path, blob, onSession, fetchFn = fetch) {
+  if (!/^[0-9a-f-]{36}\/[0-9a-f]{64}$/.test(path)) throw new ApiError("server", "bad vault path");
+  const r = await withSession(c, s, onSession, fetchFn, (token) => fetchFn(objectUrl(c, path), {
+    method: "POST",
+    headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": blob.type || "application/octet-stream", "x-upsert": "false", "cache-control": "no-store" },
+    body: blob
+  }));
+  if (!r.ok) {
+    let msg = "";
+    try {
+      msg = (await r.json()).message ?? "";
+    } catch {
+    }
+    throw r.status === 403 || /row-level security|Unauthorized/i.test(msg) ? new ApiError("not-allowed", msg) : new ApiError("server", msg || `upload HTTP ${r.status}`);
+  }
+}
+async function vaultDownload(c, s, path, onSession, fetchFn = fetch) {
+  const r = await withSession(c, s, onSession, fetchFn, (token) => fetchFn(objectUrl(c, path, true), {
+    headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}` }
+  }));
+  if (r.status === 400 || r.status === 404) throw new ApiError("not-found", "file not in the vault");
+  if (r.status === 403) throw new ApiError("not-allowed");
+  if (!r.ok) throw new ApiError("server", `download HTTP ${r.status}`);
+  return r.blob();
+}
+async function sha256Hex(data) {
+  const buf = data instanceof Blob ? await data.arrayBuffer() : data instanceof Uint8Array ? data.slice().buffer : data;
+  const d = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+var MEDIA_BUCKET = "eab-feed-media";
+var MEDIA_PATH = /^[0-9]{4}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp|pdf)$/;
+var mediaPublicUrl = (c, path) => `${c.supabaseUrl}/storage/v1/object/public/${MEDIA_BUCKET}/${path}`;
+async function mediaUpload(c, s, path, blob, onSession, fetchFn = fetch) {
+  if (!MEDIA_PATH.test(path)) throw new ApiError("server", "bad file name");
+  const r = await withSession(c, s, onSession, fetchFn, (token) => fetchFn(`${c.supabaseUrl}/storage/v1/object/${MEDIA_BUCKET}/${path}`, {
+    method: "POST",
+    headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}`, "Content-Type": blob.type || "application/octet-stream", "x-upsert": "false", "cache-control": "max-age=31536000" },
+    body: blob
+  }));
+  if (!r.ok) {
+    let msg = "";
+    try {
+      msg = (await r.json()).message ?? "";
+    } catch {
+    }
+    if (r.status === 413 || /size/i.test(msg)) throw new ApiError("server", "the file is larger than 10 MB");
+    if (/mime|type/i.test(msg)) throw new ApiError("server", "only JPG, PNG, WEBP pictures and PDF files");
+    throw r.status === 403 || /row-level security|Unauthorized/i.test(msg) ? new ApiError("not-allowed", msg) : new ApiError("server", msg || `upload HTTP ${r.status}`);
+  }
+  return mediaPublicUrl(c, path);
+}
+async function screenshotDownload(c, s, path, onSession, fetchFn = fetch) {
+  const url = `${c.supabaseUrl}/storage/v1/object/authenticated/bug-reports/${path.split("/").map(encodeURIComponent).join("/")}`;
+  const r = await withSession(c, s, onSession, fetchFn, (token) => fetchFn(url, { headers: { apikey: c.supabaseAnonKey, Authorization: `Bearer ${token}` } }));
+  if (r.status === 400 || r.status === 404) throw new ApiError("not-found", "screenshot not found");
+  if (r.status === 403) throw new ApiError("not-allowed");
+  if (!r.ok) throw new ApiError("server", `download HTTP ${r.status}`);
+  return r.blob();
+}
+async function sendPush(c, s, itemId, onSession, fetchFn = fetch) {
+  const body = itemId ? { kind: "feed", item_id: itemId } : { kind: "feed" };
+  const r = await withSession(c, s, onSession, fetchFn, (token) => fetchFn(`${c.supabaseUrl}/functions/v1/send-push`, {
+    method: "POST",
+    headers: headers(c, token),
+    body: JSON.stringify(body)
+  }));
+  let data = null;
+  try {
+    data = await r.json();
+  } catch {
+    data = null;
+  }
+  if (r.status === 403) throw new ApiError("not-allowed", data?.error ?? data?.message);
+  if (r.status === 503) throw new ApiError("server", "push is not set up on the server yet (Firebase)");
+  if (!r.ok) throw new ApiError("server", data?.error ?? data?.message ?? `send HTTP ${r.status}`);
+  if (data?.items) return data.items;
+  if (data?.item_id) return [{ item_id: data.item_id, skipped: data.skipped }];
+  return [];
+}
+async function callFunction(c, s, name, body, onSession, fetchFn = fetch) {
+  const r = await withSession(c, s, onSession, fetchFn, (token) => fetchFn(`${c.supabaseUrl}/functions/v1/${name}`, {
+    method: "POST",
+    headers: headers(c, token),
+    body: JSON.stringify(body)
+  }));
+  let data = null;
+  try {
+    data = await r.json();
+  } catch {
+    data = null;
+  }
+  if (r.status === 403) throw new ApiError("not-allowed", data?.error ?? data?.message);
+  if (r.status === 404 && !data) throw new ApiError("server", `the server function "${name}" is not deployed yet`);
+  if (r.status === 503) throw new ApiError("server", data?.error === "email not set up" ? "Email is not set up on the server yet (Resend key missing)." : data?.error ?? "not set up on the server yet");
+  if (!r.ok) throw new ApiError("server", data?.error ?? data?.message ?? `HTTP ${r.status}`);
+  return data;
+}
 
 // src/api/admin.ts
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var api = (call, device) => ({
+var EVERYONE = "00000000-0000-0000-0000-000000000000";
+var api = (call, device, files = { upload: async () => {
+  throw new Error("no storage");
+}, download: async () => {
+  throw new Error("no storage");
+} }) => ({
   me: () => call("eab_admin_me"),
   signedIn: () => call("eab_admin_signed_in", { p_device: device }),
   search: (q) => call("eab_admin_search", { p_q: q, p_device: device }),
@@ -12987,6 +13125,144 @@ var api = (call, device) => ({
   log: (which, target = null, limit = 100, beforeSeq = null) => call("eab_admin_list_log", { p_log: which, p_target: target, p_limit: limit, p_before_seq: beforeSeq, p_device: device }),
   verify: () => call("eab_admin_verify_chain", { p_device: device }),
   admins: () => call("eab_admin_list_admins"),
+  // AdminBatch002 (MainForAdmin-B functions + eab_admin_agents / eab_admin_settings)
+  agents: (filter = "all", q = null, limit = 100, offset = 0) => call("eab_admin_agents", { p_filter: filter, p_q: q, p_limit: limit, p_offset: offset, p_device: device }),
+  loginLog: (id, limit = 200) => call("eab_admin_login_log", { p_user: id, p_limit: limit, p_device: device }),
+  termsLog: (id) => call("eab_admin_terms_log", { p_user: id, p_device: device }),
+  setStatus: (id, status, reason, forceLogout = false) => call("eab_admin_set_account_status", { p_user: id, p_status: status, p_reason: reason, p_force_logout: forceLogout, p_device: device }),
+  forceLogout: (id, reason) => call("eab_admin_force_logout", { p_user: id, p_reason: reason, p_device: device }),
+  verifyLicence: (id, verified, reason) => call("eab_admin_verify_licence", { p_user: id, p_verified: verified, p_reason: reason, p_device: device }),
+  settings: () => call("eab_admin_settings"),
+  // AdminBatch003
+  cases: (status = null, q = null) => call("eab_admin_cases", { p_status: status, p_q: q, p_device: device }),
+  caseGet: (id) => call("eab_admin_case", { p_case: id, p_device: device }),
+  caseCreate: (p) => call("eab_admin_case_create", { p, p_device: device }),
+  caseUpdate: (id, p, reason) => call("eab_admin_case_update", { p_case: id, p, p_reason: reason, p_device: device }),
+  caseAddAgent: (id, agent, from, to, reason) => call("eab_admin_case_add_agent", { p_case: id, p_agent: agent, p_from: from, p_to: to, p_reason: reason, p_device: device }),
+  caseRemoveAgent: (id, agent, reason) => call("eab_admin_case_remove_agent", { p_case: id, p_agent: agent, p_reason: reason, p_device: device }),
+  caseGrant: (id, email, expiresAt, reason) => call("eab_admin_case_grant", { p_case: id, p_email: email, p_expires_at: expiresAt, p_reason: reason, p_device: device }),
+  caseRevoke: (id, admin, reason) => call("eab_admin_case_revoke", { p_case: id, p_admin: admin, p_reason: reason, p_device: device }),
+  packRegister: (p) => call("eab_admin_pack_register", { p, p_device: device }),
+  packStored: (id) => call("eab_admin_pack_stored", { p_pack: id }),
+  vault: (caseId = null, agent = null) => call("eab_admin_vault", { p_case: caseId, p_agent: agent, p_device: device }),
+  packDownload: (id) => call("eab_admin_pack_download", { p_pack: id, p_device: device }),
+  checkFile: (sha) => call("eab_admin_check_file", { p_sha256: sha, p_device: device }),
+  files,
+  // AdminBatch004 — System Health
+  healthDb: () => call("eab_admin_health_db"),
+  healthStorage: () => call("eab_admin_health_storage"),
+  setHealthLimits: (patch, reason) => call("eab_admin_set_health_limits", { p_patch: patch, p_reason: reason, p_device: device }),
+  backupTests: (limit = 200) => call("eab_admin_backup_tests", { p_limit: limit }),
+  backupTestAdd: (p) => call("eab_admin_backup_test_add", { p, p_device: device }),
+  syncHealth: (days = 30) => call("eab_admin_sync_health", { p_days: days, p_device: device }),
+  pushHealth: () => call("eab_admin_push_health"),
+  performance: (days = 30) => call("eab_admin_performance", { p_days: days }),
+  errorReports: (status = null, limit = 200) => call("eab_admin_error_reports", { p_status: status, p_limit: limit, p_device: device }),
+  // AdminBatch005 — Dashboards
+  dashGrowth: (from, to, bucket) => call("eab_admin_dash_growth", { p_from: from, p_to: to, p_bucket: bucket }),
+  dashActive: (from, to) => call("eab_admin_dash_active", { p_from: from, p_to: to }),
+  dashRetention: (from, to) => call("eab_admin_dash_retention", { p_from: from, p_to: to, p_device: device }),
+  dashInactive: (days) => call("eab_admin_dash_inactive", { p_days: days, p_device: device }),
+  dashDevices: (from, to, version = null) => call("eab_admin_dash_devices", { p_from: from, p_to: to, p_version: version, p_device: device }),
+  dashListings: (from, to, staleDays = 60) => call("eab_admin_dash_listings", { p_from: from, p_to: to, p_stale_days: staleDays, p_device: device }),
+  dashUsage: (from, to) => call("eab_admin_dash_usage", { p_from: from, p_to: to }),
+  dashEvents: (kind, name, from, to, limit = 200) => call("eab_admin_dash_events", { p_kind: kind, p_name: name, p_from: from, p_to: to, p_limit: limit, p_device: device }),
+  // AdminBatch009 — Listings & market
+  marketQuality: (below = 80, limit = 500) => call("eab_admin_market_quality", { p_below: below, p_limit: limit, p_device: device }),
+  marketDom: (from, to) => call("eab_admin_market_dom", { p_from: from, p_to: to }),
+  marketPrice: (from, to) => call("eab_admin_market_price", { p_from: from, p_to: to, p_device: device }),
+  marketAreas: (from, to) => call("eab_admin_market_areas", { p_from: from, p_to: to }),
+  marketStuck: (days = 30) => call("eab_admin_market_stuck", { p_days: days, p_device: device }),
+  marketCommission: (from, to) => call("eab_admin_market_commission", { p_from: from, p_to: to, p_device: device }),
+  marketProjects: (from, to) => call("eab_admin_market_projects", { p_from: from, p_to: to }),
+  marketNews: (from, to) => call("eab_admin_market_news", { p_from: from, p_to: to }),
+  // AdminBatch006 — News & Announcements (MainForAdmin-D functions + 006 helpers)
+  feedList: (kind = null) => call("eab_admin_feed_list", { p_kind: kind }),
+  feedSave: (item, reason) => call("eab_admin_feed_save", { p_item: item, p_reason: reason, p_device: device }),
+  feedSetStatus: (id, status, reason) => call("eab_admin_feed_set_status", { p_item: id, p_status: status, p_reason: reason, p_device: device }),
+  groups: () => call("eab_admin_group_list"),
+  groupSave: (g, reason) => call("eab_admin_group_save", { p_group: g, p_reason: reason, p_device: device }),
+  groupPreview: (filters) => call("eab_admin_group_preview", { p_filters: filters }),
+  orderGet: (group) => call("eab_admin_feed_order_get", { p_group: group }),
+  orderSet: (group, items, reason) => call("eab_admin_feed_order_set", { p_group: group, p_items: items, p_reason: reason, p_device: device }),
+  codes: () => call("eab_admin_code_list"),
+  codeCreate: (label, items, expiresAt, maxUses, reason) => call("eab_admin_code_create", { p_label: label, p_items: items, p_expires_at: expiresAt, p_max_uses: maxUses, p_reason: reason, p_device: device }),
+  codeDisable: (code, reason) => call("eab_admin_code_disable", { p_code: code, p_reason: reason, p_device: device }),
+  codeGrants: (code) => call("eab_admin_code_grants", { p_code: code, p_device: device }),
+  codeRevoke: (user, item, reason) => call("eab_admin_code_revoke", { p_user: user, p_item: item, p_reason: reason, p_device: device }),
+  pushList: () => call("eab_admin_push_list"),
+  // AdminBatch006 — Support & operations
+  tickets: (status = null, q = null, limit = 200) => call("eab_admin_tickets", { p_status: status, p_q: q, p_limit: limit, p_device: device }),
+  ticket: (id) => call("eab_admin_ticket", { p_id: id, p_device: device }),
+  ticketStatus: (id, status, note) => call("eab_admin_ticket_set_status", { p_id: id, p_status: status, p_note: note, p_device: device }),
+  ticketNote: (id, note) => call("eab_admin_ticket_note", { p_id: id, p_note: note, p_device: device }),
+  flags: () => call("eab_admin_flags"),
+  flagSave: (f, reason) => call("eab_admin_flag_save", { p_flag: f, p_reason: reason, p_device: device }),
+  opsSettings: () => call("eab_admin_settings"),
+  setOps: (patch, reason) => call("eab_admin_set_settings", { p_patch: patch, p_reason: reason, p_device: device }),
+  // AdminBatch006 — Overview
+  master: () => call("eab_admin_dash_master"),
+  topAgents: (from, to, limit = 50) => call("eab_admin_dash_top_agents", { p_from: from, p_to: to, p_limit: limit, p_device: device }),
+  liveUsers: (minutes = 5) => call("eab_admin_live_users", { p_minutes: minutes, p_device: device }),
+  // AdminBatch007 — compliance core
+  pdpaList: (status = null) => call("eab_admin_pdpa_list", { p_status: status, p_device: device }),
+  pdpaGet: (id) => call("eab_admin_pdpa_get", { p_id: id, p_device: device }),
+  pdpaCreate: (p) => call("eab_admin_pdpa_create", { p, p_device: device }),
+  pdpaUpdate: (id, p, note) => call("eab_admin_pdpa_update", { p_id: id, p, p_note: note, p_device: device }),
+  pdpaNote: (id, note) => call("eab_admin_pdpa_note", { p_id: id, p_note: note, p_device: device }),
+  complaints: (status = null, agent = null) => call("eab_admin_complaints", { p_status: status, p_agent: agent, p_device: device }),
+  complaintGet: (id) => call("eab_admin_complaint_get", { p_id: id, p_device: device }),
+  complaintCreate: (p) => call("eab_admin_complaint_create", { p, p_device: device }),
+  complaintUpdate: (id, p, note) => call("eab_admin_complaint_update", { p_id: id, p, p_note: note, p_device: device }),
+  complaintNote: (id, note) => call("eab_admin_complaint_note", { p_id: id, p_note: note, p_device: device }),
+  holds: (active = true) => call("eab_admin_holds", { p_active: active, p_device: device }),
+  holdPlace: (agent, reason, caseId = null) => call("eab_admin_hold_place", { p_agent: agent, p_reason: reason, p_case: caseId, p_device: device }),
+  holdRelease: (id, reason) => call("eab_admin_hold_release", { p_id: id, p_reason: reason, p_device: device }),
+  setLicenceExpiry: (user, expires, reason) => call("eab_admin_set_licence_expiry", { p_user: user, p_expires: expires, p_reason: reason, p_device: device }),
+  licenceExpiry: (within = 60) => call("eab_admin_licence_expiry", { p_within: within, p_device: device }),
+  agentInternal: (user) => call("eab_admin_agent_internal", { p_user: user, p_device: device }),
+  agentTag: (user, tag, add) => call("eab_admin_agent_tag", { p_user: user, p_tag: tag, p_add: add, p_device: device }),
+  agentNote: (user, note) => call("eab_admin_agent_note", { p_user: user, p_note: note, p_device: device }),
+  tagList: () => call("eab_admin_tag_list"),
+  retention: () => call("eab_admin_retention", { p_device: device }),
+  retentionReview: (decision, note) => call("eab_admin_retention_review", { p_decision: decision, p_note: note, p_device: device }),
+  feedSchedule: (id, at, reason) => call("eab_admin_feed_schedule", { p_item: id, p_at: at, p_reason: reason, p_device: device }),
+  // AdminBatch008 — reports
+  reportCatalog: () => call("eab_admin_report_catalog"),
+  reportRun: (spec) => call("eab_admin_report_run", { p_spec: spec, p_device: device }),
+  savedReports: () => call("eab_admin_saved_reports"),
+  savedReportSave: (r) => call("eab_admin_saved_report_save", { p: r, p_device: device }),
+  savedReportDelete: (id) => call("eab_admin_saved_report_delete", { p_id: id, p_device: device }),
+  boardReport: (month) => call("eab_admin_board_report", { p_month: month, p_device: device }),
+  auditBundle: (year) => call("eab_admin_audit_bundle", { p_year: year, p_device: device }),
+  // AdminBatch008 — broadcasts, weekly report, Team Workspaces, To-Do & Calendar
+  broadcasts: (limit = 200) => call("eab_admin_broadcasts", { p_limit: limit }),
+  broadcast: (id) => call("eab_admin_broadcast", { p_id: id, p_device: device }),
+  broadcastSave: (p) => call("eab_admin_broadcast_save", { p, p_device: device }),
+  broadcastPreview: (id) => call("eab_admin_broadcast_preview", { p_id: id }),
+  broadcastQueue: (id, reason) => call("eab_admin_broadcast_queue", { p_id: id, p_reason: reason, p_device: device }),
+  broadcastCancel: (id, reason) => call("eab_admin_broadcast_cancel", { p_id: id, p_reason: reason, p_device: device }),
+  broadcastWaOpened: (recipient) => call("eab_admin_broadcast_wa_opened", { p_recipient: recipient, p_device: device }),
+  reportSettings: () => call("eab_admin_report_settings"),
+  reportSettingsSave: (p, reason) => call("eab_admin_report_settings_save", { p, p_reason: reason, p_device: device }),
+  reports: (limit = 100) => call("eab_admin_reports", { p_limit: limit, p_device: device }),
+  reportDownload: (id) => call("eab_admin_report_download", { p_run: id, p_device: device }),
+  checkReport: (sha) => call("eab_admin_check_report", { p_sha256: sha, p_device: device }),
+  workspaces: (q = null) => call("eab_admin_workspaces", { p_q: q, p_device: device }),
+  workspace: (id) => call("eab_admin_workspace", { p_id: id, p_device: device }),
+  todo: () => call("eab_admin_todo"),
+  taskSave: (p) => call("eab_admin_task_save", { p, p_device: device }),
+  eventSave: (p) => call("eab_admin_event_save", { p, p_device: device }),
+  // AdminBatch009 — agent insight
+  scorecard: (limit = 500) => call("eab_admin_scorecard", { p_limit: limit, p_device: device }),
+  agentScore: (user) => call("eab_admin_agent_score", { p_user: user, p_device: device }),
+  funnel: (from, to) => call("eab_admin_funnel", { p_from: from, p_to: to }),
+  funnelStuck: (from, to, step) => call("eab_admin_funnel_stuck", { p_from: from, p_to: to, p_step: step, p_device: device }),
+  bulkAction: (action, users, reason, tag = null) => call("eab_admin_bulk_action", { p_action: action, p_users: users, p_reason: reason, p_tag: tag, p_device: device }),
+  duplicates: () => call("eab_admin_duplicates", { p_device: device }),
+  agentDevices: (user) => call("eab_admin_agent_devices", { p_user: user, p_device: device }),
+  deviceRemove: (user, deviceId, reason) => call("eab_admin_device_remove", { p_user: user, p_device_id: deviceId, p_reason: reason, p_device: device }),
+  setSettings: (patch, reason) => call("eab_admin_set_settings", { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email, role, active, expiresAt, reason) => call("eab_admin_set_admin", { p_email: email, p_role: role, p_active: active, p_expires_at: expiresAt, p_reason: reason, p_device: device })
 });
 
@@ -13195,74 +13471,102 @@ var SECTIONS = [
     { n: 18, name: "Master Audit Log", open: { k: "logs", tab: "actions" }, needs: "viewLogs" },
     { n: 74, name: "Who Viewed What", open: { k: "logs", tab: "access" }, needs: "viewLogs" },
     { n: 73, name: "Log Integrity Check", open: { k: "logs", tab: "actions" }, needs: "viewLogs" },
-    { n: 72, name: "Regulator Request Case Files" },
-    { n: 75, name: "Temporary Regulator Login" },
-    { n: 78, name: "Agent Data Export (PDPA)" },
-    { n: 19, name: "Document Vault" },
-    { n: 50, name: "PDPA & Deletion Requests" },
-    { n: 51, name: "Retention Policy (7 years)" },
-    { n: 52, name: "Licence Verification" },
-    { n: 53, name: "Terms Acceptance Log" },
+    { n: 72, name: "Regulator Request Case Files", open: { k: "cases" }, needs: "viewCases", note: "JPPH, police, court, board, PDPA" },
+    { n: 75, name: "Temporary Regulator Login", open: { k: "cases" }, needs: "grantRegulator", note: "Given inside a case, max 90 days" },
+    { n: 78, name: "Agent Data Export (PDPA)", open: { k: "cases" }, needs: "editCases", note: "Make a PDPA case for the agent" },
+    { n: 19, name: "Document Vault", open: { k: "vault" }, needs: "vault", note: "Every pack and export, 7 years" },
+    { n: 50, name: "PDPA & Deletion Requests", open: { k: "pdpa" }, needs: "pdpa", note: "21-day rule; deletion logged only" },
+    { n: 51, name: "Retention Policy (7 years)", open: { k: "retention" }, needs: "viewRetention", note: "Review only; nothing deleted" },
+    { n: 88, name: "Legal Hold", open: { k: "holds" }, needs: "viewHolds", note: "Freeze an agent\u2019s records" },
+    { n: 91, name: "Complaint Register", open: { k: "complaints" }, needs: "complaints", note: "Complaints about agents" },
+    { n: 82, name: "Licence Expiry", open: { k: "licences" }, needs: "licences", note: "Warnings at 60 / 30 / 7 days" },
+    { n: 52, name: "Licence Verification", open: { k: "agents", filter: "licence" }, needs: "listAgents", note: "Unverified first" },
+    { n: 53, name: "Terms Acceptance Log", open: { k: "agents", filter: "all" }, needs: "listAgents", note: "Version per agent; history in profile" },
     { n: 16, name: "Content Moderation" },
     { n: 57, name: "Photo Moderation" }
   ] },
+  { title: "Reports", items: [
+    { n: 90, name: "Monthly Board Report", open: { k: "reports", tab: "board" }, needs: "boardReport", note: "Compared with last month; kept in the vault" },
+    { n: 129, name: "Annual Audit Bundle", open: { k: "reports", tab: "audit" }, needs: "auditBundle", note: "Logs, tamper check, cases, PDPA, holds" },
+    { n: 127, name: "Custom Report Builder", open: { k: "reports", tab: "builder" }, needs: "reportBuilder", note: "Pick columns, filters, totals; save and share" }
+  ] },
   { title: "Security", items: [
     { n: 17, name: "Admins & Roles", open: { k: "admins" }, needs: "manageAdmins" },
-    { n: 45, name: "Login Security" },
-    { n: 46, name: "Active Sessions & Force Logout" },
-    { n: 47, name: "Suspend / Ban Agent" }
+    { n: 45, name: "Login Security", open: { k: "agents", filter: "security" }, needs: "listAgents", note: "Failed sign-ins & lockouts, 30 days" },
+    { n: 46, name: "Force Logout", open: { k: "agents", filter: "all" }, needs: "accountActions", note: "Per agent, at next app open or sync" },
+    { n: 47, name: "Suspend / Ban / Close", open: { k: "agents", filter: "not_active" }, needs: "listAgents", note: "Accounts not active" }
   ] },
   { title: "Communication & Operations", items: [
-    { n: "N", name: "Market News & Intelligence" },
-    { n: 63, name: "Announcements & Banners" },
-    { n: 15, name: "Broadcast Push" },
-    { n: 64, name: "Email & WhatsApp Broadcast" },
-    { n: 65, name: "Support Tickets & Feedback" },
-    { n: 66, name: "App Release Manager" },
-    { n: 68, name: "Maintenance Mode" },
-    { n: 67, name: "Feature Flags" },
-    { n: 11, name: "System Settings" },
-    { n: 69, name: "Team Workspaces" },
-    { n: 70, name: "Scheduled Reports" },
-    { n: 13, name: "To-Do & Calendar" },
-    { n: 71, name: "Master Dashboard" }
+    { n: 71, name: "Master Dashboard", open: { k: "master" }, needs: "viewDash", note: "Key numbers and red alerts" },
+    { n: "N", name: "Market News & Intelligence", open: { k: "news", tab: "news" }, needs: "viewContent", note: "EN / BM / ZH, audience, order" },
+    { n: "P", name: "Pushed Projects & Codes", open: { k: "news", tab: "project" }, needs: "viewContent", note: "Projects and invitation codes" },
+    { n: 63, name: "Announcements & Banners", open: { k: "news", tab: "announcement" }, needs: "viewContent", note: "Banner or pop-up" },
+    { n: "G", name: "Audience Groups", open: { k: "news", tab: "groups" }, needs: "viewContent", note: "Saved, ranked filters" },
+    { n: 15, name: "Broadcast Push", open: { k: "news", tab: "push" }, needs: "viewContent", note: "Send waiting alerts" },
+    { n: 64, name: "Email & WhatsApp Broadcast", open: { k: "broadcasts" }, needs: "viewBroadcasts", note: "Service notices and news & offers" },
+    { n: 65, name: "Support Tickets & Feedback", open: { k: "tickets" }, needs: "viewTickets", note: "Problem reports, status, notes" },
+    { n: 66, name: "App Release Manager", open: { k: "ops", tab: "release" }, needs: "viewOps", note: "Minimum version, soft / hard" },
+    { n: 68, name: "Maintenance Mode", open: { k: "ops", tab: "maintenance" }, needs: "viewOps", note: "Block the app, 3 languages" },
+    { n: 67, name: "Feature Flags", open: { k: "ops", tab: "flags" }, needs: "viewOps", note: "Switch features per group" },
+    { n: 11, name: "System Settings", open: { k: "settings" }, needs: "viewSettings", note: "Company name, support contact" },
+    { n: 69, name: "Team Workspaces", open: { k: "workspaces" }, needs: "workspaces", note: "Agents\u2019 workspaces, teams, members" },
+    { n: 70, name: "Scheduled Reports", open: { k: "weeklyReports" }, needs: "reports", note: "Weekly PDF, kept and emailed" },
+    { n: 13, name: "To-Do & Calendar", open: { k: "todo", tab: "todo" }, needs: "todo", note: "Yours, or shared with the team", choose: true }
   ] },
   { title: "Users & Growth", items: [
-    { n: 1, name: "Agents Overview" },
-    { n: 22, name: "Live Users Now" },
-    { n: 23, name: "Sign-ups & Growth" },
-    { n: 24, name: "Active Users" },
-    { n: 25, name: "Retention & Churn" },
-    { n: 26, name: "Inactive Agents" },
-    { n: 20, name: "App Version Tracking" },
-    { n: 27, name: "Device & OS Breakdown" },
+    { n: 1, name: "Agents Overview", open: { k: "agents", filter: "all" }, needs: "listAgents", note: "Status, licence, last sign-in" },
+    { n: 22, name: "Live Users Now", open: { k: "live" }, needs: "viewDash", note: "Who is using the app now" },
+    { n: 23, name: "Sign-ups & Growth", open: { k: "dash", tab: "growth" }, needs: "viewDash", note: "New agents per day, week, month" },
+    { n: 24, name: "Active Users", open: { k: "dash", tab: "active" }, needs: "viewDash", note: "Daily, weekly, monthly; stickiness" },
+    { n: 25, name: "Retention & Churn", open: { k: "dash", tab: "retention" }, needs: "viewDash", note: "Still using after 7/30/90 days; at risk" },
+    { n: 26, name: "Inactive Agents", open: { k: "dash", tab: "inactive" }, needs: "viewDash", note: "No activity 30/60/90 days" },
+    { n: 20, name: "App Version Tracking", open: { k: "dash", tab: "versions" }, needs: "viewDash", note: "Agents per version" },
+    { n: 27, name: "Device & OS Breakdown", open: { k: "dash", tab: "versions" }, needs: "viewDash", note: "Platforms and phone models" },
     { n: 28, name: "Geography Map" },
-    { n: 29, name: "Language Usage" }
+    { n: 29, name: "Language Usage", open: { k: "dash", tab: "versions" }, needs: "viewDash", note: "English, BM, Chinese" }
+  ] },
+  { title: "Agent Insight", items: [
+    { n: 92, name: "Agent Scorecard", open: { k: "scorecard" }, needs: "scorecard", note: "Listings 40 + activity 30 + compliance 30" },
+    { n: 93, name: "Onboarding Funnel", open: { k: "funnel" }, needs: "funnel", note: "Sign-up to first deal; who is stuck" },
+    { n: 95, name: "Bulk Actions", open: { k: "agents", filter: "all" }, needs: "bulkActions", note: 'Tap "Choose agents" in the list' },
+    { n: 97, name: "Duplicate Accounts", open: { k: "duplicates" }, needs: "duplicates", note: "Same phone number, phone or licence" },
+    { n: 98, name: "Devices per Agent", open: SEARCH, needs: "viewDevices", note: "Phones tab in each Agent Profile" }
   ] },
   { title: "Content & Business", items: [
-    { n: 7, name: "Listings Analytics" },
-    { n: 59, name: "Deal Pipeline (Sale & Rent)" },
+    { n: 7, name: "Listings Analytics", open: { k: "dash", tab: "listings" }, needs: "viewDash", note: "By status; stale listings" },
+    { n: 59, name: "Deal Pipeline (Sale & Rent)", open: { k: "dash", tab: "pipeline" }, needs: "viewDash", note: "Sale lane and rent lane" },
     { n: 8, name: "Buyer & Vendor Analytics" },
     { n: 54, name: "Listings Map" },
     { n: 55, name: "Price Trends by Area" },
     { n: 56, name: "Duplicate Listings" },
-    { n: 58, name: "Top Agents" },
-    { n: 6, name: "User Activity" },
-    { n: 62, name: "Feature Usage" },
+    { n: 58, name: "Top Agents", open: { k: "top" }, needs: "viewDashAgents", note: "Sold, rented, new listings" },
+    { n: 6, name: "User Activity", open: { k: "dash", tab: "usage" }, needs: "viewDash", note: "When agents use the app" },
+    { n: 62, name: "Feature Usage", open: { k: "dash", tab: "usage" }, needs: "viewDash", note: "Most used and not used" },
     { n: 60, name: "AI Command Usage" },
     { n: 61, name: "Marketing Studio Usage" }
   ] },
+  { title: "Listings & Market", items: [
+    { n: 102, name: "Listing Quality Score", open: { k: "market", tab: "quality" }, needs: "viewMarket", note: "Score out of 100; needs photos / details" },
+    { n: 103, name: "Days on Market", open: { k: "market", tab: "dom" }, needs: "viewMarket", note: "By state, city and type" },
+    { n: 104, name: "Asking vs Final Price", open: { k: "market", tab: "price" }, needs: "viewMarket", note: "Deals linked to a listing" },
+    { n: 105, name: "Hot Areas", open: { k: "market", tab: "areas" }, needs: "viewMarket", note: "Listings and enquiries by area" },
+    { n: 106, name: "Buyer Demand vs Supply", blocked: "Needs buyer requirements in the main app" },
+    { n: 107, name: "Stuck Deals", open: { k: "market", tab: "stuck" }, needs: "viewMarket", note: "Booked, no change for 30 days" },
+    { n: 108, name: "Commission Forecast", open: { k: "market", tab: "commission" }, needs: "viewMarket", note: "Open deals by month and stage" },
+    { n: 109, name: "Project Performance", open: { k: "market", tab: "projects" }, needs: "viewMarket", note: "Opens and code redemptions" },
+    { n: 110, name: "Market News Engagement", open: { k: "market", tab: "news" }, needs: "viewMarket", note: "Open rates; best time to post" }
+  ] },
   { title: "System Health", items: [
-    { n: 4, name: "Database Health" },
-    { n: 3, name: "Backup Status" },
-    { n: 42, name: "Backup Restore Tests" },
-    { n: 41, name: "Storage Forecast" },
-    { n: 5, name: "Error Logs & Crashes" },
-    { n: 39, name: "App Performance" },
-    { n: 38, name: "Uptime & Outages" },
-    { n: 9, name: "Notifications & Sync" },
-    { n: 43, name: "Sync Failures" },
-    { n: 44, name: "Push Delivery Rates" }
+    { n: 4, name: "Database Health", open: { k: "health", tab: "db" }, needs: "viewHealth", note: "Tables, connections, slow queries" },
+    { n: 3, name: "Backup Status", open: { k: "health", tab: "backups" }, needs: "viewHealth", note: "Supabase and AWS boxes" },
+    { n: 42, name: "Backup Restore Tests", open: { k: "health", tab: "backups" }, needs: "viewHealth", note: "Proof for auditors, kept for good" },
+    { n: 41, name: "Storage Forecast", open: { k: "health", tab: "storage" }, needs: "viewHealth", note: "Used vs free, when it fills up" },
+    { n: 5, name: "Error Logs & Crashes", open: { k: "health", tab: "errors" }, needs: "viewHealthAgents", note: "Problem reports and failures" },
+    { n: 39, name: "App Performance", open: { k: "health", tab: "performance" }, needs: "viewHealth", note: "Start time by version" },
+    { n: 38, name: "Uptime & Outages", blocked: "Needs an outside uptime monitor" },
+    { n: 9, name: "Notifications & Sync", open: { k: "health", tab: "sync" }, needs: "viewHealthAgents", note: "Sync runs and failures" },
+    { n: 43, name: "Sync Failures", open: { k: "health", tab: "sync" }, needs: "viewHealthAgents", note: "Per agent, most failures first" },
+    { n: 44, name: "Push Delivery Rates", open: { k: "health", tab: "push" }, needs: "viewHealth", note: "Sent, delivered, opened" }
   ] },
   { title: "Money", items: [
     { n: 2, name: "Google API Usage & Cost" },
@@ -13662,7 +13966,7 @@ function GoogleG() {
 // src/screens/Shell.tsx
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var import_react9 = __toESM(require_react(), 1);
+var import_react28 = __toESM(require_react(), 1);
 
 // src/admin/roles.ts
 init_define_EAB_BUILD();
@@ -13686,7 +13990,97 @@ var RULES = {
   viewAgent: ["owner", "admin", "compliance", "regulator"],
   export: ["owner", "compliance"],
   viewLogs: ["owner", "compliance"],
-  manageAdmins: ["owner"]
+  manageAdmins: ["owner"],
+  // AdminBatch002 — same rules as the MainForAdmin-B / AdminBatch002 database functions
+  listAgents: ["owner", "admin", "compliance", "regulator"],
+  accountActions: ["owner", "admin"],
+  // suspend / ban / close / re-activate / force logout
+  verifyLicence: ["owner", "admin", "compliance"],
+  viewSettings: ["owner", "admin", "compliance", "viewer"],
+  editSettings: ["owner", "admin"],
+  // AdminBatch003 — same rules as the case / vault database functions
+  viewCases: ["owner", "compliance", "regulator"],
+  // a regulator sees only their own case
+  editCases: ["owner", "compliance"],
+  grantRegulator: ["owner"],
+  vault: ["owner", "compliance", "regulator"],
+  // AdminBatch004 — same rules as the System Health database functions
+  viewHealth: ["owner", "admin", "compliance", "viewer"],
+  // counts and sizes only
+  viewHealthAgents: ["owner", "admin", "compliance"],
+  // lists that name agents (sync failures, problem reports)
+  recordBackupTest: ["owner", "admin", "compliance"],
+  editHealthLimits: ["owner", "admin"],
+  // AdminBatch005 — same rules as the eab_admin_dash_* database functions
+  viewDash: ["owner", "admin", "compliance", "viewer"],
+  // totals and charts
+  viewDashAgents: ["owner", "admin", "compliance"],
+  // lists that name agents (inactive, at-risk, per version, events, stale)
+  // AdminBatch006 — same rules as the MainForAdmin-D and AdminBatch006 database functions
+  viewContent: ["owner", "admin", "compliance", "viewer"],
+  // posts, groups, codes, push counts
+  editContent: ["owner", "admin"],
+  // write / publish / withdraw / order / codes / send push / upload files
+  viewTickets: ["owner", "admin", "compliance"],
+  // problem reports name agents
+  editTickets: ["owner", "admin"],
+  // status and internal notes
+  viewOps: ["owner", "admin", "compliance", "viewer"],
+  // maintenance, minimum version, feature flags
+  editOps: ["owner", "admin"],
+  // AdminBatch007 — same rules as the compliance database functions
+  pdpa: ["owner", "compliance"],
+  // PDPA requests (view and write)
+  complaints: ["owner", "admin", "compliance"],
+  viewHolds: ["owner", "admin", "compliance"],
+  placeHold: ["owner", "compliance"],
+  // place / release a legal hold
+  licences: ["owner", "admin", "compliance"],
+  // licence expiry list and dates
+  internal: ["owner", "admin", "compliance"],
+  // internal tags and notes on agents
+  viewRetention: ["owner", "compliance"],
+  reviewRetention: ["owner"],
+  // AdminBatch008 — same rules as the report database functions
+  boardReport: ["owner", "compliance"],
+  // monthly Board report (kept in the vault)
+  auditBundle: ["owner", "compliance"],
+  // annual audit bundle (kept in the vault)
+  reportBuilder: ["owner", "admin", "compliance", "viewer"],
+  // custom reports; Viewer: grouped totals only
+  reportNames: ["owner", "admin", "compliance"],
+  // report columns that name people (names, emails)
+  // AdminBatch008 — same rules as the broadcast / report / workspace / to-do database functions
+  viewBroadcasts: ["owner", "admin", "compliance", "viewer"],
+  // list and counts, no names
+  broadcastNames: ["owner", "admin", "compliance"],
+  // who got it (names, email, phone)
+  editBroadcasts: ["owner", "admin"],
+  // write, queue, send, cancel, tap-to-send
+  reports: ["owner", "compliance"],
+  // weekly report list, download, make now
+  reportSchedule: ["owner"],
+  // switch on / off, day, hour, who gets it
+  workspaces: ["owner", "admin", "compliance"],
+  todo: ["owner", "admin", "compliance", "viewer"],
+  // own items; a Viewer cannot share or change shared ones
+  // AdminBatch009 — same rules as the eab_admin_market_* database functions
+  viewMarket: ["owner", "admin", "compliance", "viewer"],
+  // totals and charts
+  viewMarketAgents: ["owner", "admin", "compliance"],
+  // lists that name agents (needs work, deals, stuck, commission by agent)
+  // AdminBatch009 — same rules as the agent-insight database functions
+  scorecard: ["owner", "admin", "compliance", "viewer"],
+  // Viewer: how scores are spread, no names
+  funnel: ["owner", "admin", "compliance", "viewer"],
+  // Viewer: counts only; "who is stuck" = viewDashAgents
+  bulkActions: ["owner", "admin"],
+  // suspend / re-activate / sign out / tag / message many agents
+  duplicates: ["owner", "admin", "compliance"],
+  viewDevices: ["owner", "admin", "compliance", "regulator"],
+  // a regulator only for agents in their case
+  removeDevice: ["owner", "admin"]
+  // sign one phone out (MainForAdmin-G)
 };
 var can = (role, a) => !!role && RULES[a].includes(role);
 var ALL_ROLES = ["owner", "admin", "compliance", "viewer", "regulator"];
@@ -13712,11 +14106,10 @@ var savePick = (id) => {
 };
 function Home() {
   const { me, go } = useAdmin();
+  const [ask, setAsk] = (0, import_react3.useState)(false);
   const apps = appsFor();
-  const [pick, setPick] = (0, import_react3.useState)(() => {
-    const s = readPick();
-    return (apps.find((a) => a.id === s) ?? apps[0]).id;
-  });
+  const [pick, setPick] = (0, import_react3.useState)(() => (apps.find((a) => a.id === readPick()) ?? apps[0]).id);
+  if (me.role === "regulator") return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(RegulatorHome, {});
   const app = apps.find((a) => a.id === pick) ?? apps[0];
   const ready = app.sections.flatMap((s) => s.items).filter((f) => f.open && (!f.needs || can(me.role, f.needs))).length;
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { children: [
@@ -13736,7 +14129,15 @@ function Home() {
       a.id
     )) }),
     /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "card boxed stack", style: { marginBottom: 18 }, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h1", { "data-testid": "app-title", children: app.product }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h1", { children: "Welcome" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "small muted", style: { margin: 0 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("b", { "data-testid": "app-title", children: app.product }),
+        " \xB7 ",
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("span", { "data-testid": "app-where", children: [
+          "Data: ",
+          app.where
+        ] })
+      ] }),
       /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "muted", style: { margin: 0 }, children: [
         ROLE_HELP[me.role],
         " ",
@@ -13744,10 +14145,6 @@ function Home() {
         " feature",
         ready === 1 ? "" : "s",
         " available to you now."
-      ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "small muted", style: { margin: 0 }, "data-testid": "app-where", children: [
-        "Data: ",
-        app.where
       ] }),
       me.expires_at && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "notice warn", style: { margin: 0 }, children: [
         "Your access ends ",
@@ -13766,7 +14163,10 @@ function Home() {
           {
             className: `tile ${isReady ? "ready" : "soon"}`,
             disabled: !isReady,
-            onClick: () => f.open && go(f.open),
+            onClick: () => {
+              if (f.choose) setAsk(true);
+              else if (f.open) go(f.open);
+            },
             "data-testid": isReady ? `tile-${f.n}` : void 0,
             children: [
               /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "ico", "aria-hidden": "true", children: String(f.n) }),
@@ -13777,7 +14177,48 @@ function Home() {
           `${app.id}-${s.title}-${f.n}`
         );
       }) })
-    ] }, s.title))
+    ] }, s.title)),
+    ask && /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("div", { className: "overlay", role: "presentation", onClick: (e) => {
+      if (e.target === e.currentTarget) setAsk(false);
+    }, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "dialog card boxed stack", role: "dialog", "aria-modal": "true", "aria-label": "Open which?", "data-testid": "agenda-ask", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h2", { children: "Open which?" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "btn gold", onClick: () => {
+        setAsk(false);
+        go({ k: "todo", tab: "calendar" });
+      }, "data-testid": "agenda-calendar", children: "Calendar" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "btn gold", onClick: () => {
+        setAsk(false);
+        go({ k: "todo", tab: "todo" });
+      }, "data-testid": "agenda-todo", children: "To-Do" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("button", { className: "btn", onClick: () => setAsk(false), children: "Cancel" })
+    ] }) })
+  ] });
+}
+function RegulatorHome() {
+  const { me, go } = useAdmin();
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "card boxed stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("h1", { children: "Welcome" }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "muted", style: { margin: 0 }, children: ROLE_HELP.regulator }),
+      me.expires_at && /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("p", { className: "notice warn", style: { margin: 0 }, children: [
+        "Your access ends ",
+        new Date(me.expires_at).toLocaleString(),
+        "."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("p", { className: "small muted", style: { margin: 0 }, children: "Everything you open is recorded." })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("div", { className: "tiles", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { className: "tile ready", onClick: () => go({ k: "cases" }), "data-testid": "tile-my-case", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "ico", children: "72" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "t", children: "My case" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "n", children: "Agents and packs prepared for you" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)("button", { className: "tile ready", onClick: () => go({ k: "vault" }), "data-testid": "tile-my-vault", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "ico", children: "19" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "t", children: "Packs & check a file" }),
+        /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("span", { className: "n", children: "Download, or prove a copy is genuine" })
+      ] })
+    ] })
   ] });
 }
 
@@ -13842,15 +14283,38 @@ function fmtTime(iso) {
   const p = (n) => String(n).padStart(2, "0");
   return `${my.getUTCFullYear()}-${p(my.getUTCMonth() + 1)}-${p(my.getUTCDate())} ${p(my.getUTCHours())}:${p(my.getUTCMinutes())} MYT`;
 }
+var EVENT_TEXT = {
+  sign_in: "Signed in",
+  app_open: "Opened the app",
+  sign_in_failed: "Sign-in failed",
+  locked_out: "Locked out (30 tries)",
+  forced_out: "Signed out by admin",
+  blocked: "Blocked (account not active)",
+  sign_out: "Signed out"
+};
+var eventText = (e) => EVENT_TEXT[e] ?? e;
+var STATUS_TEXT = { active: "Active", suspended: "Suspended", banned: "Banned", closed: "Closed" };
+function loginLine(r) {
+  return [
+    fmtTime(r.happened_at),
+    eventText(r.event),
+    r.platform ?? "",
+    r.app_version ? `v${r.app_version}` : "",
+    r.lat != null && r.lng != null ? `${r.lat.toFixed(4)}, ${r.lng.toFixed(4)}` : "",
+    r.detail ?? ""
+  ].filter(Boolean).join(" \xB7 ");
+}
 function profileRows(p) {
   return [
     { k: "Name", v: p.name ?? "" },
     { k: "Email", v: p.email },
     { k: "User ID", v: p.user_id },
-    { k: "Account status", v: p.status },
+    { k: "Account status", v: `${STATUS_TEXT[p.status] ?? p.status}${p.status !== "active" && p.status_reason ? ` \u2014 ${p.status_reason}` : ""}` },
     { k: "Licence", v: p.licence ?? "Not provided" },
+    { k: "Terms accepted", v: p.terms ? `Version ${p.terms.version ?? "?"} on ${fmtTime(p.terms.at)}` : "Not accepted yet" },
+    { k: "News & offers", v: p.marketing == null ? "Not answered" : p.marketing ? "Yes" : "No" },
     { k: "Joined", v: fmtTime(p.joined_at) },
-    { k: "Last sign-in", v: fmtTime(p.last_sign_in_at) },
+    { k: "Last sign-in", v: p.last_login ? `${fmtTime(p.last_login.at)}${p.last_login.platform ? ` (${p.last_login.platform})` : ""}` : fmtTime(p.last_sign_in_at) },
     { k: "Workspaces", v: p.workspaces.map((w) => `${w.name} (${w.role})`).join(", ") }
   ];
 }
@@ -13871,10 +14335,10 @@ function buildProfileDoc(x) {
     })) }
   ];
   for (const c of sortCollections(Object.keys(x.records))) {
-    const list = x.records[c];
-    if (!list.length) continue;
-    blocks.push({ t: "heading", text: `${labelOf(c)} (${list.length})` });
-    for (const r of list) {
+    const list2 = x.records[c];
+    if (!list2.length) continue;
+    blocks.push({ t: "heading", text: `${labelOf(c)} (${list2.length})` });
+    for (const r of list2) {
       blocks.push({ t: "text", text: `${recordTitle(r)}${r.deleted ? "  \u2014 DELETED (kept for audit)" : ""}`, bold: true });
       blocks.push({ t: "rows", rows: [
         { k: "Version", v: String(r.rev), sub: true },
@@ -13888,6 +14352,14 @@ function buildProfileDoc(x) {
       }
       blocks.push({ t: "rule" });
     }
+  }
+  if (x.termsLog && x.termsLog.length) {
+    blocks.push({ t: "heading", text: `Terms and consent answers (${x.termsLog.length})` });
+    blocks.push({ t: "rows", rows: x.termsLog.map((r) => ({ k: fmtTime(r.at), v: `${r.kind === "terms" ? "Terms and Conditions" : "News & offers"}${r.terms_version ? ` v${r.terms_version}` : ""}: ${r.accepted ? r.kind === "terms" ? "accepted" : "yes" : r.kind === "terms" ? "not accepted" : "no"}` })) });
+  }
+  if (x.loginLog && x.loginLog.length) {
+    blocks.push({ t: "heading", text: `Sign-in history (${x.loginLog.length}, newest first)` });
+    for (const r of x.loginLog) blocks.push({ t: "text", text: loginLine(r), small: true });
   }
   blocks.push({ t: "space", h: 8 });
   blocks.push({ t: "text", text: "Generated by Admin EAB from the live database. Every export is recorded in the tamper-proof access log under the reference above.", small: true, muted: true });
@@ -13928,14 +14400,14 @@ function buildProfileSheets(x) {
     widths: [30, 60]
   }];
   for (const c of sortCollections(Object.keys(x.records))) {
-    const list = x.records[c];
-    if (!list.length) continue;
-    const keys = [...new Set(list.flatMap((r) => Object.keys(r.data ?? {})))].sort();
+    const list2 = x.records[c];
+    if (!list2.length) continue;
+    const keys = [...new Set(list2.flatMap((r) => Object.keys(r.data ?? {})))].sort();
     sheets.push({
       name: labelOf(c),
       rows: [
         ["Record ID", "Deleted", "Version", "Last saved", ...keys.map(fieldLabel)],
-        ...list.map((r) => [r.id, r.deleted ? "Yes" : "No", r.rev, fmtTime(r.written_at), ...keys.map((k) => valueText(k, (r.data ?? {})[k], 3e4))])
+        ...list2.map((r) => [r.id, r.deleted ? "Yes" : "No", r.rev, fmtTime(r.written_at), ...keys.map((k) => valueText(k, (r.data ?? {})[k], 3e4))])
       ],
       widths: [22, 9, 9, 20, ...keys.map(() => 22)]
     });
@@ -13953,6 +14425,26 @@ function buildProfileSheets(x) {
       }
     }
     sheets.push({ name: "Change history", rows, widths: [18, 22, 8, 8, 20, 20, 40, 40] });
+  }
+  if (x.loginLog && x.loginLog.length) {
+    sheets.push({
+      name: "Sign-in history",
+      widths: [20, 26, 12, 12, 30, 12, 12, 30],
+      rows: [
+        ["When", "What", "Platform", "App version", "Device", "Latitude", "Longitude", "Detail"],
+        ...x.loginLog.map((r) => [fmtTime(r.happened_at), eventText(r.event), r.platform ?? "", r.app_version ?? "", r.device ?? "", r.lat ?? "", r.lng ?? "", r.detail ?? ""])
+      ]
+    });
+  }
+  if (x.termsLog && x.termsLog.length) {
+    sheets.push({
+      name: "Terms and consent",
+      widths: [20, 24, 12, 14],
+      rows: [
+        ["When", "What", "Version", "Answer"],
+        ...x.termsLog.map((r) => [fmtTime(r.at), r.kind === "terms" ? "Terms and Conditions" : "News & offers", r.terms_version ?? "", r.accepted ? "Yes" : "No"])
+      ]
+    });
   }
   return sheets;
 }
@@ -14144,7 +14636,7 @@ function SearchScreen({ initial }) {
 // src/screens/Agent.tsx
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var import_react6 = __toESM(require_react(), 1);
+var import_react9 = __toESM(require_react(), 1);
 
 // src/export/run.ts
 init_define_EAB_BUILD();
@@ -14680,6 +15172,183 @@ function download(pdf, fileName) {
   }
 }
 
+// src/export/pack.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var REQUESTER_LABEL = {
+  jpph: "Jabatan Penilaian dan Perkhidmatan Harta (JPPH)",
+  police: "Polis Diraja Malaysia (police)",
+  court: "Court",
+  board: "Board of Valuers, Appraisers, Estate Agents and Property Managers (LPPEH)",
+  pdpa: "Agent's own request (PDPA access)",
+  other: "Other"
+};
+function stableStringify(v) {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  const o = v;
+  return `{${Object.keys(o).filter((k) => o[k] !== void 0).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(",")}}`;
+}
+var contentFingerprint = async (data) => sha256Hex(new TextEncoder().encode(stableStringify(data)));
+var shortFp = (h) => h ? `${h.slice(0, 8)}\u2026${h.slice(-8)}` : "";
+function inRange(rows, from, to) {
+  const f = from ? Date.parse(`${from}T00:00:00+08:00`) : -Infinity;
+  const t = to ? Date.parse(`${to}T23:59:59.999+08:00`) : Infinity;
+  return rows.filter((r) => {
+    const x = Date.parse(r.happened_at);
+    return x >= f && x <= t;
+  });
+}
+function caseCoverBlocks(c, agents, reference, createdAt, adminEmail, contentSha, companyName) {
+  return [
+    { t: "title", text: "Regulator request pack", sub: `${companyName ? `${companyName} \xB7 ` : ""}${c.case_no} \xB7 Reference ${reference}` },
+    { t: "rows", rows: [
+      { k: "Case", v: c.case_no, strong: true },
+      { k: "Requested by", v: REQUESTER_LABEL[c.requester_type] ?? c.requester_type },
+      { k: "Officer / office", v: c.requester_name },
+      { k: "Their reference", v: c.requester_ref ?? "" },
+      { k: "Received", v: c.received_on },
+      { k: "Deadline", v: c.deadline ?? "" },
+      { k: "Request", v: c.description }
+    ] },
+    { t: "heading", text: `Agents in this pack (${agents.length})` },
+    { t: "rows", rows: agents.map((a) => ({ k: a.name || a.email, v: `${a.email} \xB7 period ${a.date_from ?? "start"} to ${a.date_to ?? "today"}` })) },
+    { t: "heading", text: "Proof of contents" },
+    { t: "rows", rows: [
+      { k: "Pack reference", v: reference, strong: true },
+      { k: "Prepared", v: `${fmtTime(createdAt)} by ${adminEmail}` },
+      { k: "Content fingerprint (SHA-256)", v: contentSha }
+    ] },
+    { t: "text", small: true, muted: true, text: "The content fingerprint is computed from all the data in this pack. The file itself is also fingerprinted and kept in the Admin EAB Document Vault; the company can prove any copy of this file is unchanged by checking it there. Records show their current state with full change history; sign-in history is limited to each agent\u2019s period above. Times are Malaysia time (MYT)." },
+    { t: "rule" }
+  ];
+}
+function buildCasePackDoc(c, bundles, ref, createdAt, adminEmail, contentSha, companyName) {
+  const blocks = caseCoverBlocks(c, bundles.map((b) => b.agent), ref, createdAt, adminEmail, contentSha, companyName);
+  bundles.forEach((b, i) => {
+    const d = buildProfileDoc({ reference: ref, createdAt, adminEmail, companyName, profile: b.profile, records: b.records, histories: b.histories, loginLog: b.loginLog, termsLog: b.termsLog });
+    blocks.push({ t: "space", h: 10 });
+    blocks.push({ t: "heading", text: `Agent ${i + 1} of ${bundles.length}: ${b.profile.name || b.profile.email}` });
+    blocks.push(...d.blocks.slice(1));
+  });
+  return { blocks, footer: `Admin EAB \xB7 ${c.case_no} \xB7 ${ref} \xB7 content ${shortFp(contentSha)}` };
+}
+function buildCasePackSheets(c, bundles, ref, createdAt, adminEmail, contentSha, companyName) {
+  const cover = { name: "Case", widths: [30, 80], rows: [
+    ["Field", "Value"],
+    ["Case", c.case_no],
+    ["Requested by", REQUESTER_LABEL[c.requester_type] ?? c.requester_type],
+    ["Officer / office", c.requester_name],
+    ["Their reference", c.requester_ref ?? ""],
+    ["Received", c.received_on],
+    ["Deadline", c.deadline ?? ""],
+    ["Request", c.description],
+    ["Pack reference", ref],
+    ["Prepared", `${fmtTime(createdAt)} by ${adminEmail}`],
+    ["Company", companyName ?? ""],
+    ["Content fingerprint (SHA-256)", contentSha],
+    ...bundles.map((b, i) => [`Agent ${i + 1}`, `${b.profile.name ?? ""} ${b.profile.email} \xB7 period ${b.agent.date_from ?? "start"} to ${b.agent.date_to ?? "today"}`])
+  ] };
+  const sheets = [cover];
+  bundles.forEach((b, i) => {
+    const per = buildProfileSheets({ reference: ref, createdAt, adminEmail, companyName, profile: b.profile, records: b.records, histories: b.histories, loginLog: b.loginLog, termsLog: b.termsLog });
+    for (const s of per) sheets.push(bundles.length > 1 ? { ...s, name: `A${i + 1} ${s.name}` } : s);
+  });
+  return sheets;
+}
+async function gather(api2, a) {
+  const profile = await api2.agent(a.user_id);
+  const records = {};
+  for (const c of sortCollections(Object.keys(profile.counts))) records[c] = await allRecords(api2, a.user_id, c);
+  const histories = {};
+  for (const r of Object.values(records).flat().filter((x) => x.rev > 1)) histories[`${r.collection}/${r.id}`] = await api2.history(r.workspace_id, r.collection, r.id);
+  const [loginAll, termsLog] = await Promise.all([api2.loginLog(a.user_id, 1e3), api2.termsLog(a.user_id)]);
+  return { agent: a, profile, records, histories, loginLog: inRange(loginAll, a.date_from, a.date_to), termsLog };
+}
+async function storeInVault(api2, f) {
+  const sha = await sha256Hex(f.blob);
+  const pack = await api2.packRegister({
+    case_id: f.caseId,
+    agent_user: f.agentUser,
+    reference: f.reference,
+    kind: f.kind,
+    format: f.format,
+    file_name: f.fileName,
+    sha256: sha,
+    content_sha256: f.contentSha,
+    bytes: f.blob.size
+  });
+  await api2.files.upload(`${pack.id}/${sha}`, f.blob);
+  return api2.packStored(pack.id);
+}
+async function saveLocally(blob, name) {
+  if (isNative()) {
+    const r = await saveFile(blob, name);
+    if (!r.ok) throw new Error(r.reason === "needApk" ? "This app version cannot save files. Install the newest APK." : "Could not save the file.");
+    return `saved ${name}${r.where ? ` to ${r.where}` : ""}`;
+  }
+  if (!download(blob, name)) throw new Error("The browser blocked the download.");
+  return `downloaded ${name}`;
+}
+var packFileName = (c, reference, ext) => `${c.case_no}-${reference}.${ext}`;
+async function buildCasePack(api2, adminEmail, c, format, onStep = () => {
+}) {
+  const agents = (Array.isArray(c.agents) ? c.agents : []).filter((a) => !a.removed_at);
+  if (!agents.length) throw new Error("Add at least one agent to the case first.");
+  const bundles = [];
+  for (const [i, a] of agents.entries()) {
+    onStep(`Collecting agent ${i + 1} of ${agents.length}\u2026`);
+    bundles.push(await gather(api2, a));
+  }
+  const companyName = await api2.settings().then((s) => s.company_name).catch(() => void 0);
+  const contentSha = await contentFingerprint({ case: {
+    case_no: c.case_no,
+    requester_type: c.requester_type,
+    requester_name: c.requester_name,
+    requester_ref: c.requester_ref,
+    received_on: c.received_on,
+    description: c.description
+  }, agents: bundles.map((b) => ({
+    agent: b.agent,
+    profile: b.profile,
+    records: b.records,
+    histories: b.histories,
+    loginLog: b.loginLog,
+    termsLog: b.termsLog
+  })) });
+  onStep("Registering the export\u2026");
+  const kind = c.requester_type === "pdpa" ? "pdpa_access" : "case_pack";
+  const reg = await api2.startExport(
+    kind,
+    format,
+    agents.length === 1 ? agents[0].user_id : null,
+    { case: c.case_no, agents: agents.length, content_sha256: contentSha }
+  );
+  onStep(format === "pdf" ? "Making the PDF\u2026" : "Making the Excel file\u2026");
+  const blob = format === "pdf" ? await renderPagesToPdf(layoutDocument(buildCasePackDoc(c, bundles, reg.reference, reg.at, adminEmail, contentSha, companyName), canvasMeasure()), `${c.case_no} ${reg.reference}`) : new Blob([buildXlsx(buildCasePackSheets(c, bundles, reg.reference, reg.at, adminEmail, contentSha, companyName), { title: `${c.case_no} ${reg.reference}`, author: adminEmail })], { type: XLSX_MIME });
+  const name = packFileName(c, reg.reference, format);
+  onStep("Storing in the Document Vault\u2026");
+  const pack = await storeInVault(api2, {
+    blob,
+    reference: reg.reference,
+    kind,
+    format,
+    fileName: name,
+    caseId: c.id,
+    agentUser: agents.length === 1 ? agents[0].user_id : null,
+    contentSha
+  });
+  onStep("Saving a copy\u2026");
+  return { pack, how: await saveLocally(blob, name) };
+}
+async function downloadPack(api2, p) {
+  const info = await api2.packDownload(p.id);
+  const blob = await api2.files.download(info.path);
+  const sha = await sha256Hex(blob);
+  if (sha !== info.sha256) throw new Error("WARNING: the stored file does not match its fingerprint. Do not use it; tell the Owner.");
+  return saveLocally(blob, info.file_name);
+}
+
 // src/export/run.ts
 var PAGE = 1e3;
 async function allRecords(api2, agent, collection) {
@@ -14706,9 +15375,15 @@ async function exportAgentProfile(api2, adminEmail, profile, format, opts) {
       histories[`${r.collection}/${r.id}`] = await api2.history(r.workspace_id, r.collection, r.id);
     });
   }
+  const [loginLog, termsLog, companyName] = await Promise.all([
+    api2.loginLog(profile.user_id, 1e3),
+    api2.termsLog(profile.user_id),
+    api2.settings().then((s) => s.company_name).catch(() => void 0)
+    // shown on the export; never hard-coded
+  ]);
   const total = Object.values(records).reduce((n, l) => n + l.length, 0);
-  const reg = await api2.startExport("agent_profile", format, profile.user_id, { records: total, with_history: opts.withHistory });
-  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, profile, records, histories };
+  const reg = await api2.startExport("agent_profile", format, profile.user_id, { records: total, with_history: opts.withHistory, sign_ins: loginLog.length });
+  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, companyName, profile, records, histories, loginLog, termsLog };
   const name = exportFileName(reg.reference, profile.email, format);
   let blob;
   if (format === "pdf") {
@@ -14717,24 +15392,2585 @@ async function exportAgentProfile(api2, adminEmail, profile, format, opts) {
   } else {
     blob = new Blob([buildXlsx(buildProfileSheets(input), { title: `Agent compliance record ${reg.reference}`, author: adminEmail })], { type: XLSX_MIME });
   }
-  if (isNative()) {
-    const r = await saveFile(blob, name);
-    if (!r.ok) throw new Error(r.reason === "needApk" ? "This app version cannot save files. Install the newest APK." : "Could not save the file.");
-    return { reference: reg.reference, how: `saved ${name}${r.where ? ` to ${r.where}` : ""}` };
+  let vaulted = "";
+  try {
+    const contentSha = await contentFingerprint({ profile, records, histories, loginLog, termsLog });
+    await storeInVault(api2, { blob, reference: reg.reference, kind: "agent_profile", format, fileName: name, caseId: null, agentUser: profile.user_id, contentSha });
+    vaulted = " \xB7 kept in the Document Vault";
+  } catch {
+    vaulted = " \xB7 NOT stored in the Document Vault (try again or tell the Owner)";
   }
-  if (!download(blob, name)) throw new Error("The browser blocked the download.");
-  return { reference: reg.reference, how: `downloaded ${name}` };
+  return { reference: reg.reference, how: `${await saveLocally(blob, name)}${vaulted}` };
+}
+
+// src/screens/status.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+var STATUS_LABEL = { active: "Active", suspended: "Suspended", banned: "Banned", closed: "Closed" };
+var LICENCE_TYPE = { REN: "REN", REA: "REA", PEA: "PEA", EA: "EA", FIRM: "Firm licence" };
+var EVENT_LABEL = {
+  sign_in: "Signed in",
+  app_open: "Opened the app",
+  sign_in_failed: "Sign-in failed",
+  locked_out: "Locked out (30 tries)",
+  forced_out: "Signed out by admin",
+  blocked: "Blocked (account not active)",
+  sign_out: "Signed out"
+};
+var BAD_EVENTS = /* @__PURE__ */ new Set(["sign_in_failed", "locked_out", "blocked", "forced_out"]);
+var isBadEvent = (e) => BAD_EVENTS.has(e);
+var platformLabel = (p) => ({ android: "Android", ios: "iPhone / iPad", web: "Web browser", desktop: "Desktop", tablet: "Tablet", unknown: "Unknown" })[p ?? ""] ?? (p || "");
+function StatusTag({ status }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `tag ${status === "active" ? "ok" : "red"}`, "data-testid": "agent-status", children: STATUS_LABEL[status] ?? status });
+}
+function LicenceTag({ licence }) {
+  if (!licence) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "tag", children: "No licence" });
+  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: `tag ${licence.verified ? "ok" : "amber"}`, "data-testid": "licence-tag", children: [
+    LICENCE_TYPE[licence.type ?? ""] ?? licence.type ?? "Licence",
+    " ",
+    licence.verified ? "\u2713 verified" : "not verified"
+  ] });
+}
+
+// src/screens/Compliance.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react6 = __toESM(require_react(), 1);
+
+// src/admin/compliance.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+
+// src/admin/health.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var MB = 1024 * 1024;
+function fmtBytes(n) {
+  if (n === null || n === void 0 || !Number.isFinite(n)) return "\u2014";
+  const neg = n < 0;
+  let v = Math.abs(n);
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  const s = i === 0 ? String(Math.round(v)) : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+  return `${neg ? "-" : ""}${s} ${units[i]}`;
+}
+var pct = (part, whole) => whole > 0 ? Math.max(0, part / whole * 100) : 0;
+var fmtPct = (p, digits = 1) => p === null || p === void 0 || !Number.isFinite(p) ? "\u2014" : `${p.toFixed(digits)}%`;
+function fmtMs(ms) {
+  if (ms === null || ms === void 0 || !Number.isFinite(ms)) return "\u2014";
+  return ms >= 1e3 ? `${(ms / 1e3).toFixed(ms >= 1e4 ? 0 : 1)} s` : `${Math.round(ms)} ms`;
+}
+var levelFor = (usedPct) => usedPct >= 90 ? "red" : usedPct >= 70 ? "amber" : "ok";
+var DAY_MS = 864e5;
+var dayNum = (d) => Math.round(Date.parse(`${d}T00:00:00Z`) / DAY_MS);
+var addDays = (d, n) => new Date((dayNum(d) + n) * DAY_MS).toISOString().slice(0, 10);
+function growthPerDay(points, windowDays = 90) {
+  if (points.length < 2) return null;
+  const sorted = [...points].sort((a, b) => a.day.localeCompare(b.day));
+  const last = dayNum(sorted[sorted.length - 1].day);
+  const use = sorted.filter((p) => last - dayNum(p.day) <= windowDays);
+  if (use.length < 2 || dayNum(use[0].day) === last) return null;
+  const xs = use.map((p) => dayNum(p.day)), ys = use.map((p) => p.bytes);
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  let num = 0, den = 0;
+  for (let i = 0; i < xs.length; i++) {
+    num += (xs[i] - mx) * (ys[i] - my);
+    den += (xs[i] - mx) ** 2;
+  }
+  return den === 0 ? null : num / den;
+}
+function cumulativeFromUploads(uploads, totalNow, today2) {
+  const sorted = [...uploads].sort((a, b) => a.day.localeCompare(b.day));
+  const inWindow = sorted.reduce((n, u) => n + u.bytes, 0);
+  let run = Math.max(0, totalNow - inWindow);
+  const out = [];
+  for (const u of sorted) {
+    run += u.bytes;
+    out.push({ day: u.day, bytes: run });
+  }
+  if (!out.length || out[out.length - 1].day !== today2) out.push({ day: today2, bytes: totalNow });
+  return out;
+}
+function forecast(used, limit, points, today2) {
+  const usedPct = pct(used, limit);
+  const perDay = growthPerDay(points);
+  let daysLeft2 = null, fullOn = null, sentence;
+  if (used >= limit) {
+    daysLeft2 = 0;
+    fullOn = today2;
+    sentence = "Full now \u2014 the limit has been reached.";
+  } else if (perDay === null) sentence = "Not enough daily readings yet. A forecast appears after readings on two different days.";
+  else if (perDay <= 0) sentence = "Not growing at the moment, so no end date.";
+  else {
+    daysLeft2 = Math.floor((limit - used) / perDay);
+    fullOn = addDays(today2, daysLeft2);
+    sentence = daysLeft2 > 3650 ? `Growing about ${fmtBytes(perDay)} a day \u2014 more than 10 years left at this rate.` : `Growing about ${fmtBytes(perDay)} a day \u2014 full in about ${daysLeft2} day${daysLeft2 === 1 ? "" : "s"} (${fullOn}) at this rate.`;
+  }
+  return { used, limit, usedPct, level: levelFor(usedPct), perDay, daysLeft: daysLeft2, fullOn, sentence };
+}
+var RESTORE_TEST_DUE_DAYS = 37;
+function daysSince(day, today2) {
+  return day ? dayNum(today2) - dayNum(day) : null;
+}
+var todayKL = (now = /* @__PURE__ */ new Date()) => new Date(now.getTime() + 8 * 36e5).toISOString().slice(0, 10);
+var failRate = (runs, fails) => runs > 0 ? fails / runs * 100 : null;
+
+// src/admin/compliance.ts
+var PDPA_KIND = {
+  access: "Copy of my data (access)",
+  correction: "Correct my data",
+  deletion: "Delete my data",
+  withdraw_consent: "Withdraw consent",
+  other: "Other"
+};
+var PDPA_STATUS = { open: "Open", in_progress: "In progress", done: "Done", refused: "Refused" };
+var COMPLAINT_STATUS = {
+  open: "Open",
+  investigating: "Investigating",
+  resolved: "Resolved",
+  dismissed: "Dismissed",
+  referred: "Referred (Board / police)"
+};
+var COMPLAINT_CHANNEL = { phone: "Phone", email: "Email", walk_in: "Walk-in", board: "From the Board", other: "Other" };
+var COMPLAINT_CATEGORY = {
+  misleading_listing: "Misleading listing / advert",
+  conduct: "Agent conduct",
+  fees: "Fees / commission",
+  privacy: "Privacy",
+  other: "Other"
+};
+var PDPA_DAYS = 21;
+var hasDeadline = (k) => k === "access" || k === "correction";
+function pdpaDeadline(r, today2) {
+  if (!hasDeadline(r.kind) || r.status === "done" || r.status === "refused") return null;
+  const due = addDays(r.received_on, PDPA_DAYS);
+  const daysLeft2 = -(daysSince(due, today2) ?? 0);
+  return { due, daysLeft: daysLeft2, level: daysLeft2 < 0 ? "red" : daysLeft2 <= 7 ? "amber" : "ok" };
+}
+function deadlineText(d) {
+  if (!d) return "";
+  return d.daysLeft < 0 ? `${-d.daysLeft} day${d.daysLeft === -1 ? "" : "s"} late (due ${d.due})` : d.daysLeft === 0 ? `due today (${d.due})` : `${d.daysLeft} day${d.daysLeft === 1 ? "" : "s"} left (due ${d.due})`;
+}
+function expiryLevel(daysLeft2) {
+  if (daysLeft2 === null) return "none";
+  return daysLeft2 < 0 ? "expired" : daysLeft2 <= 7 ? "red" : daysLeft2 <= 30 ? "amber" : "ok";
+}
+function expiryText(daysLeft2, on) {
+  if (daysLeft2 === null || !on) return "No expiry date";
+  return daysLeft2 < 0 ? `Expired ${-daysLeft2} day${daysLeft2 === -1 ? "" : "s"} ago (${on})` : daysLeft2 === 0 ? `Expires today (${on})` : `Expires in ${daysLeft2} day${daysLeft2 === 1 ? "" : "s"} (${on})`;
+}
+var isDay = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+function pdpaProblems(p, today2) {
+  const out = [];
+  if (!p.requester_name.trim()) out.push("Who asked? Type the name.");
+  if (!isDay(p.received_on)) out.push("Pick the date the request was received.");
+  else if (p.received_on > today2) out.push("The date received cannot be in the future.");
+  if (!p.details.trim()) out.push("Write what was asked.");
+  if (p.details.length > 4e3) out.push("At most 4,000 letters.");
+  return out;
+}
+function complaintProblems(c, today2) {
+  const out = [];
+  if (!c.complainant_name.trim()) out.push("Who complained? Type the name.");
+  if (!isDay(c.received_on)) out.push("Pick the date the complaint was received.");
+  else if (c.received_on > today2) out.push("The date received cannot be in the future.");
+  if (!c.details.trim()) out.push("Write what the complaint is about.");
+  if (c.details.length > 4e3) out.push("At most 4,000 letters.");
+  return out;
+}
+var TAG_RE = /^[a-z0-9][a-z0-9 _-]{0,29}$/;
+var cleanTag = (t) => t.trim().toLowerCase().replace(/\s+/g, " ");
+
+// src/screens/Compliance.tsx
+var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+function useLoad(fn, deps) {
+  const [data, setData] = (0, import_react6.useState)(null);
+  const [err, setErr] = (0, import_react6.useState)(null);
+  const load = (0, import_react6.useCallback)(async () => {
+    setErr(null);
+    try {
+      setData(await fn());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, deps);
+  (0, import_react6.useEffect)(() => {
+    void load();
+  }, [load]);
+  return { data, err, load, setData };
+}
+var tagLevel = (l) => l === "red" || l === "expired" ? "red" : l === "amber" ? "amber" : l === "ok" ? "ok" : "";
+function AgentPicker({ value, onPick }) {
+  const { api: api2 } = useAdmin();
+  const [q, setQ] = (0, import_react6.useState)("");
+  const [hits, setHits] = (0, import_react6.useState)(null);
+  const [err, setErr] = (0, import_react6.useState)(null);
+  if (value) return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag gold", children: value.label }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", type: "button", onClick: () => onPick(null), children: "Change" })
+  ] });
+  const find = async () => {
+    setErr(null);
+    try {
+      setHits((await api2.search(q.trim())).filter((h) => h.kind === "agent"));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", style: { gap: 6 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        "input",
+        {
+          className: "spacer",
+          value: q,
+          onChange: (e) => setQ(e.target.value),
+          placeholder: "Agent name or email (optional)",
+          "data-testid": "agent-q",
+          onKeyDown: (e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (q.trim().length >= 2) void find();
+            }
+          }
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", type: "button", disabled: q.trim().length < 2, onClick: () => void find(), "data-testid": "agent-find", children: "Find" })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "error", children: err }),
+    hits && (hits.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted", children: "No agent found." }) : hits.slice(0, 8).map((h) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { type: "button", className: "item", onClick: () => {
+      onPick({ id: h.user_id, label: h.name ? `${h.name} (${h.email})` : h.email });
+      setHits(null);
+    }, "data-testid": "agent-hit", children: [
+      h.name ?? h.email,
+      " ",
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted", children: h.email })
+    ] }, h.user_id)))
+  ] });
+}
+function CasePicker({ value, onChange }) {
+  const { api: api2, me } = useAdmin();
+  const [cases, setCases] = (0, import_react6.useState)(null);
+  (0, import_react6.useEffect)(() => {
+    if (can(me.role, "viewCases")) api2.cases().then(setCases).catch(() => setCases([]));
+  }, [api2, me.role]);
+  if (!can(me.role, "viewCases")) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Link to a regulator case file (optional)" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("select", { value: value ?? "", onChange: (e) => onChange(e.target.value || null), "data-testid": "case-pick", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: "", children: "\u2014 none \u2014" }),
+      (cases ?? []).map((c) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("option", { value: c.id, children: [
+        c.case_no,
+        " \xB7 ",
+        c.requester_name
+      ] }, c.id))
+    ] })
+  ] });
+}
+function Events({ items, words }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ol", { className: "history", "data-testid": "history", children: items.map((e) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("small", { className: "muted", children: [
+      fmtTime(e.at),
+      " \xB7 ",
+      e.by_email
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+    e.kind === "created" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: "Logged" }) : e.kind === "status" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("b", { children: [
+        words[e.from_status ?? ""] ?? e.from_status,
+        " \u2192 ",
+        words[e.to_status ?? ""] ?? e.to_status
+      ] }),
+      e.body && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+        " \u2014 ",
+        e.body
+      ] })
+    ] }) : e.kind === "updated" ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: "Updated" }),
+      e.body && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+        " \u2014 ",
+        e.body
+      ] })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: e.body })
+  ] }, e.id)) });
+}
+function PdpaScreen() {
+  const { api: api2, go } = useAdmin();
+  const [filter, setFilter] = (0, import_react6.useState)("active");
+  const { data, err, load } = useLoad(() => api2.pdpaList(filter), [api2, filter]);
+  const [adding, setAdding] = (0, import_react6.useState)(false);
+  const today2 = todayKL();
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "pdpa", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { className: "spacer", children: "PDPA requests" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small gold", onClick: () => setAdding((a) => !a), "data-testid": "pdpa-new", children: adding ? "Close" : "Log a request" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Every written request about personal data. Access and correction requests must be answered within 21 days. A deletion request is only logged here: nothing is deleted until your lawyer's answer and a separate approved step." }),
+    adding && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(PdpaForm, { onDone: (id) => {
+      setAdding(false);
+      go({ k: "pdpa_req", id });
+    } }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tabs", role: "group", "aria-label": "Show", style: { margin: 0 }, children: [["active", "Open + in progress"], ["done", "Done"], ["refused", "Refused"], [null, "All"]].map(([k, t]) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { "aria-pressed": filter === k, onClick: () => setFilter(k), "data-testid": `pfilter-${k ?? "all"}`, children: t }, String(k))) }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {}) : data.requests.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "No requests here." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "stack", "data-testid": "pdpa-list", children: data.requests.map((r) => {
+      const d = pdpaDeadline(r, today2);
+      return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { className: "item ticket", onClick: () => go({ k: "pdpa_req", id: r.id }), "data-testid": "pdpa-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "code", children: r.ref }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag", children: PDPA_STATUS[r.status] }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag", children: PDPA_KIND[r.kind] }),
+          r.agent_on_hold && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag red", children: "Legal hold" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+          d && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `tag ${d.level === "ok" ? "ok" : d.level}`, "data-testid": "pdpa-due", children: deadlineText(d) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+          r.requester_name,
+          r.agent_email ? ` \xB7 ${r.agent_email}` : "",
+          " \xB7 received ",
+          r.received_on
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted clamp", children: r.summary })
+      ] }, r.id);
+    }) })
+  ] });
+}
+function PdpaForm({ onDone }) {
+  const { api: api2 } = useAdmin();
+  const today2 = todayKL();
+  const [agent, setAgent] = (0, import_react6.useState)(null);
+  const [f, setF] = (0, import_react6.useState)({ requester_name: "", requester_contact: "", received_on: today2, kind: "access", details: "" });
+  const [caseId, setCaseId] = (0, import_react6.useState)(null);
+  const [touched, setTouched] = (0, import_react6.useState)(false);
+  const [busy, setBusy] = (0, import_react6.useState)(false);
+  const [err, setErr] = (0, import_react6.useState)(null);
+  const problems = pdpaProblems(f, today2);
+  const save = async () => {
+    setTouched(true);
+    if (problems.length) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api2.pdpaCreate({ ...f, agent_user: agent?.id ?? null, case_id: caseId });
+      onDone(r.id);
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "card boxed stack", "data-testid": "pdpa-form", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { children: "Log a PDPA request" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Agent it is about (if any)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AgentPicker, { value: agent, onPick: setAgent })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Who asked" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: f.requester_name, onChange: (e) => setF({ ...f, requester_name: e.target.value }), "data-testid": "pdpa-name" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Their email / phone / address" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: f.requester_contact ?? "", onChange: (e) => setF({ ...f, requester_contact: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Received on" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { type: "date", max: today2, value: f.received_on, onChange: (e) => setF({ ...f, received_on: e.target.value }), "data-testid": "pdpa-received" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Kind of request" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("select", { value: f.kind, onChange: (e) => setF({ ...f, kind: e.target.value }), "data-testid": "pdpa-kind", children: Object.keys(PDPA_KIND).map((k) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: k, children: PDPA_KIND[k] }, k)) })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "What was asked (copy from the letter or email)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("textarea", { rows: 4, maxLength: 4e3, value: f.details, onChange: (e) => setF({ ...f, details: e.target.value }), "data-testid": "pdpa-details" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(CasePicker, { value: caseId, onChange: setCaseId }),
+    touched && problems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "error small", children: problems.map((p) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("li", { children: p }, p)) }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "error small", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn gold", disabled: busy, onClick: () => void save(), "data-testid": "pdpa-save", children: busy ? "Saving\u2026" : "Log request" })
+    ] })
+  ] });
+}
+function PdpaRequestScreen({ id }) {
+  const { api: api2, go, me } = useAdmin();
+  const { data: r, err, setData } = useLoad(() => api2.pdpaGet(id), [api2, id]);
+  const [status, setStatus] = (0, import_react6.useState)(null);
+  const [decision, setDecision] = (0, import_react6.useState)(null);
+  const [outcome, setOutcome] = (0, import_react6.useState)(null);
+  const [supplied, setSupplied] = (0, import_react6.useState)(null);
+  const [note, setNote] = (0, import_react6.useState)("");
+  const [busy, setBusy] = (0, import_react6.useState)(false);
+  const [aErr, setAErr] = (0, import_react6.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err });
+  if (!r) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {});
+  const today2 = todayKL();
+  const d = pdpaDeadline(r, today2);
+  const patch = {
+    ...status && status !== r.status ? { status } : {},
+    ...decision !== null && decision !== (r.decision ?? "") ? { decision, decided_on: today2 } : {},
+    ...outcome !== null && outcome !== (r.outcome ?? "") ? { outcome } : {},
+    ...supplied !== null && supplied !== (r.supplied_on ?? "") ? { supplied_on: supplied } : {}
+  };
+  const changed = Object.keys(patch).length > 0;
+  const doneBlocked = r.kind === "deletion" && r.agent_on_hold && status === "done";
+  const save = async () => {
+    setBusy(true);
+    setAErr(null);
+    try {
+      const n = changed ? await api2.pdpaUpdate(r.id, patch, note.trim()) : await api2.pdpaNote(r.id, note.trim());
+      setData(n);
+      setNote("");
+      setStatus(null);
+      setDecision(null);
+      setOutcome(null);
+      setSupplied(null);
+    } catch (e) {
+      setAErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "pdpa-req", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { className: "spacer code", children: r.ref }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag", "data-testid": "pdpa-status", children: PDPA_STATUS[r.status] }),
+      d && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `tag ${d.level === "ok" ? "ok" : d.level}`, children: deadlineText(d) })
+    ] }),
+    r.agent_on_hold && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "notice error small", "data-testid": "pdpa-hold", children: "This agent is on legal hold. A deletion request cannot be marked done while the hold is on." }),
+    r.kind === "deletion" && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "notice warn small", children: "Logging only: nothing is deleted from this screen. Deletion inside the 7-year period waits for the lawyer's answer." }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "card", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Kv, { rows: [
+      { k: "Kind", v: PDPA_KIND[r.kind] },
+      { k: "Who asked", v: `${r.requester_name}${r.requester_contact ? ` \xB7 ${r.requester_contact}` : ""}` },
+      { k: "Agent", v: r.agent_user ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: r.agent_user }), children: r.agent_name ?? r.agent_email }) : null },
+      { k: "Received", v: r.received_on },
+      { k: "What was asked", v: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { whiteSpace: "pre-wrap" }, children: r.details }) },
+      { k: "Decision", v: r.decision ? `${r.decision}${r.decided_on ? ` (${r.decided_on})` : ""}` : null },
+      { k: "Supplied on", v: r.supplied_on },
+      { k: "Outcome", v: r.outcome },
+      { k: "Case file", v: r.case_no && r.case_id ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "case", id: r.case_id }), children: r.case_no }) : null }
+    ] }) }),
+    r.kind === "access" && r.agent_user && can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "small muted", style: { margin: 0 }, children: "To supply the copy: open the agent's profile and export PDF / Excel (or make a PDPA case pack), then fill in \u201CSupplied on\u201D." }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { children: "History" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Events, { items: r.history ?? [], words: PDPA_STATUS }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "card boxed stack", "data-testid": "pdpa-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "muted small", children: "Status:" }),
+        Object.keys(PDPA_STATUS).filter((s) => s !== r.status).map((s) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: `btn small ${status === s ? "gold" : ""}`, "aria-pressed": status === s, onClick: () => setStatus(status === s ? null : s), "data-testid": `pdpa-to-${s}`, children: PDPA_STATUS[s] }, s))
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Decision" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("textarea", { rows: 2, value: decision ?? r.decision ?? "", onChange: (e) => setDecision(e.target.value), "data-testid": "pdpa-decision" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "grid2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Supplied on" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { type: "date", max: today2, value: supplied ?? r.supplied_on ?? "", onChange: (e) => setSupplied(e.target.value), "data-testid": "pdpa-supplied" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Outcome" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: outcome ?? r.outcome ?? "", onChange: (e) => setOutcome(e.target.value), "data-testid": "pdpa-outcome" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: changed ? "Reason for this change (needed)" : "Note" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("textarea", { rows: 2, maxLength: 4e3, value: note, onChange: (e) => setNote(e.target.value), "data-testid": "pdpa-note" })
+      ] }),
+      doneBlocked && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "error small", children: "This agent is on legal hold: release the hold first." }),
+      aErr && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "error small", role: "alert", children: aErr }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn gold", disabled: busy || !note.trim() || doneBlocked, onClick: () => void save(), "data-testid": "pdpa-apply", children: busy ? "Saving\u2026" : changed ? "Save change" : "Save note" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted", children: "Every step is kept for good and goes into the Master Audit Log." })
+    ] })
+  ] });
+}
+function ComplaintsScreen() {
+  const { api: api2, go } = useAdmin();
+  const [filter, setFilter] = (0, import_react6.useState)("active");
+  const { data, err, load } = useLoad(() => api2.complaints(filter), [api2, filter]);
+  const [adding, setAdding] = (0, import_react6.useState)(false);
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "complaints", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { className: "spacer", children: "Complaints" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small gold", onClick: () => setAdding((a) => !a), "data-testid": "complaint-new", children: adding ? "Close" : "Log a complaint" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Complaints from buyers, tenants or the public about an agent. Kept for good; link one to a regulator case file when it becomes one." }),
+    adding && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ComplaintForm, { onDone: (id) => {
+      setAdding(false);
+      go({ k: "complaint", id });
+    } }),
+    data && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "row", children: Object.keys(COMPLAINT_CATEGORY).filter((k) => data.by_category[k]).map((k) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "tag", children: [
+      COMPLAINT_CATEGORY[k],
+      ": ",
+      data.by_category[k]
+    ] }, k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tabs", role: "group", "aria-label": "Show", style: { margin: 0 }, children: [["active", "Open + investigating"], ["resolved", "Resolved"], ["dismissed", "Dismissed"], ["referred", "Referred"], [null, "All"]].map(([k, t]) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { "aria-pressed": filter === k, onClick: () => setFilter(k), "data-testid": `cfilter-${k ?? "all"}`, children: t }, String(k))) }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {}) : data.complaints.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "No complaints here." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "stack", "data-testid": "complaint-list", children: data.complaints.map((c) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { className: "item ticket", onClick: () => go({ k: "complaint", id: c.id }), "data-testid": "complaint-row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "code", children: c.ref }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag", children: COMPLAINT_STATUS[c.status] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag", children: COMPLAINT_CATEGORY[c.category] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("small", { className: "muted", children: [
+          "received ",
+          c.received_on
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+        c.agent_name ?? c.agent_email ?? "No agent named",
+        c.listing_ref ? ` \xB7 listing ${c.listing_ref}` : "",
+        " \xB7 from ",
+        c.complainant_name
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted clamp", children: c.summary })
+    ] }, c.id)) })
+  ] });
+}
+function ComplaintForm({ onDone }) {
+  const { api: api2 } = useAdmin();
+  const today2 = todayKL();
+  const [agent, setAgent] = (0, import_react6.useState)(null);
+  const [f, setF] = (0, import_react6.useState)({ complainant_name: "", complainant_contact: "", received_on: today2, channel: "phone", category: "misleading_listing", listing_ref: "", details: "" });
+  const [caseId, setCaseId] = (0, import_react6.useState)(null);
+  const [touched, setTouched] = (0, import_react6.useState)(false);
+  const [busy, setBusy] = (0, import_react6.useState)(false);
+  const [err, setErr] = (0, import_react6.useState)(null);
+  const problems = complaintProblems(f, today2);
+  const save = async () => {
+    setTouched(true);
+    if (problems.length) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const c = await api2.complaintCreate({ ...f, agent_user: agent?.id ?? null, case_id: caseId });
+      onDone(c.id);
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "card boxed stack", "data-testid": "complaint-form", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { children: "Log a complaint" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Agent complained about" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AgentPicker, { value: agent, onPick: setAgent })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Who complained" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: f.complainant_name, onChange: (e) => setF({ ...f, complainant_name: e.target.value }), "data-testid": "cmp-name" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Their email / phone" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: f.complainant_contact ?? "", onChange: (e) => setF({ ...f, complainant_contact: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Received on" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { type: "date", max: today2, value: f.received_on, onChange: (e) => setF({ ...f, received_on: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "How it came in" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("select", { value: f.channel, onChange: (e) => setF({ ...f, channel: e.target.value }), children: Object.keys(COMPLAINT_CHANNEL).map((k) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: k, children: COMPLAINT_CHANNEL[k] }, k)) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "About" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("select", { value: f.category, onChange: (e) => setF({ ...f, category: e.target.value }), "data-testid": "cmp-category", children: Object.keys(COMPLAINT_CATEGORY).map((k) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("option", { value: k, children: COMPLAINT_CATEGORY[k] }, k)) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Listing reference (if any)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: f.listing_ref ?? "", onChange: (e) => setF({ ...f, listing_ref: e.target.value }), "data-testid": "cmp-listing" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "What happened" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("textarea", { rows: 4, maxLength: 4e3, value: f.details, onChange: (e) => setF({ ...f, details: e.target.value }), "data-testid": "cmp-details" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(CasePicker, { value: caseId, onChange: setCaseId }),
+    touched && problems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ul", { className: "error small", children: problems.map((p) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("li", { children: p }, p)) }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "error small", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn gold", disabled: busy, onClick: () => void save(), "data-testid": "cmp-save", children: busy ? "Saving\u2026" : "Log complaint" })
+    ] })
+  ] });
+}
+function ComplaintScreen({ id }) {
+  const { api: api2, go } = useAdmin();
+  const { data: c, err, setData } = useLoad(() => api2.complaintGet(id), [api2, id]);
+  const [status, setStatus] = (0, import_react6.useState)(null);
+  const [outcome, setOutcome] = (0, import_react6.useState)(null);
+  const [caseId, setCaseId] = (0, import_react6.useState)(void 0);
+  const [note, setNote] = (0, import_react6.useState)("");
+  const [busy, setBusy] = (0, import_react6.useState)(false);
+  const [aErr, setAErr] = (0, import_react6.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err });
+  if (!c) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {});
+  const patch = {
+    ...status && status !== c.status ? { status } : {},
+    ...outcome !== null && outcome !== (c.outcome ?? "") ? { outcome } : {},
+    ...caseId !== void 0 && caseId !== c.case_id ? { case_id: caseId } : {}
+  };
+  const changed = Object.keys(patch).length > 0;
+  const save = async () => {
+    setBusy(true);
+    setAErr(null);
+    try {
+      setData(changed ? await api2.complaintUpdate(c.id, patch, note.trim()) : await api2.complaintNote(c.id, note.trim()));
+      setNote("");
+      setStatus(null);
+      setOutcome(null);
+      setCaseId(void 0);
+    } catch (e) {
+      setAErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "complaint", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { className: "spacer code", children: c.ref }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag", "data-testid": "cmp-status", children: COMPLAINT_STATUS[c.status] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "card", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Kv, { rows: [
+      { k: "About", v: COMPLAINT_CATEGORY[c.category] },
+      { k: "Agent", v: c.agent_user ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: c.agent_user }), children: c.agent_name ?? c.agent_email }),
+        c.agent_complaints && c.agent_complaints > 1 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "tag amber", children: [
+          " ",
+          c.agent_complaints,
+          " complaints in total"
+        ] }) : null
+      ] }) : null },
+      { k: "From", v: `${c.complainant_name}${c.complainant_contact ? ` \xB7 ${c.complainant_contact}` : ""} (${COMPLAINT_CHANNEL[c.channel]})` },
+      { k: "Received", v: c.received_on },
+      { k: "Listing", v: c.listing_ref },
+      { k: "What happened", v: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { style: { whiteSpace: "pre-wrap" }, children: c.details }) },
+      { k: "Outcome", v: c.outcome },
+      { k: "Case file", v: c.case_no && c.case_id ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "case", id: c.case_id }), children: c.case_no }) : null }
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { children: "History" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Events, { items: c.history ?? [], words: COMPLAINT_STATUS }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "card boxed stack", "data-testid": "cmp-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "muted small", children: "Status:" }),
+        Object.keys(COMPLAINT_STATUS).filter((s) => s !== c.status).map((s) => /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: `btn small ${status === s ? "gold" : ""}`, "aria-pressed": status === s, onClick: () => setStatus(status === s ? null : s), "data-testid": `cmp-to-${s}`, children: COMPLAINT_STATUS[s] }, s))
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Outcome" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { value: outcome ?? c.outcome ?? "", onChange: (e) => setOutcome(e.target.value), "data-testid": "cmp-outcome" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(CasePicker, { value: caseId === void 0 ? c.case_id : caseId, onChange: setCaseId }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: changed ? "Reason for this change (needed)" : "Note" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("textarea", { rows: 2, maxLength: 4e3, value: note, onChange: (e) => setNote(e.target.value), "data-testid": "cmp-note" })
+      ] }),
+      aErr && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "error small", role: "alert", children: aErr }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn gold", disabled: busy || !note.trim(), onClick: () => void save(), "data-testid": "cmp-apply", children: busy ? "Saving\u2026" : changed ? "Save change" : "Save note" })
+      ] })
+    ] })
+  ] });
+}
+function HoldsScreen() {
+  const { api: api2, me, go } = useAdmin();
+  const [active, setActive] = (0, import_react6.useState)(true);
+  const { data, err, load } = useLoad(() => api2.holds(active), [api2, active]);
+  const [agent, setAgent] = (0, import_react6.useState)(null);
+  const [caseId, setCaseId] = (0, import_react6.useState)(null);
+  const [c, setC] = (0, import_react6.useState)(null);
+  const edit = can(me.role, "placeHold");
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "holds", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { children: "Legal holds" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "While an agent is on hold, the database refuses to delete any of their records, retention lists them as \u201Con hold\u201D, and a PDPA deletion request for them cannot be marked done." }),
+    edit && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "card boxed stack", "data-testid": "hold-form", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { children: "Put an agent on hold" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(AgentPicker, { value: agent, onPick: setAgent }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(CasePicker, { value: caseId, onChange: setCaseId }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn danger", disabled: !agent, "data-testid": "hold-place", onClick: () => setC({
+          title: `Legal hold on ${agent.label}`,
+          body: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: "None of this agent's records can be deleted until the hold is released. The agent is not told." }),
+          label: "Place hold",
+          danger: true,
+          run: async (reason) => {
+            await api2.holdPlace(agent.id, reason, caseId);
+            setAgent(null);
+            setCaseId(null);
+            await load();
+          }
+        }), children: "Place hold" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "tabs", role: "group", "aria-label": "Show", style: { margin: 0 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { "aria-pressed": active, onClick: () => setActive(true), children: "On hold now" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { "aria-pressed": !active, onClick: () => setActive(false), "data-testid": "holds-all", children: "All, with released" })
+    ] }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {}) : data.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "No holds." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { "data-testid": "hold-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Why" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Placed" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Released" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: data.map((h) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: h.agent_user }), children: h.agent_name ?? h.agent_email }),
+          h.case_no && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted", children: h.case_no })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { className: "small", children: h.reason }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { className: "small", children: [
+          fmtTime(h.placed_at),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+          h.placed_by_email
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { className: "small", children: h.released_at ? /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+          fmtTime(h.released_at),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+          h.release_reason
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag red", children: "On hold" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: edit && !h.released_at && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", "data-testid": "hold-release", onClick: () => setC({
+          title: "Release this legal hold",
+          body: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { children: [
+            h.agent_email,
+            "'s records can be deleted again by later, approved steps (nothing is deleted now)."
+          ] }),
+          label: "Release",
+          run: async (reason) => {
+            await api2.holdRelease(h.id, reason);
+            await load();
+          }
+        }), children: "Release" }) })
+      ] }, h.id)) })
+    ] }) }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+function LicencesScreen() {
+  const { api: api2, go } = useAdmin();
+  const [within, setWithin] = (0, import_react6.useState)(60);
+  const { data, err, load } = useLoad(() => api2.licenceExpiry(within), [api2, within]);
+  const [c, setC] = (0, import_react6.useState)(null);
+  const [dates, setDates] = (0, import_react6.useState)({});
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "licences", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { children: "Licence expiry" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "REN / REA / PEA renewal dates, entered from the agent's licence card. Agents enter only the number in the main app." }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {}) : /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stats", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `stat ${data.counts.expired ? "red" : ""}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "l", children: "Expired" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "v", children: data.counts.expired })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `stat ${data.counts.in_7 ? "red" : ""}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "l", children: "Within 7 days" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "v", children: data.counts.in_7 })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `stat ${data.counts.in_30 ? "amber" : ""}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "l", children: "Within 30 days" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "v", children: data.counts.in_30 })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stat", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "l", children: "Within 60 days" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "v", children: data.counts.in_60 })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `stat ${data.counts.no_date ? "amber" : ""}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "l", children: "No date entered" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { className: "v", children: data.counts.no_date }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("small", { className: "muted", children: [
+            "of ",
+            data.counts.licences,
+            " licences"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tabs", role: "group", "aria-label": "Show", style: { margin: 0 }, children: [30, 60, 365].map((w) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { "aria-pressed": within === w, onClick: () => setWithin(w), children: [
+        "Expiring within ",
+        w,
+        " days + no date"
+      ] }, w)) }),
+      data.agents.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "Nothing expiring in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { "data-testid": "licence-list", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Agent" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Licence" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Expiry" }),
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Set the date" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: data.agents.map((a) => {
+          const lvl = expiryLevel(a.days_left);
+          return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: a.user_id }), children: a.name ?? a.email }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { className: "small", children: [
+              a.type,
+              " ",
+              a.number,
+              " ",
+              a.verified ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag ok", children: "verified" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag amber", children: "not verified" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `tag ${tagLevel(lvl)}`, "data-testid": "expiry-tag", children: expiryText(a.days_left, a.expires_on) }) }),
+            /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { className: "row", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { type: "date", value: dates[a.user_id] ?? a.expires_on ?? "", onChange: (e) => setDates({ ...dates, [a.user_id]: e.target.value }), "data-testid": "expiry-date", style: { width: "auto" } }),
+              /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", disabled: !dates[a.user_id] || dates[a.user_id] === a.expires_on, "data-testid": "expiry-save", onClick: () => setC({
+                title: `Licence expiry for ${a.email}`,
+                body: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { children: [
+                  a.type,
+                  " ",
+                  a.number,
+                  ": expires on ",
+                  /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: dates[a.user_id] }),
+                  "."
+                ] }),
+                label: "Save",
+                run: async (reason) => {
+                  await api2.setLicenceExpiry(a.user_id, dates[a.user_id], reason);
+                  await load();
+                }
+              }), children: "Save" })
+            ] })
+          ] }, a.user_id);
+        }) })
+      ] }) })
+    ] }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+var KIND_WORD = {
+  records: "App records (listings, contacts \u2026)",
+  records_on_hold: "\u2026 of which on legal hold",
+  versions: "Saved versions of records",
+  sign_ins: "Sign-in log rows",
+  problem_reports: "Problem reports",
+  usage_days: "Daily usage totals"
+};
+function RetentionScreen() {
+  const { api: api2, me, go } = useAdmin();
+  const { data, err, load } = useLoad(() => api2.retention(), [api2]);
+  const [c, setC] = (0, import_react6.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!data) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {});
+  const review = (decision) => setC({
+    title: decision === "keep" ? "Record review: keep everything" : "Record review: approved for later deletion",
+    body: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { children: [
+      decision === "keep" ? "Everything older than 7 years is kept for now." : "You agree these may be deleted later. Nothing is deleted now: deletion is a separate, approved step after the lawyer\u2019s answer.",
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+      "The counts below are saved with your review."
+    ] }),
+    label: "Record review",
+    run: async (note) => {
+      await api2.retentionReview(decision, note);
+      await load();
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", "data-testid": "retention", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { children: "Retention (7 years)" }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "notice warn small", "data-testid": "no-delete", children: "Nothing is deleted from this screen, and nothing is ever deleted automatically. Deleting records older than 7 years needs the lawyer\u2019s answer and a separate approved batch." }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      "Older than ",
+      data.cutoff,
+      " (7 years before ",
+      data.today,
+      "). Opening this list is recorded."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { "data-testid": "retention-counts", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Kind" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Older than 7 years now" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "One year from now" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: Object.keys(KIND_WORD).map((k) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: KIND_WORD[k] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: data.counts[k] }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: data.next_year[k] })
+      ] }, k)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { children: "Agents with records older than 7 years" }),
+    data.agents.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "None yet." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { "data-testid": "retention-agents", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Old records" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Oldest" }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: data.agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: a.user_id }), children: a.name ?? a.email }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: a.records }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { className: "small", children: fmtTime(a.oldest) }),
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: a.on_hold && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "tag red", children: "Legal hold" }) })
+      ] }, a.user_id)) })
+    ] }) }),
+    can(me.role, "reviewRetention") && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn", onClick: () => review("keep"), "data-testid": "ret-keep", children: "Record review: keep" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn gold", onClick: () => review("approve_later"), "data-testid": "ret-approve", children: "Record review: approve for later" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h2", { children: "Reviews" }),
+    data.reviews.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "No review recorded yet." }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ol", { className: "history", "data-testid": "retention-reviews", children: data.reviews.map((r) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("small", { className: "muted", children: [
+        fmtTime(r.at),
+        " \xB7 ",
+        r.by_email
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: r.decision === "keep" ? "Keep" : "Approved for later deletion" }),
+      " \u2014 ",
+      r.note,
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("small", { className: "muted", children: [
+        r.counts.records,
+        " records, ",
+        r.counts.sign_ins,
+        " sign-ins, ",
+        r.counts.versions,
+        " versions older than ",
+        r.cutoff
+      ] })
+    ] }, r.id)) }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+function InternalBox({ userId, email }) {
+  const { api: api2, me, go } = useAdmin();
+  const { data, err, load } = useLoad(() => api2.agentInternal(userId), [api2, userId]);
+  const [tag, setTag] = (0, import_react6.useState)("");
+  const [note, setNote] = (0, import_react6.useState)("");
+  const [busy, setBusy] = (0, import_react6.useState)(false);
+  const [aErr, setAErr] = (0, import_react6.useState)(null);
+  const [expiry, setExpiry] = (0, import_react6.useState)("");
+  const [c, setC] = (0, import_react6.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err });
+  if (!data) return /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, { text: "Loading internal notes\u2026" });
+  const t = cleanTag(tag);
+  const act = async (fn) => {
+    setBusy(true);
+    setAErr(null);
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      setAErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const days = data.licence_expires_on ? Math.round((Date.parse(`${data.licence_expires_on}T00:00:00Z`) - Date.parse(`${todayKL()}T00:00:00Z`)) / 864e5) : null;
+  const active = data.holds.find((h) => !h.released_at);
+  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "card stack", "data-testid": "internal-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h3", { children: "Internal (agents never see this)" }),
+    data.on_hold && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "notice error small", "data-testid": "on-hold", children: [
+      "On legal hold since ",
+      fmtTime(active?.placed_at),
+      " \u2014 ",
+      active?.reason
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      data.tags.map((x) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { className: "tag gold", "data-testid": "agent-tag", children: [
+        x,
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+          "button",
+          {
+            className: "linkbtn",
+            "aria-label": `Remove ${x}`,
+            disabled: busy,
+            onClick: () => void act(() => api2.agentTag(userId, x, false)),
+            children: "\xD7"
+          }
+        )
+      ] }, x)),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(
+        "input",
+        {
+          value: tag,
+          onChange: (e) => setTag(e.target.value),
+          placeholder: "add a tag",
+          style: { width: 130, minHeight: 36 },
+          "data-testid": "tag-input",
+          onKeyDown: (e) => {
+            if (e.key === "Enter" && TAG_RE.test(t)) {
+              e.preventDefault();
+              void act(() => api2.agentTag(userId, t, true)).then(() => setTag(""));
+            }
+          }
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", disabled: busy || !TAG_RE.test(t), onClick: () => void act(() => api2.agentTag(userId, t, true)).then(() => setTag("")), "data-testid": "tag-add", children: "Add tag" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row small", children: [
+      can(me.role, "complaints") && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("button", { className: "linkbtn", onClick: () => go({ k: "complaints" }), children: [
+        data.complaints,
+        " complaint",
+        data.complaints === 1 ? "" : "s",
+        data.complaints_active ? ` (${data.complaints_active} open)` : ""
+      ] }),
+      can(me.role, "pdpa") && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("span", { children: [
+        "\xB7 ",
+        data.pdpa,
+        " PDPA request",
+        data.pdpa === 1 ? "" : "s"
+      ] })
+    ] }),
+    data.licence_number && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row small", "data-testid": "licence-expiry", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: `tag ${tagLevel(expiryLevel(days))}`, children: expiryText(days, data.licence_expires_on) }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("input", { type: "date", value: expiry, onChange: (e) => setExpiry(e.target.value), style: { width: "auto", minHeight: 36 }, "data-testid": "internal-expiry" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", disabled: !expiry, onClick: () => setC({
+        title: `Licence expiry for ${email}`,
+        body: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { children: [
+          data.licence_number,
+          ": expires on ",
+          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: expiry }),
+          "."
+        ] }),
+        label: "Save",
+        run: async (reason) => {
+          await api2.setLicenceExpiry(userId, expiry, reason);
+          setExpiry("");
+          await load();
+        }
+      }), "data-testid": "internal-expiry-save", children: "Set expiry" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { children: "Internal note (kept for good)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("textarea", { rows: 2, maxLength: 4e3, value: note, onChange: (e) => setNote(e.target.value), "data-testid": "agent-note" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small gold", disabled: busy || !note.trim(), onClick: () => void act(async () => {
+        await api2.agentNote(userId, note);
+        setNote("");
+      }), "data-testid": "agent-note-save", children: "Save note" })
+    ] }),
+    aErr && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "error small", role: "alert", children: aErr }),
+    data.notes.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("ol", { className: "history", "data-testid": "agent-notes", children: data.notes.map((n) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("li", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("small", { className: "muted", children: [
+        fmtTime(n.at),
+        " \xB7 ",
+        n.by_email
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+      n.body
+    ] }, n.id)) }),
+    can(me.role, "placeHold") && (data.on_hold ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small", onClick: () => setC({
+      title: "Release the legal hold",
+      body: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { children: [
+        email,
+        "'s records can be deleted again by later, approved steps."
+      ] }),
+      label: "Release",
+      run: async (reason) => {
+        await api2.holdRelease(active.id, reason);
+        await load();
+      }
+    }), "data-testid": "internal-release", children: "Release legal hold" }) : /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn small danger", onClick: () => setC({
+      title: `Legal hold on ${email}`,
+      body: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { children: "None of this agent's records can be deleted until the hold is released." }),
+      label: "Place hold",
+      danger: true,
+      run: async (reason) => {
+        await api2.holdPlace(userId, reason, null);
+        await load();
+      }
+    }), "data-testid": "internal-hold", children: "Put on legal hold" })),
+    c && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+
+// src/screens/Insight.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react8 = __toESM(require_react(), 1);
+
+// src/admin/insight.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var scoreLevel = (s) => s < 40 ? "red" : s < 70 ? "amber" : "ok";
+var SCORE_PARTS = [
+  { key: "p_listings", label: "Listings", max: 40, help: "How complete the listings are (9 main details each)" },
+  { key: "p_activity", label: "Activity", max: 30, help: "Days the app was used in the last 30 days (20+ = full)" },
+  { key: "p_compliance", label: "Compliance", max: 30, help: "Licence verified 15, expiry date not passed 5, no open complaint 5, no legal hold 5" }
+];
+var FUNNEL_LABEL = {
+  signed_up: "Signed up",
+  opened: "Opened the app",
+  terms: "Accepted the Terms",
+  licence: "Entered a licence",
+  verified: "Licence verified",
+  listing: "First listing",
+  deal: "First deal (Sold / Rented or a confirmed deal)"
+};
+function funnelRows(f) {
+  const first = f.steps[0]?.agents ?? 0;
+  return f.steps.map((s, i) => {
+    const prev = i === 0 ? null : f.steps[i - 1].agents;
+    return {
+      step: s.step,
+      key: s.key,
+      label: FUNNEL_LABEL[s.key] ?? s.key,
+      agents: s.agents,
+      ofAll: first > 0 ? Math.round(s.agents / first * 100) : null,
+      ofPrev: prev === null ? null : prev > 0 ? Math.round(s.agents / prev * 100) : null,
+      lost: prev === null ? 0 : Math.max(prev - s.agents, 0)
+    };
+  });
+}
+var BULK_MAX = 50;
+var BULK_LABEL = {
+  suspend: "Suspend (they are signed out and cannot use the app)",
+  reactivate: "Re-activate",
+  sign_out: "Sign out on all their phones",
+  tag_add: "Add a tag",
+  tag_remove: "Remove a tag",
+  message: "Message them (email or WhatsApp broadcast)"
+};
+function bulkProblems(action, count, reason, tag) {
+  const out = [];
+  if (!action) out.push("Choose what to do.");
+  if (count === 0) out.push("Tick at least one agent.");
+  if (count > BULK_MAX) out.push(`At most ${BULK_MAX} agents at a time.`);
+  if (action && action !== "message" && reason.trim().length < 5) out.push("Write the reason (at least 5 characters). It goes into the Master Audit Log.");
+  if ((action === "tag_add" || action === "tag_remove") && !TAG_RE.test(cleanTag(tag))) out.push("A tag is 1-30 small letters, digits, space, dash or underscore.");
+  return out;
+}
+var DUP_LABEL = { phone: "Same phone number", device: "Same phone (device)", licence: "Same licence number" };
+function deviceState(d) {
+  if (!d.removed) return { text: "In use", level: "" };
+  return d.signed_in_after_removal ? { text: "Removed, but signed in again afterwards", level: "amber" } : { text: "Removed \u2014 signed out at its next open or sync", level: "red" };
+}
+
+// src/admin/dash.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var RANGE_LABEL = { "7": "Last 7 days", "30": "Last 30 days", "90": "Last 90 days", "365": "Last 12 months", custom: "Custom" };
+var MAX_RANGE_DAYS = 731;
+function presetRange(key, today2) {
+  return { key, from: addDays(today2, -(Number(key) - 1)), to: today2 };
+}
+function rangeProblem(from, to, today2) {
+  const ok = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+  if (!ok(from) || !ok(to)) return "Pick both dates.";
+  if (from > to) return "The start date is after the end date.";
+  if (to > today2) return "The end date is in the future.";
+  if ((daysSince(from, to) ?? 0) + 1 > MAX_RANGE_DAYS) return "Pick at most 2 years.";
+  return null;
+}
+var rangeDays = (r) => (daysSince(r.from, r.to) ?? 0) + 1;
+var bucketFor = (days) => days <= 62 ? "day" : days <= 182 ? "week" : "month";
+var BUCKET_LABEL = { day: "per day", week: "per week", month: "per month" };
+var fmtPct0 = (p) => p === null || p === void 0 || !Number.isFinite(p) ? "\u2014" : `${Math.round(p)}%`;
+var fmtNum = (n, digits = 0) => n === null || n === void 0 || !Number.isFinite(Number(n)) ? "\u2014" : Number(n).toLocaleString("en-MY", { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+function cmpVersionDesc(a, b) {
+  if (a === b) return 0;
+  if (a === "?") return 1;
+  if (b === "?") return -1;
+  const pa = a.split(/[.-]/), pb = b.split(/[.-]/);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? "", y = pb[i] ?? "";
+    const nx = Number(x), ny = Number(y);
+    const d = x !== "" && y !== "" && !Number.isNaN(nx) && !Number.isNaN(ny) ? ny - nx : y.localeCompare(x);
+    if (d) return d;
+  }
+  return 0;
+}
+var STATUS_ORDER = [
+  "available",
+  "booked_pending_spa",
+  "booked_other_agent",
+  "booked_pending_consent",
+  "booked",
+  "booked_pending_loan",
+  "booked_spa_signed",
+  "sold",
+  "rented_pending_ta",
+  "rented",
+  "off_market",
+  "needs_check",
+  "none"
+];
+var LISTING_STATUS = {
+  available: "Available",
+  booked: "Booked",
+  booked_pending_loan: "Booked - Pending Loan",
+  booked_pending_spa: "Booked - Pending SPA",
+  booked_spa_signed: "Booked - SPA Signed",
+  booked_other_agent: "Booked - Other Agent (Pending SPA)",
+  booked_pending_consent: "Booked - Pending Consent",
+  sold: "Sold",
+  rented_pending_ta: "Rented - Pending TA Signing",
+  rented: "Rented",
+  off_market: "Withdrawn",
+  needs_check: "Needs check",
+  none: "No status yet"
+};
+var statusLabel = (k) => LISTING_STATUS[k] ?? k;
+var PIPELINE_LABEL = {
+  booked: "Booked",
+  booked_pending_loan: "Pending loan",
+  booked_spa_signed: "SPA signed",
+  sold: "Sold",
+  rented_pending_ta: "Rented - Pending TA Signing",
+  rented: "Rented"
+};
+var PURPOSE_LABEL = { sale: "For sale", rent: "For rent", sale_or_rent: "Sale or rent", none: "Not set" };
+function sortStatuses(by) {
+  const known = STATUS_ORDER.filter((k) => by[k]).map((k) => ({ key: k, label: statusLabel(k), n: by[k] }));
+  const other = Object.keys(by).filter((k) => !STATUS_ORDER.includes(k) && by[k]).sort().map((k) => ({ key: k, label: statusLabel(k), n: by[k] }));
+  return [...known, ...other];
+}
+var LANGUAGE_LABEL = { en: "English", ms: "Bahasa Melayu", bm: "Bahasa Melayu", zh: "Chinese", unknown: "Not recorded" };
+var languageLabel = (l) => LANGUAGE_LABEL[l] ?? l;
+var NAME_LABEL = {
+  home: "Home",
+  listing: "Listings",
+  "listing-detail": "Listing details",
+  "listing-form": "Add / edit listing",
+  notifications: "Notifications",
+  opportunities: "Opportunities",
+  voice: "Voice / AI command",
+  expert: "Ask Expert",
+  "expert-ask": "Ask Expert \u2014 new question",
+  "expert-thread": "Ask Expert \u2014 thread",
+  "contacts-home": "Contacts home",
+  contacts: "Contacts",
+  "contact-detail": "Contact details",
+  "contact-form": "Add / edit contact",
+  "creative-media": "Creative media",
+  projects: "Projects",
+  "project-form": "Add / edit project",
+  profile: "Profile",
+  "profile-edit": "Edit profile",
+  "coming-soon": "Coming-soon screen",
+  "buyer-matching": "Buyer matching",
+  "buyer-matches": "Buyer matches",
+  "buyer-pdf": "Buyer PDF",
+  activity: "Activity",
+  team: "Team",
+  calculator: "Calculator",
+  calendar: "Calendar",
+  "marketing-studio": "Marketing Studio",
+  "photo-studio": "Photo studio",
+  "task-form": "Add / edit task",
+  "track-sales": "Track sales",
+  gps: "GPS",
+  finance: "Finance",
+  journey: "Journey",
+  settings: "Settings",
+  todo: "To-do",
+  "appt-form": "Add / edit appointment",
+  deal: "Deal",
+  "house-shopping": "House Shopping",
+  "dev-dashboard": "Developer dashboard",
+  "manage-sharing": "Manage sharing",
+  "property-map": "Property map",
+  "file.add": "File added",
+  "team.invite": "Team invite sent",
+  "team.accept": "Team invite accepted",
+  "team.leave": "Left a team",
+  "properties.create": "Listing created",
+  "properties.edit": "Listing edited",
+  "contacts.create": "Contact created",
+  "journeys.create": "Journey saved",
+  "appointments.create": "Appointment created",
+  "expert-threads.create": "Ask Expert question",
+  "geocoding.reverse": "Google: place name lookup",
+  "maps.map": "Google: map shown",
+  "maps.load": "Google: web map load",
+  "roads.snap": "Google: snap to roads",
+  "sync.run": "Sync",
+  "session.start": "App opened",
+  "session.active": "App in use"
+};
+var nameLabel = (name) => NAME_LABEL[name] ?? (name.startsWith("lang.") ? `Language: ${languageLabel(name.slice(5))}` : name);
+var KIND_LABEL = { screen: "Screen", feature: "Feature", google: "Google", sync: "Sync", session: "Session", language: "Language" };
+var kindLabel = (k) => KIND_LABEL[k] ?? k;
+var DOW_LABEL = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function heatGrid(rows) {
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+  let max = 0;
+  for (const r of rows) {
+    if (r.dow < 1 || r.dow > 7 || r.hour < 0 || r.hour > 23) continue;
+    grid[r.dow - 1][r.hour] += r.events;
+    max = Math.max(max, grid[r.dow - 1][r.hour]);
+  }
+  return { grid, max };
+}
+function bucketLabel(start, bucket) {
+  if (bucket === "month") return start.slice(0, 7);
+  if (bucket === "week") return `wk of ${start}`;
+  return start;
+}
+var AT_RISK_REASON = { no_activity_14d: "Nothing for 14+ days", activity_halved: "Use dropped by more than half" };
+
+// src/screens/Dashboards.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react7 = __toESM(require_react(), 1);
+
+// src/export/dash.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var who = (email, name) => name ? `${name} (${email ?? "\u2014"})` : email ?? "\u2014";
+function buildDashDoc(x) {
+  const { growth: g, active: a, retention: r, inactive: i, devices: d, listings: l, usage: u } = x.data;
+  const b = [
+    { t: "title", text: "Dashboards report", sub: `${x.companyName ?? ""}${x.companyName ? " \xB7 " : ""}Estate Agent AI Buddy` },
+    { t: "rows", rows: [
+      { k: "Reference", v: x.reference, strong: true },
+      { k: "Period", v: `${x.from} to ${x.to} (${rangeDays(x)} days, Malaysia dates)` },
+      { k: "Made", v: `${fmtTime(x.createdAt)} by ${x.adminEmail}` },
+      { k: "Contains", v: "Totals for the period, plus lists of named agents (inactive, at risk) and stale listings." }
+    ] },
+    { t: "heading", text: "Sign-ups & growth" },
+    { t: "rows", rows: [
+      { k: "Agents at end of period", v: fmtNum(g.total), strong: true },
+      { k: "New in the period", v: fmtNum(g.new) },
+      { k: "Before the period", v: fmtNum(g.before) },
+      ...g.buckets.filter((k) => k.new).map((k) => ({ k: `  ${bucketLabel(k.start, g.bucket)}`, v: `${k.new} new \xB7 ${k.running} total`, sub: true }))
+    ] },
+    { t: "heading", text: "Active users" },
+    { t: "rows", rows: [
+      { k: "Used the app in the period", v: `${fmtNum(a.active_in_range)} of ${fmtNum(a.agents)} agents` },
+      { k: "Average daily active", v: fmtNum(a.avg_dau, 1) },
+      { k: "Average weekly active", v: fmtNum(a.avg_wau, 1) },
+      { k: "Average monthly active", v: fmtNum(a.avg_mau, 1) },
+      { k: "Stickiness (daily \xF7 monthly)", v: fmtPct0(a.stickiness_pct) }
+    ] },
+    { t: "heading", text: "Retention & churn" },
+    { t: "rows", rows: [
+      { k: "Joined in the period", v: fmtNum(r.joined) },
+      ...r.retention.map((k) => ({ k: `Still using after ${k.days} days`, v: k.eligible ? `${k.kept} of ${k.eligible} (${fmtPct0(k.pct)})` : "Not enough time yet" })),
+      { k: "At-risk agents", v: fmtNum(r.at_risk.count), warn: r.at_risk.count > 0 },
+      ...(r.at_risk.agents ?? []).map((k) => ({ k: `  ${who(k.email, k.name)}`, v: `last used ${k.last_day} (${k.days_since} days) \xB7 ${AT_RISK_REASON[k.reason] ?? k.reason}`, sub: true }))
+    ] },
+    { t: "heading", text: "Inactive agents" },
+    { t: "rows", rows: [
+      { k: "No activity 30+ days", v: fmtNum(i.counts["30"]) },
+      { k: "No activity 60+ days", v: fmtNum(i.counts["60"]) },
+      { k: "No activity 90+ days", v: fmtNum(i.counts["90"]) },
+      { k: "Never opened the app", v: fmtNum(i.never_opened) },
+      ...(i.list ?? []).map((k) => ({ k: `  ${who(k.email, k.name)}`, v: `last seen ${k.last_seen ?? "never"} \xB7 ${k.days_since} days \xB7 ${k.app_version ?? "\u2014"}`, sub: true }))
+    ] },
+    { t: "heading", text: "App versions, phones and language" },
+    { t: "rows", rows: [
+      { k: "Agents seen in the period", v: fmtNum(d.agents) },
+      ...[...d.versions].sort((p, q) => cmpVersionDesc(p.app_version, q.app_version)).map((v) => ({ k: `Version ${v.app_version}`, v: `${v.agents} agents` })),
+      ...d.platforms.map((p) => ({ k: platformLabel(p.platform), v: `${p.agents} agents` })),
+      ...d.devices.slice(0, 15).map((p) => ({ k: `  ${p.device}`, v: `${p.agents} \xB7 ${platformLabel(p.platform)}`, sub: true })),
+      ...d.languages.map((p) => ({ k: `Language: ${languageLabel(p.language)}`, v: `${p.agents} agents` }))
+    ] },
+    { t: "heading", text: "Listings" },
+    { t: "rows", rows: [
+      { k: "Listings (not deleted)", v: fmtNum(l.total), strong: true },
+      { k: "Deleted (kept for audit)", v: fmtNum(l.deleted) },
+      { k: "Agents with listings", v: fmtNum(l.agents_with_listings) },
+      ...sortStatuses(l.by_status).map((s) => ({ k: s.label, v: fmtNum(s.n) })),
+      ...Object.entries(l.by_purpose).map(([k, n]) => ({ k: PURPOSE_LABEL[k] ?? k, v: fmtNum(n), sub: true })),
+      { k: `Stale (Available, no change for ${l.stale_days} days)`, v: fmtNum(l.stale_count), warn: l.stale_count > 0 },
+      ...(l.stale ?? []).map((s) => ({ k: `  ${s.ref ?? s.id}`, v: `${s.headline ?? s.type ?? ""} \xB7 ${who(s.email, s.name)} \xB7 ${s.days} days`, sub: true }))
+    ] },
+    { t: "heading", text: "Deal pipeline" },
+    { t: "rows", rows: [
+      { k: "Sale", v: l.pipeline.sale.map((s) => `${PIPELINE_LABEL[s.stage] ?? s.stage} ${s.listings}`).join(" > ") },
+      { k: "Rent", v: l.pipeline.rent.map((s) => `${PIPELINE_LABEL[s.stage] ?? s.stage} ${s.listings}`).join(" > ") }
+    ] },
+    { t: "heading", text: "Feature usage (top 30)" },
+    { t: "rows", rows: u.ranking.filter((k) => k.kind === "screen" || k.kind === "feature").slice(0, 30).map((k) => ({ k: `${kindLabel(k.kind)}: ${nameLabel(k.name)}`, v: `${fmtNum(k.events)} times \xB7 ${k.agents} agents` })) }
+  ];
+  if (u.not_used.length) b.push({ t: "text", text: `Not used in the period: ${u.not_used.map((k) => nameLabel(k.name)).join(", ")}.`, small: true });
+  b.push({ t: "text", text: "Generated by Admin EAB from the live database. This export is recorded in the tamper-proof access log under the reference above.", small: true, muted: true });
+  return { blocks: b, footer: `${x.reference} \xB7 Dashboards ${x.from} to ${x.to} \xB7 ${fmtTime(x.createdAt)}` };
+}
+function buildDashSheets(x) {
+  const { growth: g, active: a, retention: r, inactive: i, devices: d, listings: l, usage: u } = x.data;
+  return [
+    { name: "Summary", widths: [36, 60], rows: [
+      ["Dashboards report", x.reference],
+      ["Period", `${x.from} to ${x.to}`],
+      ["Made", `${fmtTime(x.createdAt)} by ${x.adminEmail}`],
+      ["Company", x.companyName ?? ""],
+      [],
+      ["Agents at end of period", g.total],
+      ["New agents in period", g.new],
+      ["Used the app in period", a.active_in_range],
+      ["Average daily active", a.avg_dau ?? ""],
+      ["Average weekly active", a.avg_wau ?? ""],
+      ["Average monthly active", a.avg_mau ?? ""],
+      ["Stickiness %", a.stickiness_pct ?? ""],
+      ["At-risk agents", r.at_risk.count],
+      ["Inactive 30+ days", i.counts["30"]],
+      ["Inactive 60+ days", i.counts["60"]],
+      ["Inactive 90+ days", i.counts["90"]],
+      ["Never opened the app", i.never_opened],
+      ["Listings", l.total],
+      ["Deleted listings", l.deleted],
+      [`Stale listings (${l.stale_days} days)`, l.stale_count]
+    ] },
+    { name: "Growth", widths: [14, 10, 12], rows: [[`Start (${BUCKET_LABEL[g.bucket]})`, "New", "Running total"], ...g.buckets.map((k) => [k.start, k.new, k.running])] },
+    { name: "Active by day", widths: [12, 10, 10, 10], rows: [["Day", "Daily active", "Weekly active", "Monthly active"], ...a.by_day.map((k) => [k.day, k.dau, k.wau, k.mau])] },
+    { name: "Retention", widths: [12, 10, 10, 10, 10, 10, 10, 10], rows: [
+      ["Joined month", "Joined", "Kept 7d", "Of", "Kept 30d", "Of", "Kept 90d", "Of"],
+      ...r.cohorts.map((c) => [c.month.slice(0, 7), c.joined, c.kept7, c.eligible7, c.kept30, c.eligible30, c.kept90, c.eligible90])
+    ] },
+    { name: "At risk", widths: [36, 28, 12, 10, 12, 12, 30], rows: [
+      ["Email", "Name", "Last used", "Days", "Days used (last 30)", "Days used (30 before)", "Why"],
+      ...(r.at_risk.agents ?? []).map((k) => [k.email, k.name ?? "", k.last_day, k.days_since, k.recent_days, k.prior_days, AT_RISK_REASON[k.reason] ?? k.reason])
+    ] },
+    { name: "Inactive", widths: [36, 28, 12, 12, 12, 8, 12, 12, 12], rows: [
+      ["Email", "Name", "Joined", "Last opened", "Last sign-in", "Days", "App version", "Platform", "Account"],
+      ...(i.list ?? []).map((k) => [k.email, k.name ?? "", k.joined, k.last_open ?? "", k.last_sign_in ?? "", k.days_since, k.app_version ?? "", platformLabel(k.platform), k.status ?? "active"])
+    ] },
+    { name: "Versions & phones", widths: [24, 18, 10], rows: [
+      ["What", "Value", "Agents"],
+      ...[...d.versions].sort((p, q) => cmpVersionDesc(p.app_version, q.app_version)).map((v) => ["App version", v.app_version, v.agents]),
+      ...d.platforms.map((p) => ["Platform", platformLabel(p.platform), p.agents]),
+      ...d.devices.map((p) => ["Phone model", `${p.device} (${platformLabel(p.platform)})`, p.agents]),
+      ...d.languages.map((p) => ["Language", languageLabel(p.language), p.agents])
+    ] },
+    { name: "Listings", widths: [36, 10], rows: [
+      ["Status", "Listings"],
+      ...sortStatuses(l.by_status).map((s) => [s.label, s.n]),
+      [],
+      ["Purpose", "Listings"],
+      ...Object.entries(l.by_purpose).map(([k, n]) => [PURPOSE_LABEL[k] ?? k, n]),
+      [],
+      ["Type", "Listings"],
+      ...l.by_type.map((t) => [t.type, t.listings]),
+      [],
+      ["State", "Listings"],
+      ...l.by_state.map((t) => [t.state, t.listings]),
+      [],
+      ["Pipeline \u2014 sale", "Listings"],
+      ...l.pipeline.sale.map((s) => [PIPELINE_LABEL[s.stage] ?? s.stage, s.listings]),
+      [],
+      ["Pipeline \u2014 rent", "Listings"],
+      ...l.pipeline.rent.map((s) => [PIPELINE_LABEL[s.stage] ?? s.stage, s.listings])
+    ] },
+    { name: "Stale listings", widths: [16, 36, 18, 14, 14, 32, 22, 8], rows: [
+      ["Reference", "Headline", "Type", "State", "City", "Agent", "Last change", "Days"],
+      ...(l.stale ?? []).map((s) => [s.ref ?? s.id, s.headline ?? "", s.type ?? "", s.state ?? "", s.city ?? "", s.email ?? "", fmtTime(s.updated_at), s.days])
+    ] },
+    { name: "Feature usage", widths: [10, 34, 10, 10, 10], rows: [
+      ["Kind", "Name", "Times", "Agents", "Failed"],
+      ...u.ranking.map((k) => [kindLabel(k.kind), nameLabel(k.name), k.events, k.agents, k.failures]),
+      [],
+      ["Not used in the period"],
+      ...u.not_used.map((k) => [kindLabel(k.kind), nameLabel(k.name)])
+    ] }
+  ];
+}
+var dashFileName = (reference, ext) => `Dashboards-${reference}.${ext}`;
+async function exportDashboards(api2, adminEmail, format, from, to) {
+  const [growth, active, retention, inactive, devices, listings, usage, companyName] = await Promise.all([
+    api2.dashGrowth(from, to, bucketFor(rangeDays({ from, to }))),
+    api2.dashActive(from, to),
+    api2.dashRetention(from, to),
+    api2.dashInactive(30),
+    api2.dashDevices(from, to),
+    api2.dashListings(from, to),
+    api2.dashUsage(from, to),
+    api2.settings().then((s) => s.company_name).catch(() => void 0)
+  ]);
+  const reg = await api2.startExport("dashboards", format, null, { from, to });
+  const input = {
+    reference: reg.reference,
+    createdAt: reg.at,
+    adminEmail,
+    companyName,
+    from,
+    to,
+    data: { growth, active, retention, inactive, devices, listings, usage }
+  };
+  const name = dashFileName(reg.reference, format);
+  const blob = format === "pdf" ? await renderPagesToPdf(layoutDocument(buildDashDoc(input), canvasMeasure()), `Dashboards ${reg.reference}`) : new Blob([buildXlsx(buildDashSheets(input), { title: `Dashboards ${reg.reference}`, author: adminEmail })], { type: XLSX_MIME });
+  return { reference: reg.reference, how: await saveLocally(blob, name) };
+}
+
+// src/screens/charts.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+var EMPTY = /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "muted small", children: "Nothing recorded in this period." });
+function Bars({ items, label, testid }) {
+  if (!items.length) return EMPTY;
+  const max = Math.max(1, ...items.map((i) => i.value));
+  const w = 600, h = 150, gap = items.length > 60 ? 1 : 3, bw = Math.max(2, (w - gap * items.length) / items.length);
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("figure", { className: "chart", "aria-label": label, "data-testid": testid, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("svg", { viewBox: `0 0 ${w} ${h}`, role: "img", preserveAspectRatio: "none", children: items.map((it, i) => {
+      const vh = it.value / max * (h - 4);
+      return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("g", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("title", { children: `${it.label}: ${it.value.toLocaleString()}` }),
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("rect", { x: i * (bw + gap), y: h - vh, width: bw, height: vh, className: "b" })
+      ] }, i);
+    }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "row small muted", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: items[0].label }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: items[items.length - 1].label })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("figcaption", { className: "small muted", children: [
+      label,
+      " \xB7 highest ",
+      max.toLocaleString()
+    ] })
+  ] });
+}
+function Lines({ labels, series, label, testid }) {
+  if (!labels.length) return EMPTY;
+  const max = Math.max(1, ...series.flatMap((s) => s.values));
+  const w = 600, h = 160, pad = 4;
+  const x = (i) => labels.length === 1 ? w / 2 : pad + i * (w - 2 * pad) / (labels.length - 1);
+  const y = (v) => h - pad - v / max * (h - 2 * pad);
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("figure", { className: "chart lines", "aria-label": label, "data-testid": testid, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("svg", { viewBox: `0 0 ${w} ${h}`, role: "img", preserveAspectRatio: "none", children: [
+      [0.25, 0.5, 0.75].map((f) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("line", { x1: 0, x2: w, y1: y(max * f), y2: y(max * f), className: "grid" }, f)),
+      series.map((s) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("g", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("polyline", { className: s.cls, fill: "none", points: s.values.map((v, i) => `${x(i)},${y(v)}`).join(" "), vectorEffect: "non-scaling-stroke" }),
+        labels.length <= 62 && s.values.map((v, i) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("circle", { cx: x(i), cy: y(v), r: 3, className: s.cls, children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("title", { children: `${labels[i]} \xB7 ${s.name}: ${v}` }) }, i))
+      ] }, s.name))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "row small muted", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: labels[0] }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: labels[labels.length - 1] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("figcaption", { className: "small legend", children: [
+      series.map((s) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("i", { className: `sw ${s.cls}` }),
+        s.name
+      ] }, s.name)),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "muted", children: [
+        "highest ",
+        max.toLocaleString()
+      ] })
+    ] })
+  ] });
+}
+function HBars({ items, label, testid, onPick, unit, share = true }) {
+  if (!items.length) return EMPTY;
+  const max = Math.max(1, ...items.map((i) => i.value));
+  const total = items.reduce((s, i) => s + i.value, 0);
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "hbars", role: "list", "aria-label": label, "data-testid": testid, children: items.map((it) => {
+    const body = /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)(import_jsx_runtime7.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "hl", children: [
+        it.label,
+        it.sub && /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("small", { className: "muted", children: [
+          " ",
+          it.sub
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "hb", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { style: { width: `${it.value / max * 100}%` } }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { className: "hv", children: [
+        it.value.toLocaleString(),
+        unit ? ` ${unit}` : "",
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("small", { className: "muted", children: share && total ? `${Math.round(it.value / total * 100)}%` : "" })
+      ] })
+    ] });
+    return onPick ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { role: "listitem", className: "hrow pick", onClick: () => onPick(it.key), children: body }, it.key) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { role: "listitem", className: "hrow", children: body }, it.key);
+  }) });
+}
+function Heatmap({ rows, testid, caption }) {
+  const { grid, max } = heatGrid(rows);
+  if (!max) return EMPTY;
+  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "tablewrap heat", "data-testid": testid, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("table", { "aria-label": "Use by day of week and hour (Malaysia time)", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", {}),
+        Array.from({ length: 24 }, (_, hr) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { className: "small", children: hr % 3 === 0 ? hr : "" }, hr))
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("tbody", { children: grid.map((row, d) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { className: "small", children: DOW_LABEL[d] }),
+        row.map((v, hr) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+          "td",
+          {
+            title: `${DOW_LABEL[d]} ${String(hr).padStart(2, "0")}:00 \u2014 ${v}`,
+            style: { background: v ? `rgba(212, 175, 55, ${0.15 + 0.85 * (v / max)})` : void 0 }
+          },
+          hr
+        ))
+      ] }, d)) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("small", { className: "muted", children: caption ? caption(max) : `Screens and features opened, by day and hour (Malaysia time). Darker = more. Busiest hour: ${max} actions.` })
+  ] });
+}
+
+// src/screens/Dashboards.tsx
+var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+var TABS = [
+  { k: "growth", label: "Sign-ups" },
+  { k: "active", label: "Active users" },
+  { k: "retention", label: "Retention" },
+  { k: "inactive", label: "Inactive" },
+  { k: "versions", label: "Versions & phones" },
+  { k: "listings", label: "Listings" },
+  { k: "pipeline", label: "Pipeline" },
+  { k: "usage", label: "Feature usage" }
+];
+var NO_RANGE = ["inactive", "pipeline"];
+function DashboardsScreen({ tab: first }) {
+  const { me } = useAdmin();
+  const [tab, setTab] = (0, import_react7.useState)(first);
+  const [range, setRange] = (0, import_react7.useState)(() => presetRange(first === "retention" || first === "listings" ? "365" : "30", todayKL()));
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h1", { className: "spacer", children: "Dashboards" }),
+      can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(DashExport, { range })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tabs", role: "group", "aria-label": "Dashboards", children: TABS.map((t) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { "aria-pressed": tab === t.k, onClick: () => setTab(t.k), "data-testid": `dtab-${t.k}`, children: t.label }, t.k)) }),
+    !NO_RANGE.includes(tab) && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(RangePicker, { range, onChange: setRange }),
+    tab === "growth" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(GrowthTab, { range }),
+    tab === "active" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ActiveTab, { range }),
+    tab === "retention" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(RetentionTab, { range }),
+    tab === "inactive" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(InactiveTab, {}),
+    tab === "versions" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(VersionsTab, { range }),
+    tab === "listings" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ListingsTab, { range }),
+    tab === "pipeline" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(PipelineTab, {}),
+    tab === "usage" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(UsageTab, { range }),
+    !can(me.role, "viewDashAgents") && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "notice small", "data-testid": "names-hidden", children: "Your role sees totals and charts only. Lists that name agents are shown to the Owner, Admin and Compliance only." })
+  ] });
+}
+function useLoad2(fn, deps) {
+  const [data, setData] = (0, import_react7.useState)(null);
+  const [err, setErr] = (0, import_react7.useState)(null);
+  const [busy, setBusy] = (0, import_react7.useState)(false);
+  const load = (0, import_react7.useCallback)(async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setData(await fn());
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }, deps);
+  (0, import_react7.useEffect)(() => {
+    void load();
+  }, [load]);
+  return { data, err, busy, load };
+}
+function RangePicker({ range, onChange }) {
+  const today2 = todayKL();
+  const [from, setFrom] = (0, import_react7.useState)(range.from);
+  const [to, setTo] = (0, import_react7.useState)(range.to);
+  const [custom, setCustom] = (0, import_react7.useState)(range.key === "custom");
+  const problem = custom ? rangeProblem(from, to, today2) : null;
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card rangebar stack", "data-testid": "range", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "tabs", role: "group", "aria-label": "Period", style: { margin: 0 }, children: [
+      ["7", "30", "90", "365"].map((k) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        "button",
+        {
+          "aria-pressed": !custom && range.key === k,
+          "data-testid": `range-${k}`,
+          onClick: () => {
+            setCustom(false);
+            const r = presetRange(k, today2);
+            setFrom(r.from);
+            setTo(r.to);
+            onChange(r);
+          },
+          children: RANGE_LABEL[k]
+        },
+        k
+      )),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { "aria-pressed": custom, onClick: () => setCustom(true), "data-testid": "range-custom", children: "Custom" })
+    ] }),
+    custom && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row wrap", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "field inline", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "From" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("input", { type: "date", value: from, max: today2, onChange: (e) => setFrom(e.target.value), "data-testid": "range-from" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("label", { className: "field inline", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: "To" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("input", { type: "date", value: to, max: today2, onChange: (e) => setTo(e.target.value), "data-testid": "range-to" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small gold", disabled: !!problem, onClick: () => onChange({ key: "custom", from, to }), "data-testid": "range-apply", children: "Show" }),
+      problem && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "error", children: problem })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", "data-testid": "range-text", children: [
+      range.from,
+      " to ",
+      range.to,
+      " \xB7 ",
+      rangeDays(range),
+      " days \xB7 Malaysia dates"
+    ] })
+  ] });
+}
+function Head({ title, onRefresh, busy, children }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h2", { className: "spacer", children: title }),
+    children,
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small", onClick: onRefresh, disabled: busy, children: busy ? "Loading\u2026" : "Refresh" })
+  ] });
+}
+function Stat({ label, value, sub, level }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: `stat ${level ?? ""}`, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "l", children: label }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { className: "v", children: value }),
+    sub && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: sub })
+  ] });
+}
+function AgentLink({ id, email, name }) {
+  const { go, me } = useAdmin();
+  const text = name ? `${name}` : email ?? id;
+  if (!can(me.role, "viewAgent")) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { children: text });
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id }), title: email ?? void 0, children: text });
+}
+var Hidden = ({ what }) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "muted small", children: [
+  what,
+  " shown to the Owner, Admin and Compliance only."
+] });
+function GrowthTab({ range }) {
+  const { api: api2 } = useAdmin();
+  const bucket = bucketFor(rangeDays(range));
+  const { data: g, err, busy, load } = useLoad2(() => api2.dashGrowth(range.from, range.to, bucket), [api2, range.from, range.to, bucket]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!g) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-growth", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Sign-ups & growth", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Agents now", value: fmtNum(g.total), sub: `at ${g.to}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "New in this period", value: fmtNum(g.new), sub: g.before ? `+${fmtPct0(g.new / g.before * 100)} on ${fmtNum(g.before)} before` : "first agents" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: `Average new ${BUCKET_LABEL[g.bucket]}`, value: fmtNum(g.buckets.length ? g.new / g.buckets.length : 0, 1) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("h3", { children: [
+        "New agents ",
+        BUCKET_LABEL[g.bucket]
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Bars, { testid: "growth-bars", label: `New agents ${BUCKET_LABEL[g.bucket]}`, items: g.buckets.map((b) => ({ label: bucketLabel(b.start, g.bucket), value: b.new })) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Total agents" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Lines, { label: "Running total of agents", labels: g.buckets.map((b) => bucketLabel(b.start, g.bucket)), series: [{ name: "Total agents", values: g.buckets.map((b) => b.running), cls: "l1" }] })
+    ] })
+  ] });
+}
+function ActiveTab({ range }) {
+  const { api: api2 } = useAdmin();
+  const { data: a, err, busy, load } = useLoad2(() => api2.dashActive(range.from, range.to), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!a) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  const st = a.stickiness_pct;
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-active", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Active users", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: `Daily active (${a.last?.day ?? "\u2014"})`, value: fmtNum(a.last?.dau), sub: `average ${fmtNum(a.avg_dau, 1)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Weekly active", value: fmtNum(a.last?.wau), sub: `average ${fmtNum(a.avg_wau, 1)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Monthly active", value: fmtNum(a.last?.mau), sub: `average ${fmtNum(a.avg_mau, 1)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Stickiness", value: fmtPct0(st), sub: "daily \xF7 monthly; 20%+ is good", level: st === null ? void 0 : st >= 20 ? "ok" : st >= 10 ? "amber" : "red" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Used the app in this period", value: `${fmtNum(a.active_in_range)} of ${fmtNum(a.agents)}`, sub: a.agents ? `${fmtPct0(a.active_in_range / a.agents * 100)} of all agents` : void 0 })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Active agents by day" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Lines, { testid: "active-lines", label: "Daily, weekly and monthly active agents", labels: a.by_day.map((d) => d.day), series: [
+        { name: "Monthly (30 days)", values: a.by_day.map((d) => d.mau), cls: "l3" },
+        { name: "Weekly (7 days)", values: a.by_day.map((d) => d.wau), cls: "l2" },
+        { name: "Daily", values: a.by_day.map((d) => d.dau), cls: "l1" }
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "An agent counts as active on a day when they opened the app that day. Weekly and monthly are the 7 and 30 days up to each day." })
+    ] })
+  ] });
+}
+function RetentionTab({ range }) {
+  const { api: api2, me } = useAdmin();
+  const { data: r, err, busy, load } = useLoad2(() => api2.dashRetention(range.from, range.to), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!r) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-retention", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Retention & churn", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      "Of the ",
+      fmtNum(r.joined),
+      " agents who joined in this period, how many still used the app at least 7, 30 and 90 days after joining."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stats", children: [
+      r.retention.map((k) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        Stat,
+        {
+          label: `Still using after ${k.days} days`,
+          value: k.eligible ? fmtPct0(k.pct) : "\u2014",
+          sub: k.eligible ? `${k.kept} of ${k.eligible} agents` : "nobody joined long enough ago",
+          level: !k.eligible || k.pct === null ? void 0 : k.pct >= 50 ? "ok" : k.pct >= 25 ? "amber" : "red"
+        },
+        k.days
+      )),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "At risk of leaving", value: fmtNum(r.at_risk.count), sub: "see the list below", level: r.at_risk.count ? "amber" : "ok" })
+    ] }),
+    r.cohorts.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { "data-testid": "cohorts", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Joined in" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Agents" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "After 7 days" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "After 30 days" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "After 90 days" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: r.cohorts.map((c) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: c.month.slice(0, 7) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: c.joined }),
+        [[c.kept7, c.eligible7], [c.kept30, c.eligible30], [c.kept90, c.eligible90]].map(([k, e], i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: e ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+          fmtPct0(k / e * 100),
+          " ",
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", children: [
+            "(",
+            k,
+            "/",
+            e,
+            ")"
+          ] })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "muted", children: "\u2014" }) }, i))
+      ] }, c.month)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "At-risk agents" }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Used the app in the last 90 days but nothing for 14+ days, or used it on less than half as many days in the last 30 days as in the 30 days before." }),
+    r.at_risk.agents === null || !can(me.role, "viewDashAgents") ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Hidden, { what: "The list of agents is" }) : r.at_risk.agents.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "muted", children: "Nobody is at risk right now." }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { "data-testid": "at-risk", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Last used" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Days since" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Days used (last 30 / 30 before)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Why" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: r.at_risk.agents.map((k) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AgentLink, { id: k.user_id, email: k.email, name: k.name }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: k.email })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: k.last_day }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: k.days_since }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+          k.recent_days,
+          " / ",
+          k.prior_days
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: AT_RISK_REASON[k.reason] ?? k.reason })
+      ] }, k.user_id)) })
+    ] }) })
+  ] });
+}
+function InactiveTab() {
+  const { api: api2, me } = useAdmin();
+  const [days, setDays] = (0, import_react7.useState)(30);
+  const { data: i, err, busy, load } = useLoad2(() => api2.dashInactive(days), [api2, days]);
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-inactive", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Inactive agents", onRefresh: () => void load(), busy, children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tabs", role: "group", "aria-label": "No activity for", style: { margin: 0 }, children: [30, 60, 90].map((d) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("button", { "aria-pressed": days === d, onClick: () => setDays(d), "data-testid": `inactive-${d}`, children: [
+      d,
+      "+ days"
+    ] }, d)) }) }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !i ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {}) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stats", children: [
+        ["30", "60", "90"].map((k) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: `No activity ${k}+ days`, value: fmtNum(i.counts[k]), sub: `of ${fmtNum(i.agents)} agents`, level: i.counts[k] ? "amber" : "ok" }, k)),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Never opened the app", value: fmtNum(i.never_opened), sub: "signed up only" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "Last seen = the latest day the agent opened the app or signed in with Google. A reminder message is not part of this batch." }),
+      i.list === null || !can(me.role, "viewDashAgents") ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Hidden, { what: "The list of agents is" }) : i.list.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "muted", children: [
+        "Nobody has been inactive for ",
+        days,
+        "+ days."
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { "data-testid": "inactive-list", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Agent" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Last seen" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Days" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Joined" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "App" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Account" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: i.list.map((k) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AgentLink, { id: k.user_id, email: k.email, name: k.name }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: k.email })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: k.last_seen ?? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "muted", children: "never" }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: k.days_since }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: k.joined }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { className: "small", children: [
+            k.app_version ?? "\u2014",
+            " ",
+            k.platform ? `\xB7 ${platformLabel(k.platform)}` : ""
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: k.status && k.status !== "active" ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "tag red", children: STATUS_LABEL[k.status] ?? k.status }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "tag ok", children: "Active" }) })
+        ] }, k.user_id)) })
+      ] }) })
+    ] })
+  ] });
+}
+function VersionsTab({ range }) {
+  const { api: api2, me } = useAdmin();
+  const { data: d, err, busy, load } = useLoad2(() => api2.dashDevices(range.from, range.to), [api2, range.from, range.to]);
+  const [pick, setPick] = (0, import_react7.useState)(null);
+  const [list2, setList] = (0, import_react7.useState)(null);
+  const [listErr, setListErr] = (0, import_react7.useState)(null);
+  const names = can(me.role, "viewDashAgents");
+  const open = async (v) => {
+    setPick(v);
+    setList(null);
+    setListErr(null);
+    try {
+      setList((await api2.dashDevices(range.from, range.to, v)).version_agents);
+    } catch (e) {
+      setListErr(errText(e));
+    }
+  };
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!d) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  const versions = [...d.versions].sort((a, b) => cmpVersionDesc(a.app_version, b.app_version));
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-versions", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "App versions, phones and language", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      fmtNum(d.agents),
+      " agents used the app in this period. Each is counted once, by the last app they used."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "App versions (newest first)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+          HBars,
+          {
+            testid: "versions",
+            label: "Agents per app version",
+            onPick: names ? (v) => void open(v) : void 0,
+            items: versions.map((v) => ({ key: v.app_version, label: v.app_version, value: v.agents, sub: `last ${fmtTime(v.last_seen)}` }))
+          }
+        ),
+        names && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "Tap a version to see its agents." })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Platform" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { testid: "platforms", label: "Agents per platform", items: d.platforms.map((p) => ({ key: p.platform, label: platformLabel(p.platform), value: p.agents })) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Language" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { testid: "languages", label: "Agents per language", items: d.languages.map((l) => ({ key: l.language, label: languageLabel(l.language), value: l.agents })) })
+      ] })
+    ] }),
+    pick && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", "data-testid": "version-agents", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("h3", { className: "spacer", children: [
+          "Agents on version ",
+          pick
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small", onClick: () => setPick(null), children: "Close" })
+      ] }),
+      listErr ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: listErr }) : !list2 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {}) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Agent" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Phone" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Last seen" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: list2.map((a) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AgentLink, { id: a.user_id, email: a.email, name: a.name }),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: a.email })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+            a.device,
+            " \xB7 ",
+            platformLabel(a.platform)
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: fmtTime(a.last_seen) })
+        ] }, a.user_id)) })
+      ] }) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Phone models" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { testid: "devices", label: "Agents per phone model", items: d.devices.map((p) => ({ key: `${p.device}|${p.platform}`, label: p.device === "unknown" ? "Not reported" : p.device, value: p.agents, sub: platformLabel(p.platform) })) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "Tablets show as Android, iPhone / iPad or web until the main app reports screen size." })
+    ] })
+  ] });
+}
+function ListingsTab({ range }) {
+  const { api: api2, me } = useAdmin();
+  const { data: l, err, busy, load } = useLoad2(() => api2.dashListings(range.from, range.to, 60), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!l) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  const statuses = sortStatuses(l.by_status);
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-listings", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Listings", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Listings", value: fmtNum(l.total), sub: `${fmtNum(l.agents_with_listings)} agents` }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "Deleted (kept for audit)", value: fmtNum(l.deleted) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: `Stale (${l.stale_days}+ days)`, value: fmtNum(l.stale_count), sub: "Available, no change", level: l.stale_count ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Stat, { label: "New in this period", value: fmtNum(l.new_by_month.reduce((s, m) => s + m.new, 0)) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "By status" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { testid: "by-status", label: "Listings by status", items: statuses.map((s) => ({ key: s.key, label: s.label, value: s.n })) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Sale or rent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { label: "Listings by purpose", items: Object.entries(l.by_purpose).sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ key: k, label: PURPOSE_LABEL[k] ?? k, value: n })) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "By state" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { label: "Listings by state", items: l.by_state.slice(0, 16).map((s) => ({ key: s.state, label: s.state, value: s.listings })) })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Property type" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(HBars, { label: "Listings by property type", items: l.by_type.map((t) => ({ key: t.type, label: t.type, value: t.listings })) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "New listings per month" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Bars, { label: "New listings per month (by date created)", items: l.new_by_month.map((m) => ({ label: m.month.slice(0, 7), value: m.new })) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Stale listings" }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      "Available listings with no change for ",
+      l.stale_days,
+      " days or more, oldest first."
+    ] }),
+    l.stale === null || !can(me.role, "viewDashAgents") ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Hidden, { what: "The list (it names agents) is" }) : l.stale.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "muted", children: "No stale listings." }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { "data-testid": "stale", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Listing" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Where" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Last change" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Days" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: l.stale.map((s) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: s.ref ?? s.id }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: s.headline ?? s.type ?? "" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { className: "small", children: [s.city, s.state].filter(Boolean).join(", ") || "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AgentLink, { id: s.user_id, email: s.email, name: s.name }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { className: "small", children: fmtTime(s.updated_at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: s.days })
+      ] }, `${s.user_id}/${s.id}`)) })
+    ] }) })
+  ] });
+}
+function PipelineTab() {
+  const { api: api2 } = useAdmin();
+  const today2 = todayKL();
+  const { data: l, err, busy, load } = useLoad2(() => api2.dashListings(presetRange("365", today2).from, today2, 60), [api2, today2]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!l) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  const lane = (title, stages, testid) => {
+    const total = stages.reduce((s, x) => s + x.listings, 0);
+    return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", "data-testid": testid, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { className: "spacer", children: title }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("span", { className: "tag", children: [
+          total,
+          " listings"
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("ol", { className: "lane", children: stages.map((s) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("li", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "l", children: PIPELINE_LABEL[s.stage] ?? statusLabel(s.stage) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { className: "v", children: s.listings }),
+        s.parts && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: Object.entries(s.parts).filter(([, n]) => n).map(([k, n]) => `${statusLabel(k).replace("Booked - ", "")} ${n}`).join(" \xB7 ") || " " })
+      ] }, s.stage)) })
+    ] });
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-pipeline", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Deal pipeline (all listings now)", onRefresh: () => void load(), busy }),
+    lane("Sale", l.pipeline.sale, "lane-sale"),
+    lane("Rent", l.pipeline.rent, "lane-rent"),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "\u201CBooked\u201D includes plain Booked, Pending SPA, Other Agent (Pending SPA) and Pending Consent. Deleted listings are not counted." })
+  ] });
+}
+function UsageTab({ range }) {
+  const { api: api2, me } = useAdmin();
+  const { data: u, err, busy, load } = useLoad2(() => api2.dashUsage(range.from, range.to), [api2, range.from, range.to]);
+  const [kind, setKind] = (0, import_react7.useState)("screen");
+  const [drill, setDrill] = (0, import_react7.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!u) return /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {});
+  const rows = u.ranking.filter((r) => kind === "all" ? r.kind !== "session" : r.kind === kind);
+  const names = can(me.role, "viewDashAgents");
+  const oldDays = u.detail_from > range.from;
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "stack", "data-testid": "dash-usage", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Head, { title: "Feature usage", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Screens and features opened per day" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Bars, { label: "Screens and features opened per day", items: u.by_day.map((d) => ({ label: d.day, value: d.events })) }),
+      oldDays && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", children: [
+        "Before ",
+        u.detail_from,
+        " only daily totals are kept, so the chart and heatmap start there."
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tabs", role: "group", "aria-label": "Show", style: { margin: 0 }, children: [["screen", "Screens"], ["feature", "Features"], ["google", "Google calls"], ["all", "Everything"]].map(([k, t]) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { "aria-pressed": kind === k, onClick: () => setKind(k), "data-testid": `ukind-${k}`, children: t }, k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Most used first" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(
+        HBars,
+        {
+          testid: "ranking",
+          label: "Most used",
+          unit: "times",
+          onPick: names ? (key) => {
+            const [k, ...n] = key.split("|");
+            setDrill({ kind: k, name: n.join("|") });
+          } : void 0,
+          items: rows.map((r) => ({
+            key: `${r.kind}|${r.name}`,
+            label: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+              kind === "all" && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", children: [
+                kindLabel(r.kind),
+                " \xB7 "
+              ] }),
+              nameLabel(r.name)
+            ] }),
+            value: r.events,
+            sub: `${r.agents} agent${r.agents === 1 ? "" : "s"}${r.failures ? ` \xB7 ${r.failures} failed` : ""}`
+          }))
+        }
+      ),
+      names && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "Tap a line to see each time it was used." })
+    ] }),
+    drill && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(EventsBox, { kind: drill.kind, name: drill.name, range, onClose: () => setDrill(null) }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", "data-testid": "not-used", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "Not used in this period" }),
+      u.not_used.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Every screen and feature seen before was used." }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("p", { style: { margin: 0 }, children: u.not_used.map((k) => /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "tag", style: { margin: "0 6px 6px 0" }, children: nameLabel(k.name) }, `${k.kind}|${k.name}`)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: "muted", children: "Screens and features that were used at some time before, but not in this period." })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("h3", { children: "When agents use the app" }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Heatmap, { testid: "heatmap", rows: u.heatmap })
+    ] })
+  ] });
+}
+function EventsBox({ kind, name, range, onClose }) {
+  const { api: api2 } = useAdmin();
+  const { data: e, err } = useLoad2(() => api2.dashEvents(kind, name, range.from, range.to, 200), [api2, kind, name, range.from, range.to]);
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "card stack", "data-testid": "events", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("h3", { className: "spacer", children: [
+        kindLabel(kind),
+        ": ",
+        nameLabel(name)
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small", onClick: onClose, children: "Close" })
+    ] }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(ErrorBox, { text: err }) : !e ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Loading, {}) : /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)(import_jsx_runtime8.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", children: [
+        e.total,
+        " times in the period",
+        e.total > e.events.length ? `; newest ${e.events.length} shown` : "",
+        ". Opening this list is recorded."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("table", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "When" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Agent" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "Result" }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("th", { children: "App" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("tbody", { children: e.events.map((x, i) => /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { className: "small", children: fmtTime(x.at) }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AgentLink, { id: x.user_id, email: x.email, name: x.name }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { children: [
+            x.ok ? /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "tag ok", children: "OK" }) : /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "tag red", children: "Failed" }),
+            x.value != null ? /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", children: [
+              " ",
+              x.value
+            ] }) : null
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("td", { className: "small", children: [
+            x.app_version ?? "\u2014",
+            " \xB7 ",
+            platformLabel(x.platform),
+            x.device ? ` \xB7 ${x.device}` : ""
+          ] })
+        ] }, i)) })
+      ] }) })
+    ] })
+  ] });
+}
+function DashExport({ range }) {
+  const { api: api2, me } = useAdmin();
+  const [busy, setBusy] = (0, import_react7.useState)(null);
+  const [msg, setMsg] = (0, import_react7.useState)(null);
+  const run = async (format) => {
+    setBusy(format);
+    setMsg(null);
+    try {
+      const r = await exportDashboards(api2, me.email, format, range.from, range.to);
+      setMsg({ ok: true, text: `${r.reference}: ${r.how}` });
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("small", { className: "muted", children: [
+      "Report for ",
+      range.from,
+      " to ",
+      range.to,
+      ":"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small gold", disabled: !!busy, onClick: () => void run("pdf"), "data-testid": "dash-pdf", children: busy === "pdf" ? "Making\u2026" : "PDF" }),
+    /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small gold", disabled: !!busy, onClick: () => void run("xlsx"), "data-testid": "dash-xlsx", children: busy === "xlsx" ? "Making\u2026" : "Excel" }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("small", { className: msg.ok ? "" : "error", role: "status", "data-testid": "dash-export-msg", children: msg.text })
+  ] });
+}
+
+// src/screens/Insight.tsx
+var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+function useLoad3(fn, deps) {
+  const [data, setData] = (0, import_react8.useState)(null);
+  const [err, setErr] = (0, import_react8.useState)(null);
+  const load = (0, import_react8.useCallback)(async () => {
+    setErr(null);
+    setData(null);
+    try {
+      setData(await fn());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, deps);
+  (0, import_react8.useEffect)(() => {
+    void load();
+  }, [load]);
+  return { data, err, load };
+}
+var ScoreTag = ({ s }) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `tag ${scoreLevel(s)}`, "data-testid": "score", children: s });
+function ScorecardScreen() {
+  const { api: api2, go } = useAdmin();
+  const { data, err, load } = useLoad3(() => api2.scorecard(500), [api2]);
+  const [q, setQ] = (0, import_react8.useState)("");
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!data) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Loading, {});
+  const list2 = (data.agents ?? []).filter((a) => !q.trim() || `${a.name ?? ""} ${a.email}`.toLowerCase().includes(q.trim().toLowerCase()));
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stack", "data-testid": "scorecard", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h1", { children: "Agent scorecard" }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      "One score out of 100. ",
+      SCORE_PARTS.map((p) => `${p.label} ${p.max}: ${p.help.toLowerCase()}.`).join(" ")
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stat", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "v", children: data.agents_count }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "l", children: "agents" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stat", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "v", children: data.average ?? "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "l", children: "average score" })
+      ] }),
+      SCORE_PARTS.map((p) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stat", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "v", children: [
+          data.parts_average[p.key.slice(2)] ?? "\u2014",
+          " / ",
+          p.max
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "l", children: [
+          "average ",
+          p.label.toLowerCase()
+        ] })
+      ] }, p.key))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(HBars, { items: data.bands.map((b) => ({ key: b.band, label: `Score ${b.band}`, value: b.agents })), label: "How the scores are spread (agents)", testid: "score-bands" }),
+    data.names_hidden ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "notice small", "data-testid": "names-hidden", children: "Your role sees how the scores are spread only. The list of agents is shown to the Owner, Admin and Compliance." }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("input", { type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Find an agent", "aria-label": "Find an agent", "data-testid": "score-q" }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("table", { "data-testid": "score-list", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Agent" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Score" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Listings" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Activity" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Compliance" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "What pulls it down" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("tbody", { children: list2.map((a) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: a.user_id }), "data-testid": "score-agent", children: a.name ?? a.email }),
+            a.status !== "active" && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+              " ",
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(StatusTag, { status: a.status })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("small", { className: "muted", children: a.email })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ScoreTag, { s: a.score }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { children: [
+            a.p_listings,
+            "/40",
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted", children: [
+              a.listings,
+              " listing",
+              a.listings === 1 ? "" : "s"
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { children: [
+            a.p_activity,
+            "/30",
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted", children: [
+              a.active_days,
+              " day",
+              a.active_days === 1 ? "" : "s"
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { children: [
+            a.p_compliance,
+            "/30"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { className: "small", children: a.reasons.length ? a.reasons.join("; ") : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "muted", children: "nothing \u2014 full marks" }) })
+        ] }, a.user_id)) })
+      ] }) })
+    ] })
+  ] });
+}
+function AgentScoreBox({ userId }) {
+  const { api: api2, go } = useAdmin();
+  const { data, err } = useLoad3(() => api2.agentScore(userId), [api2, userId]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "card boxed small error", children: err });
+  if (!data) return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "card boxed stack", "data-testid": "agent-score", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h3", { className: "spacer", style: { margin: 0 }, children: "Scorecard" }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ScoreTag, { s: data.score }),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn small", onClick: () => go({ k: "scorecard" }), children: "All agents" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "row small", style: { gap: 14 }, children: SCORE_PARTS.map((p) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { title: p.help, children: [
+      p.label,
+      " ",
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("b", { children: data[p.key] }),
+      "/",
+      p.max
+    ] }, p.key)) }),
+    data.reasons.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("ul", { className: "small", style: { margin: 0, paddingLeft: 18 }, "data-testid": "score-reasons", children: data.reasons.map((r) => /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("li", { children: r }, r)) })
+  ] });
+}
+function FunnelScreen() {
+  const { api: api2, me, go } = useAdmin();
+  const names = can(me.role, "viewDashAgents");
+  const [range, setRange] = (0, import_react8.useState)(() => presetRange("90", todayKL()));
+  const { data, err, load } = useLoad3(() => api2.funnel(range.from, range.to), [api2, range.from, range.to]);
+  const [open, setOpen] = (0, import_react8.useState)(null);
+  const [stuck, setStuck] = (0, import_react8.useState)(null);
+  const [stuckErr, setStuckErr] = (0, import_react8.useState)(null);
+  const showStuck = async (step) => {
+    setOpen(step);
+    setStuck(null);
+    setStuckErr(null);
+    try {
+      setStuck(await api2.funnelStuck(range.from, range.to, step));
+    } catch (e) {
+      setStuckErr(errText(e));
+    }
+  };
+  (0, import_react8.useEffect)(() => {
+    setOpen(null);
+    setStuck(null);
+  }, [range.from, range.to]);
+  const rows = data ? funnelRows(data) : [];
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stack", "data-testid": "funnel", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h1", { children: "Onboarding funnel" }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Agents who signed up in the period, and how far each one has got since. Each step counts agents who have done it, whenever they did it." }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(RangePicker, { range, onChange: setRange }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Loading, {}) : /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)(import_jsx_runtime9.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+        HBars,
+        {
+          items: rows.map((r) => ({ key: String(r.step), label: `${r.step}. ${r.label}`, value: r.agents, sub: r.ofPrev === null ? void 0 : `${r.ofPrev}% of the step before` })),
+          label: "Agents at each step",
+          testid: "funnel-bars",
+          onPick: names ? (k) => {
+            if (k !== "1") void showStuck(Number(k));
+          } : void 0
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("table", { "data-testid": "funnel-table", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Step" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Agents" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Of all who signed up" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Of the step before" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("th", { children: "Stopped here" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("tbody", { children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("td", { children: [
+            r.step,
+            ". ",
+            r.label
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: r.agents }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: r.ofAll === null ? "\u2014" : `${r.ofAll}%` }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: r.ofPrev === null ? "" : `${r.ofPrev}%` }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("td", { children: r.step === 1 ? "" : names && r.lost > 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("button", { className: "linkbtn", onClick: () => void showStuck(r.step), "data-testid": `stuck-${r.step}`, children: [
+            r.lost,
+            " \u2014 who?"
+          ] }) : r.lost })
+        ] }, r.step)) })
+      ] }) }),
+      !names && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "notice small", "data-testid": "names-hidden", children: "Your role sees the counts only. Who is stuck at a step is shown to the Owner, Admin and Compliance." })
+    ] }),
+    open !== null && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "card boxed stack", "data-testid": "stuck-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("h3", { className: "spacer", style: { margin: 0 }, children: [
+          "Stuck before \u201C",
+          funnelRows(data).find((r) => r.step === open)?.label,
+          "\u201D"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn small", onClick: () => setOpen(null), children: "Close" })
+      ] }),
+      stuckErr ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "error", children: stuckErr }) : !stuck ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Loading, {}) : stuck.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted", children: "Nobody." }) : stuck.map((a) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("button", { className: "item", onClick: () => go({ k: "agent", id: a.user_id }), "data-testid": "stuck-agent", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("b", { className: "spacer", children: a.name ?? a.email }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted", children: [
+            "joined ",
+            a.joined,
+            " \xB7 ",
+            a.days_since_joined,
+            " days ago"
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("small", { className: "muted", children: a.email })
+      ] }, a.user_id))
+    ] })
+  ] });
+}
+function DuplicatesScreen() {
+  const { api: api2, go } = useAdmin();
+  const { data, err, load } = useLoad3(() => api2.duplicates(), [api2]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!data) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Loading, {});
+  const kinds = ["phone", "device", "licence"];
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stack", "data-testid": "duplicates", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("h1", { children: "Duplicate accounts" }),
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Accounts that share a phone number (Agent Profile contact number), a phone (the same device signed in to both) or a licence number. A shared phone can be innocent (a family phone, a shop\u2019s test phone); a shared licence number usually is not. Opening this list is recorded." }),
+    data.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted", "data-testid": "dup-none", children: "No shared phone numbers, phones or licence numbers found." }),
+    kinds.map((k) => {
+      const gs = data.filter((g) => g.kind === k);
+      if (!gs.length) return null;
+      return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("section", { className: "stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("h2", { children: [
+          DUP_LABEL[k],
+          " ",
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted", children: [
+            "(",
+            gs.length,
+            ")"
+          ] })
+        ] }),
+        gs.map((g, i) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "card boxed stack", "data-testid": `dup-${k}`, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("b", { className: "mono", children: g.value }),
+          g.agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("button", { className: "item", onClick: () => go({ k: "agent", id: a.user_id }), "data-testid": "dup-agent", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("span", { className: "row", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("b", { className: "spacer", children: a.name ?? a.email }),
+              /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(StatusTag, { status: a.status })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted", children: [
+              a.email,
+              " \xB7 joined ",
+              a.joined
+            ] })
+          ] }, a.user_id))
+        ] }, `${k}-${i}`))
+      ] }, k);
+    })
+  ] });
+}
+function DevicesTab({ agent }) {
+  const { api: api2, me } = useAdmin();
+  const { data, err, load } = useLoad3(() => api2.agentDevices(agent), [api2, agent]);
+  const [remove, setRemove] = (0, import_react8.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!data) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Loading, {});
+  if (data.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted", children: "No phone has signed in yet." });
+  return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "stack", "data-testid": "devices", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Every phone this agent has used, from the sign-in history. \u201CRemove\u201D signs that one phone out at its next open or sync; the agent can sign in on it again (it then shows here). To stop the agent completely, suspend the account instead." }),
+    data.map((d) => {
+      const st = deviceState(d);
+      return /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "card boxed stack", "data-testid": "device", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("b", { className: "spacer", children: [
+            d.device ?? "Unknown phone",
+            " \xB7 ",
+            platformLabel(d.platform),
+            d.app_version ? ` \xB7 v${d.app_version}` : ""
+          ] }),
+          st.level ? /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: `tag ${st.level}`, "data-testid": "device-state", children: st.text }) : /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "tag ok", "data-testid": "device-state", children: st.text })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted", children: [
+          "First seen ",
+          fmtTime(d.first_seen),
+          " \xB7 last seen ",
+          fmtTime(d.last_seen),
+          " \xB7 ",
+          d.sign_ins,
+          " sign-in",
+          d.sign_ins === 1 ? "" : "s",
+          ", ",
+          d.opens,
+          " open",
+          d.opens === 1 ? "" : "s",
+          d.failed ? ` \xB7 ${d.failed} failed / locked` : "",
+          d.last_lat !== null && d.last_lng !== null ? ` \xB7 last place ${d.last_lat.toFixed(3)}, ${d.last_lng.toFixed(3)}` : ""
+        ] }),
+        d.removed && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { children: [
+          "Removed ",
+          fmtTime(d.removed.at),
+          " by ",
+          d.removed.by ?? "\u2014",
+          ": ",
+          d.removed.reason
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("small", { className: "muted mono", children: [
+          "Phone ID ",
+          d.device_id
+        ] }),
+        can(me.role, "removeDevice") && !(d.removed && !d.signed_in_after_removal) && /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("span", { className: "spacer" }),
+          /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("button", { className: "btn small danger", onClick: () => setRemove(d), "data-testid": "device-remove", children: "Remove this phone" })
+        ] })
+      ] }, d.device_id);
+    }),
+    remove && /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(
+      ConfirmDialog,
+      {
+        title: "Remove this phone",
+        danger: true,
+        confirmLabel: "Remove the phone",
+        body: /* @__PURE__ */ (0, import_jsx_runtime9.jsxs)("p", { children: [
+          remove.device ?? "This phone",
+          " (",
+          platformLabel(remove.platform),
+          ") will be signed out at its next open or sync. Nothing on the phone is deleted."
+        ] }),
+        onClose: () => setRemove(null),
+        onConfirm: async (reason) => {
+          await api2.deviceRemove(agent, remove.device_id, reason);
+          await load();
+        }
+      }
+    )
+  ] });
 }
 
 // src/screens/Agent.tsx
-var import_jsx_runtime5 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var LOGIN_TAB = "__login";
+var TERMS_TAB = "__terms";
+var DEVICES_TAB = "__devices";
 function AgentScreen({ id, openCollection, openRecord }) {
   const { api: api2, me, go } = useAdmin();
-  const [p, setP] = (0, import_react6.useState)(null);
-  const [err, setErr] = (0, import_react6.useState)(null);
-  const [coll, setColl] = (0, import_react6.useState)(openCollection ?? null);
-  const [showDeleted, setShowDeleted] = (0, import_react6.useState)(true);
-  const load = (0, import_react6.useCallback)(async () => {
+  const [p, setP] = (0, import_react9.useState)(null);
+  const [err, setErr] = (0, import_react9.useState)(null);
+  const [coll, setColl] = (0, import_react9.useState)(openCollection ?? null);
+  const [showDeleted, setShowDeleted] = (0, import_react9.useState)(true);
+  const load = (0, import_react9.useCallback)(async () => {
     setErr(null);
     try {
       const prof = await api2.agent(id);
@@ -14744,57 +17980,78 @@ function AgentScreen({ id, openCollection, openRecord }) {
       setErr(errText(e));
     }
   }, [api2, id]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     void load();
   }, [load]);
-  if (err) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
-  if (!p) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Loading, { text: "Loading agent\u2026" });
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!p) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Loading, { text: "Loading agent\u2026" });
   const collections = sortCollections(Object.keys(p.counts));
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "split", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("aside", { className: "side stack", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "card boxed stack", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "row", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h1", { style: { fontSize: "1.25rem" }, children: p.name || p.email }),
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: `tag ${p.status === "active" ? "ok" : "red"}`, "data-testid": "agent-status", children: p.status })
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "split", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("aside", { className: "side stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "card boxed stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h1", { style: { fontSize: "1.25rem" }, children: p.name || p.email }),
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(StatusTag, { status: p.status })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Kv, { rows: [
+        p.status !== "active" && p.status_reason && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "notice error small", "data-testid": "status-reason", children: [
+          "Reason: ",
+          p.status_reason
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Kv, { rows: [
           { k: "Email", v: p.email },
-          { k: "User ID", v: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "mono", children: p.user_id }) },
-          { k: "Licence", v: p.licence ?? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "muted", children: "Not provided" }) },
+          { k: "User ID", v: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "mono", children: p.user_id }) },
+          { k: "Licence", v: p.licence ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+            p.licence,
+            " ",
+            p.licence_detail && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(LicenceTag, { licence: p.licence_detail })
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "muted", children: "Not provided" }) },
+          { k: "Terms", v: p.terms ? `Version ${p.terms.version ?? "?"} accepted ${fmtTime(p.terms.at)}` : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "muted", children: "Not accepted yet" }) },
+          { k: "News & offers", v: p.marketing == null ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "muted", children: "Not answered" }) : p.marketing ? "Yes" : "No" },
           { k: "Joined", v: fmtTime(p.joined_at) },
-          { k: "Last sign-in", v: fmtTime(p.last_sign_in_at) },
+          { k: "Last sign-in", v: p.last_login ? `${fmtTime(p.last_login.at)}${p.last_login.platform ? ` \xB7 ${platformLabel(p.last_login.platform)}` : ""}${p.last_login.app_version ? ` \xB7 v${p.last_login.app_version}` : ""}` : fmtTime(p.last_sign_in_at) },
+          ...p.force_logout_after ? [{ k: "Forced sign-out", v: `Phones signed in before ${fmtTime(p.force_logout_after)} are signed out` }] : [],
           { k: "Workspaces", v: p.workspaces.map((w) => `${w.name} (${w.role})`).join(", ") }
         ] })
       ] }),
-      can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ExportBox, { profile: p }),
-      can(me.role, "viewLogs") && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { className: "btn", onClick: () => go({ k: "logs", tab: "access", target: p.user_id }), children: "Who viewed this agent" })
+      can(me.role, "internal") && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(AgentScoreBox, { userId: p.user_id }),
+      can(me.role, "internal") && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(InternalBox, { userId: p.user_id, email: p.email }),
+      can(me.role, "accountActions") && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(AccountBox, { profile: p, onChanged: () => void load() }),
+      can(me.role, "verifyLicence") && p.licence_detail && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(LicenceBox, { profile: p, onChanged: () => void load() }),
+      can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ExportBox, { profile: p }),
+      can(me.role, "viewLogs") && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn", onClick: () => go({ k: "logs", tab: "access", target: p.user_id }), children: "Who viewed this agent" })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("section", { className: "stack", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "tabs", role: "toolbar", "aria-label": "Record types", children: [
-        collections.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "muted", children: "This agent has no records." }),
-        collections.map((c) => /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("button", { "aria-pressed": coll === c, onClick: () => setColl(c), "data-testid": `tab-${c}`, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("section", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "tabs", role: "toolbar", "aria-label": "Record types", children: [
+        collections.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "muted", children: "This agent has no records." }),
+        collections.map((c) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("button", { "aria-pressed": coll === c, onClick: () => setColl(c), "data-testid": `tab-${c}`, children: [
           labelOf(c),
           " ",
           p.counts[c].total,
           p.counts[c].deleted ? ` \xB7 ${p.counts[c].deleted} deleted` : ""
-        ] }, c))
+        ] }, c)),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { "aria-pressed": coll === LOGIN_TAB, onClick: () => setColl(LOGIN_TAB), "data-testid": "tab-login", children: "Sign-in history" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { "aria-pressed": coll === TERMS_TAB, onClick: () => setColl(TERMS_TAB), "data-testid": "tab-terms", children: "Terms & consent" }),
+        can(me.role, "viewDevices") && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { "aria-pressed": coll === DEVICES_TAB, onClick: () => setColl(DEVICES_TAB), "data-testid": "tab-devices", children: "Phones" })
       ] }),
-      coll && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(import_jsx_runtime5.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "row small", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("input", { type: "checkbox", checked: showDeleted, onChange: (e) => setShowDeleted(e.target.checked) }),
+      coll === LOGIN_TAB && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(LoginHistory, { agent: p.user_id }),
+      coll === TERMS_TAB && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(TermsHistory, { agent: p.user_id }),
+      coll === DEVICES_TAB && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(DevicesTab, { agent: p.user_id }),
+      coll && coll !== LOGIN_TAB && coll !== TERMS_TAB && coll !== DEVICES_TAB && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("label", { className: "row small", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("input", { type: "checkbox", checked: showDeleted, onChange: (e) => setShowDeleted(e.target.checked) }),
           " Show deleted records"
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(RecordList, { agent: p.user_id, collection: coll, includeDeleted: showDeleted, openRecord: coll === openCollection ? openRecord : void 0 }, coll)
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(RecordList, { agent: p.user_id, collection: coll, includeDeleted: showDeleted, openRecord: coll === openCollection ? openRecord : void 0 }, coll)
       ] })
     ] })
   ] });
 }
 function RecordList({ agent, collection, includeDeleted, openRecord }) {
   const { api: api2 } = useAdmin();
-  const [rows, setRows] = (0, import_react6.useState)(null);
-  const [err, setErr] = (0, import_react6.useState)(null);
-  const [open, setOpen] = (0, import_react6.useState)(openRecord ?? null);
-  const load = (0, import_react6.useCallback)(async () => {
+  const [rows, setRows] = (0, import_react9.useState)(null);
+  const [err, setErr] = (0, import_react9.useState)(null);
+  const [open, setOpen] = (0, import_react9.useState)(openRecord ?? null);
+  const load = (0, import_react9.useCallback)(async () => {
     setErr(null);
     setRows(null);
     try {
@@ -14803,21 +18060,21 @@ function RecordList({ agent, collection, includeDeleted, openRecord }) {
       setErr(errText(e));
     }
   }, [api2, agent, collection, includeDeleted]);
-  (0, import_react6.useEffect)(() => {
+  (0, import_react9.useEffect)(() => {
     void load();
   }, [load]);
-  if (err) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
-  if (!rows) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Loading, {});
-  if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("p", { className: "muted", children: [
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!rows) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Loading, {});
+  if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("p", { className: "muted", children: [
     "No ",
     labelOf(collection).toLowerCase(),
     "."
   ] });
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("div", { className: "list", "data-testid": "record-list", children: rows.map((r) => {
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "list", "data-testid": "record-list", children: rows.map((r) => {
     const isOpen = open === r.id;
     const fields = recordFields(r);
-    return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: `item ${r.deleted ? "deleted" : ""}`, children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)(
+    return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: `item ${r.deleted ? "deleted" : ""}`, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(
         "button",
         {
           className: "row",
@@ -14826,29 +18083,29 @@ function RecordList({ agent, collection, includeDeleted, openRecord }) {
           "aria-expanded": isOpen,
           "data-testid": "record",
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("b", { className: "spacer", children: recordTitle(r) }),
-            r.deleted && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "tag red", children: "Deleted \u2014 kept for audit" }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("span", { className: "tag", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("b", { className: "spacer", children: recordTitle(r) }),
+            r.deleted && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "tag red", children: "Deleted \u2014 kept for audit" }),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("span", { className: "tag", children: [
               "v",
               r.rev
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("small", { className: "muted", children: fmtTime(r.written_at) })
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: fmtTime(r.written_at) })
           ]
         }
       ),
-      !isOpen && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("small", { className: "muted", children: fields.slice(0, 4).map((f) => `${f.k}: ${f.v}`).join(" \xB7 ") }),
-      isOpen && /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "stack", style: { marginTop: 10 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Kv, { rows: [{ k: "Record ID", v: /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("span", { className: "mono", children: r.id }) }, ...fields] }),
-        /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(History, { ws: r.workspace_id, collection, id: r.id })
+      !isOpen && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: fields.slice(0, 4).map((f) => `${f.k}: ${f.v}`).join(" \xB7 ") }),
+      isOpen && /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "stack", style: { marginTop: 10 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Kv, { rows: [{ k: "Record ID", v: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "mono", children: r.id }) }, ...fields] }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(History, { ws: r.workspace_id, collection, id: r.id })
       ] })
     ] }, r.id);
   }) });
 }
 function History({ ws, collection, id }) {
   const { api: api2 } = useAdmin();
-  const [v, setV] = (0, import_react6.useState)(null);
-  const [err, setErr] = (0, import_react6.useState)(null);
-  const [shown, setShown] = (0, import_react6.useState)(false);
+  const [v, setV] = (0, import_react9.useState)(null);
+  const [err, setErr] = (0, import_react9.useState)(null);
+  const [shown, setShown] = (0, import_react9.useState)(false);
   const load = async () => {
     setShown(true);
     setErr(null);
@@ -14858,25 +18115,25 @@ function History({ ws, collection, id }) {
       setErr(errText(e));
     }
   };
-  if (!shown) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { className: "btn small", onClick: () => void load(), "data-testid": "show-history", children: "Show change history" });
-  if (err) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
-  if (!v) return /* @__PURE__ */ (0, import_jsx_runtime5.jsx)(Loading, { text: "Loading history\u2026" });
+  if (!shown) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn small", onClick: () => void load(), "data-testid": "show-history", children: "Show change history" });
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!v) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Loading, { text: "Loading history\u2026" });
   const lines = historyLines(v);
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "card stack", "data-testid": "history", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("h3", { children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "card stack", "data-testid": "history", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("h3", { children: [
       "Change history \xB7 ",
       v.length,
       " version",
       v.length === 1 ? "" : "s"
     ] }),
-    lines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("p", { className: "muted", style: { margin: 0 }, children: "Never changed since it was first saved." }) : /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("ol", { className: "history small", children: [...lines].reverse().map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("li", { children: l }, i)) })
+    lines.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "muted", style: { margin: 0 }, children: "Never changed since it was first saved." }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("ol", { className: "history small", children: [...lines].reverse().map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("li", { children: l }, i)) })
   ] });
 }
 function ExportBox({ profile }) {
   const { api: api2, me } = useAdmin();
-  const [busy, setBusy] = (0, import_react6.useState)(null);
-  const [msg, setMsg] = (0, import_react6.useState)(null);
-  const [withHistory, setWithHistory] = (0, import_react6.useState)(true);
+  const [busy, setBusy] = (0, import_react9.useState)(null);
+  const [msg, setMsg] = (0, import_react9.useState)(null);
+  const [withHistory, setWithHistory] = (0, import_react9.useState)(true);
   const run = async (format) => {
     setBusy(format);
     setMsg(null);
@@ -14889,26 +18146,210 @@ function ExportBox({ profile }) {
       setBusy(null);
     }
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "card stack", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("h3", { children: "Export for regulator / police" }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("small", { className: "muted", children: "Every record of this agent, including deleted ones. Each export gets a reference number and is recorded in the access log." }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("label", { className: "row small", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("input", { type: "checkbox", checked: withHistory, onChange: (e) => setWithHistory(e.target.checked) }),
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "card stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h3", { children: "Export for regulator / police" }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: "Every record of this agent, including deleted ones. Each export gets a reference number and is recorded in the access log." }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("label", { className: "row small", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("input", { type: "checkbox", checked: withHistory, onChange: (e) => setWithHistory(e.target.checked) }),
       " Include change history"
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime5.jsxs)("div", { className: "row", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { className: "btn gold", disabled: !!busy, onClick: () => void run("pdf"), "data-testid": "export-pdf", children: busy === "pdf" ? "Making PDF\u2026" : "PDF" }),
-      /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("button", { className: "btn gold", disabled: !!busy, onClick: () => void run("xlsx"), "data-testid": "export-xlsx", children: busy === "xlsx" ? "Making Excel\u2026" : "Excel" })
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn gold", disabled: !!busy, onClick: () => void run("pdf"), "data-testid": "export-pdf", children: busy === "pdf" ? "Making PDF\u2026" : "PDF" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn gold", disabled: !!busy, onClick: () => void run("xlsx"), "data-testid": "export-xlsx", children: busy === "xlsx" ? "Making Excel\u2026" : "Excel" })
     ] }),
-    msg && /* @__PURE__ */ (0, import_jsx_runtime5.jsx)("small", { className: msg.ok ? "" : "error", role: "status", "data-testid": "export-msg", children: msg.text })
+    msg && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: msg.ok ? "" : "error", role: "status", "data-testid": "export-msg", children: msg.text })
   ] });
+}
+function AccountBox({ profile, onChanged }) {
+  const { api: api2 } = useAdmin();
+  const [act, setAct] = (0, import_react9.useState)(null);
+  const [done, setDone] = (0, import_react9.useState)(null);
+  const st = profile.status;
+  const closedByGoogle = !!profile.deleted_at;
+  const options = [
+    { s: "suspended", label: "Suspend", danger: true, help: "Temporarily stops the agent using the app. Their records are kept." },
+    { s: "banned", label: "Ban", danger: true, help: "Permanently stops the agent using the app. Their records are kept." },
+    { s: "closed", label: "Close account", danger: true, help: "For an agent who left or asked to close. Records are kept for 7 years." }
+  ];
+  const title = act?.kind === "logout" ? "Force sign-out" : act ? act.status === "active" ? "Re-activate account" : `${STATUS_LABEL[act.status]} account` : "";
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "card stack", "data-testid": "account-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h3", { children: "Account" }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: "The agent sees a message with the support contact the next time the app opens or syncs. Their records are never deleted." }),
+    closedByGoogle ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "notice warn small", style: { margin: 0 }, children: "This Google account was deleted. Nothing to change here." }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "row", children: [
+      st !== "active" && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn gold", onClick: () => setAct({ kind: "status", status: "active", force: false }), "data-testid": "act-reactivate", children: "Re-activate" }),
+      options.filter((o) => o.s !== st).map((o) => /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn small", onClick: () => setAct({ kind: "status", status: o.s, force: true }), "data-testid": `act-${o.s}`, title: o.help, children: o.label }, o.s)),
+      st === "active" && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn small", onClick: () => setAct({ kind: "logout" }), "data-testid": "act-logout", children: "Force sign-out" })
+    ] }),
+    done && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { role: "status", className: "gold", children: done }),
+    act && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+      ConfirmDialog,
+      {
+        title,
+        danger: act.kind === "logout" || act.status !== "active",
+        body: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("p", { children: [
+          profile.name || profile.email,
+          " (",
+          profile.email,
+          "): ",
+          act.kind === "logout" ? "every phone signed in now is signed out at its next app open or sync. The agent can sign in again." : act.status === "active" ? "the account becomes active again; the agent can sign in." : `${options.find((o) => o.s === act.status)?.help} The agent is signed out on every phone.`
+        ] }),
+        confirmLabel: act.kind === "logout" ? "Force sign-out" : act.status === "active" ? "Re-activate" : STATUS_LABEL[act.status],
+        onClose: () => setAct(null),
+        onConfirm: async (reason) => {
+          try {
+            if (act.kind === "logout") await api2.forceLogout(profile.user_id, reason);
+            else await api2.setStatus(profile.user_id, act.status, reason, act.force);
+          } catch (e) {
+            throw new Error(errText(e));
+          }
+          setDone(act.kind === "logout" ? "Sign-out sent." : `Account is now ${STATUS_LABEL[act.status].toLowerCase()}.`);
+          onChanged();
+        }
+      }
+    )
+  ] });
+}
+function LicenceBox({ profile, onChanged }) {
+  const { api: api2 } = useAdmin();
+  const [ask, setAsk] = (0, import_react9.useState)(null);
+  const l = profile.licence_detail;
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "card stack", "data-testid": "licence-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("h3", { children: "Licence" }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Kv, { rows: [
+      { k: "Type", v: l.type === "FIRM" ? "Firm / agency licence" : l.type ?? "" },
+      { k: "Number", v: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "mono", children: l.number }) },
+      { k: "Verified", v: l.verified ? `Yes, ${fmtTime(l.verified_at)}` : "No" }
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: "Check the number on the official register first. If the agent later changes the number, it must be verified again." }),
+    l.verified ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn small", onClick: () => setAsk(false), "data-testid": "licence-unverify", children: "Mark as not verified" }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("button", { className: "btn gold", onClick: () => setAsk(true), "data-testid": "licence-verify", children: "Mark as verified" }),
+    ask !== null && /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(
+      ConfirmDialog,
+      {
+        title: ask ? "Verify licence" : "Remove verification",
+        body: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("p", { children: [
+          l.type,
+          " ",
+          l.number,
+          " for ",
+          profile.email,
+          " \u2192 ",
+          /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("b", { children: ask ? "verified" : "not verified" }),
+          "."
+        ] }),
+        confirmLabel: ask ? "Mark verified" : "Remove verification",
+        danger: !ask,
+        onClose: () => setAsk(null),
+        onConfirm: async (reason) => {
+          try {
+            await api2.verifyLicence(profile.user_id, ask, reason);
+          } catch (e) {
+            throw new Error(errText(e));
+          }
+          onChanged();
+        }
+      }
+    )
+  ] });
+}
+function LoginHistory({ agent }) {
+  const { api: api2 } = useAdmin();
+  const [rows, setRows] = (0, import_react9.useState)(null);
+  const [err, setErr] = (0, import_react9.useState)(null);
+  const load = (0, import_react9.useCallback)(async () => {
+    setErr(null);
+    try {
+      setRows(await api2.loginLog(agent, 500));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, agent]);
+  (0, import_react9.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!rows) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Loading, {});
+  if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "muted", "data-testid": "login-empty", children: "No sign-ins recorded yet. The main app records them from MainForAdmin-B onwards." });
+  const bad = rows.filter((r) => isBadEvent(r.event)).length;
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("small", { className: "muted", children: [
+      rows.length,
+      " entries",
+      bad ? ` \xB7 ${bad} failed, locked out, blocked or forced` : "",
+      ". Location is recorded only if the agent had already allowed it."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("table", { "data-testid": "login-table", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "When" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "What" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "Device" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "App" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "Location" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("tbody", { children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: fmtTime(r.happened_at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("td", { children: [
+          isBadEvent(r.event) ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "tag amber", children: EVENT_LABEL[r.event] ?? r.event }) : EVENT_LABEL[r.event] ?? r.event,
+          r.detail ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: r.detail })
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("td", { children: [
+          platformLabel(r.platform),
+          r.device ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)(import_jsx_runtime10.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("small", { className: "muted", children: r.device })
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: r.app_version ?? "" }),
+        /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: r.lat != null && r.lng != null ? /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("a", { href: `https://www.google.com/maps?q=${r.lat},${r.lng}`, target: "_blank", rel: "noreferrer", children: [
+          r.lat.toFixed(4),
+          ", ",
+          r.lng.toFixed(4)
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "muted", children: "no location" }) })
+      ] }, r.seq)) })
+    ] }) })
+  ] });
+}
+function TermsHistory({ agent }) {
+  const { api: api2 } = useAdmin();
+  const [rows, setRows] = (0, import_react9.useState)(null);
+  const [err, setErr] = (0, import_react9.useState)(null);
+  const load = (0, import_react9.useCallback)(async () => {
+    setErr(null);
+    try {
+      setRows(await api2.termsLog(agent));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, agent]);
+  (0, import_react9.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!rows) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(Loading, {});
+  if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("p", { className: "muted", "data-testid": "terms-empty", children: "No answers recorded yet. The agent answers on the first-login screen." });
+  return /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("table", { "data-testid": "terms-table", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("tr", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "When" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "What" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "Version" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("th", { children: "Answer" })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("tbody", { children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime10.jsxs)("tr", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: fmtTime(r.at) }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: r.kind === "terms" ? "Terms and Conditions" : "News & offers" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: r.terms_version ?? "" }),
+      /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("td", { children: r.accepted ? /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "tag ok", children: r.kind === "terms" ? "Accepted" : "Yes" }) : /* @__PURE__ */ (0, import_jsx_runtime10.jsx)("span", { className: "tag", children: r.kind === "terms" ? "Not accepted" : "No" }) })
+    ] }, r.seq)) })
+  ] }) });
 }
 
 // src/screens/Logs.tsx
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var import_react7 = __toESM(require_react(), 1);
-var import_jsx_runtime6 = __toESM(require_jsx_runtime(), 1);
+var import_react10 = __toESM(require_react(), 1);
+var import_jsx_runtime11 = __toESM(require_jsx_runtime(), 1);
 var KIND = {
   sign_in: "Signed in",
   search: "Searched",
@@ -14922,12 +18363,12 @@ var KIND = {
 };
 function LogsScreen({ tab, target }) {
   const { api: api2, go } = useAdmin();
-  const [rows, setRows] = (0, import_react7.useState)(null);
-  const [more, setMore] = (0, import_react7.useState)(false);
-  const [err, setErr] = (0, import_react7.useState)(null);
-  const [check, setCheck] = (0, import_react7.useState)(null);
-  const [checking, setChecking] = (0, import_react7.useState)(false);
-  const load = (0, import_react7.useCallback)(async (before = null) => {
+  const [rows, setRows] = (0, import_react10.useState)(null);
+  const [more, setMore] = (0, import_react10.useState)(false);
+  const [err, setErr] = (0, import_react10.useState)(null);
+  const [check, setCheck] = (0, import_react10.useState)(null);
+  const [checking, setChecking] = (0, import_react10.useState)(false);
+  const load = (0, import_react10.useCallback)(async (before = null) => {
     setErr(null);
     try {
       const page = await api2.log(tab, target ?? null, 100, before);
@@ -14937,7 +18378,7 @@ function LogsScreen({ tab, target }) {
       setErr(errText(e));
     }
   }, [api2, tab, target]);
-  (0, import_react7.useEffect)(() => {
+  (0, import_react10.useEffect)(() => {
     void load();
   }, [load]);
   const verify = async () => {
@@ -14951,66 +18392,66 @@ function LogsScreen({ tab, target }) {
       setChecking(false);
     }
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "stack", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "row", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("h1", { className: "spacer", children: tab === "actions" ? "Master Audit Log" : "Who Viewed What" }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn", onClick: () => void verify(), disabled: checking, "data-testid": "verify", children: checking ? "Checking\u2026" : "Check log integrity" })
+  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("h1", { className: "spacer", children: tab === "actions" ? "Master Audit Log" : "Who Viewed What" }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { className: "btn", onClick: () => void verify(), disabled: checking, "data-testid": "verify", children: checking ? "Checking\u2026" : "Check log integrity" })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: "tabs", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { "aria-pressed": tab === "actions", onClick: () => go({ k: "logs", tab: "actions", target }), children: "Admin actions" }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { "aria-pressed": tab === "access", onClick: () => go({ k: "logs", tab: "access", target }), children: "Views, searches & exports" })
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: "tabs", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { "aria-pressed": tab === "actions", onClick: () => go({ k: "logs", tab: "actions", target }), children: "Admin actions" }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { "aria-pressed": tab === "access", onClick: () => go({ k: "logs", tab: "access", target }), children: "Views, searches & exports" })
     ] }),
-    target && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("p", { className: "notice", children: [
+    target && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("p", { className: "notice", children: [
       "Showing entries about one agent only (",
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "mono", children: target }),
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "mono", children: target }),
       ")."
     ] }),
-    check && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ChainResult, { c: check }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "small muted", style: { margin: 0 }, children: "Entries can never be changed or deleted. Each entry carries a fingerprint of the one before it, so any change made outside the app is detected by the integrity check." }),
-    err && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
-    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)(Loading, {}),
-    rows && rows.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("p", { className: "muted", children: "No entries yet." }),
-    rows && rows.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("table", { "data-testid": "log-table", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "#" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "When" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Admin" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: tab === "actions" ? "Action" : "What" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "About" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: tab === "actions" ? "Reason" : "Detail" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("th", { children: "Device" })
+    check && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ChainResult, { c: check }),
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "small muted", style: { margin: 0 }, children: "Entries can never be changed or deleted. Each entry carries a fingerprint of the one before it, so any change made outside the app is detected by the integrity check." }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
+    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)(Loading, {}),
+    rows && rows.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("p", { className: "muted", children: "No entries yet." }),
+    rows && rows.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("table", { "data-testid": "log-table", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: "#" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: "When" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: "Admin" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: tab === "actions" ? "Action" : "What" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: "About" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: tab === "actions" ? "Reason" : "Detail" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("th", { children: "Device" })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("tbody", { children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("tr", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: r.seq }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: fmtTime(r.at) }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("tbody", { children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("td", { children: r.seq }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("td", { children: fmtTime(r.at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("td", { children: [
           r.admin_email,
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
-          /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted", children: r.admin_role })
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("small", { className: "muted", children: r.admin_role })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: "action" in r ? r.action : KIND[r.kind] ?? r.kind }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("td", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("td", { children: "action" in r ? r.action : KIND[r.kind] ?? r.kind }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("td", { children: [
           r.target_ref ?? "",
-          r.target_user && /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)(import_jsx_runtime6.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
-            /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: r.target_user }), children: "open agent" })
+          r.target_user && /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)(import_jsx_runtime11.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: r.target_user }), children: "open agent" })
           ] })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: "action" in r ? r.reason : r.detail ? /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("span", { className: "mono", children: JSON.stringify(r.detail) }) : "" }),
-        /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("small", { className: "muted", children: r.device }) })
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("td", { children: "action" in r ? r.reason : r.detail ? /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("span", { className: "mono", children: JSON.stringify(r.detail) }) : "" }),
+        /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("small", { className: "muted", children: r.device }) })
       ] }, r.seq)) })
     ] }) }),
-    more && rows && /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("button", { className: "btn", onClick: () => void load(rows[rows.length - 1].seq), children: "Load older entries" })
+    more && rows && /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("button", { className: "btn", onClick: () => void load(rows[rows.length - 1].seq), children: "Load older entries" })
   ] });
 }
 function ChainResult({ c }) {
   const ok = c.actions.ok && c.access.ok;
   const line = (name, x) => x.ok ? `${name}: ${x.checked} entries, all intact.` : `${name}: BROKEN at entry #${x.first_bad_seq} (checked ${x.checked}).`;
-  return /* @__PURE__ */ (0, import_jsx_runtime6.jsxs)("div", { className: `notice ${ok ? "ok" : "error"}`, role: "status", "data-testid": "chain-result", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("b", { children: ok ? "Both logs are intact." : `WARNING: a log entry was changed outside ${adminName()}.` }),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+  return /* @__PURE__ */ (0, import_jsx_runtime11.jsxs)("div", { className: `notice ${ok ? "ok" : "error"}`, role: "status", "data-testid": "chain-result", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("b", { children: ok ? "Both logs are intact." : `WARNING: a log entry was changed outside ${adminName()}.` }),
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("br", {}),
     line("Admin actions", c.actions),
-    /* @__PURE__ */ (0, import_jsx_runtime6.jsx)("br", {}),
+    /* @__PURE__ */ (0, import_jsx_runtime11.jsx)("br", {}),
     line("Views, searches & exports", c.access)
   ] });
 }
@@ -15018,16 +18459,16 @@ function ChainResult({ c }) {
 // src/screens/Admins.tsx
 init_define_EAB_BUILD();
 init_define_EAB_CONFIG();
-var import_react8 = __toESM(require_react(), 1);
-var import_jsx_runtime7 = __toESM(require_jsx_runtime(), 1);
+var import_react11 = __toESM(require_react(), 1);
+var import_jsx_runtime12 = __toESM(require_jsx_runtime(), 1);
 function AdminsScreen() {
   const { api: api2, me } = useAdmin();
-  const [rows, setRows] = (0, import_react8.useState)(null);
-  const [err, setErr] = (0, import_react8.useState)(null);
-  const [draft, setDraft] = (0, import_react8.useState)({ email: "", role: "viewer", active: true, expires: "" });
-  const [confirm, setConfirm] = (0, import_react8.useState)(null);
-  const [done, setDone] = (0, import_react8.useState)(null);
-  const load = (0, import_react8.useCallback)(async () => {
+  const [rows, setRows] = (0, import_react11.useState)(null);
+  const [err, setErr] = (0, import_react11.useState)(null);
+  const [draft, setDraft] = (0, import_react11.useState)({ email: "", role: "viewer", active: true, expires: "" });
+  const [confirm, setConfirm] = (0, import_react11.useState)(null);
+  const [done, setDone] = (0, import_react11.useState)(null);
+  const load = (0, import_react11.useCallback)(async () => {
     setErr(null);
     try {
       setRows(await api2.admins());
@@ -15035,77 +18476,77 @@ function AdminsScreen() {
       setErr(errText(e));
     }
   }, [api2]);
-  (0, import_react8.useEffect)(() => {
+  (0, import_react11.useEffect)(() => {
     void load();
   }, [load]);
   const needsExpiry = draft.role === "regulator";
   const valid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.email.trim()) && (!needsExpiry || !!draft.expires);
-  return /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "stack", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h1", { children: "Admins & Roles" }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("p", { className: "muted", style: { margin: 0 }, children: [
+  return /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h1", { children: "Admins & Roles" }),
+    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("p", { className: "muted", style: { margin: 0 }, children: [
       "Only Google accounts on this list can open ",
       adminName(),
       ". The person must have signed in once (to the main app or ",
       adminName(),
       ") before they can be added."
     ] }),
-    err && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
-    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(Loading, {}),
-    rows && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("table", { "data-testid": "admins-table", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "Email" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "Role" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "Status" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "Access ends" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", { children: "Added" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("th", {})
+    err && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
+    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(Loading, {}),
+    rows && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("table", { "data-testid": "admins-table", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("th", { children: "Email" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("th", { children: "Role" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("th", { children: "Status" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("th", { children: "Access ends" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("th", { children: "Added" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("th", {})
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("tbody", { children: rows.map((a) => /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("tr", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("td", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("tbody", { children: rows.map((a) => /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("td", { children: [
           a.email,
-          a.user_id === me.user_id && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "muted", children: " (you)" })
+          a.user_id === me.user_id && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "muted", children: " (you)" })
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: ROLE_LABEL[a.role] }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: a.active ? /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "tag ok", children: "Active" }) : /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { className: "tag red", children: "Off" }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: a.expires_at ? fmtTime(a.expires_at) : "\u2014" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: fmtTime(a.added_at) }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "btn small", onClick: () => setDraft({ email: a.email, role: a.role, active: a.active, expires: a.expires_at ? a.expires_at.slice(0, 16) : "" }), children: "Change" }) })
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("td", { children: ROLE_LABEL[a.role] }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("td", { children: a.active ? /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "tag ok", children: "Active" }) : /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { className: "tag red", children: "Off" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("td", { children: a.expires_at ? fmtTime(a.expires_at) : "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("td", { children: fmtTime(a.added_at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { className: "btn small", onClick: () => setDraft({ email: a.email, role: a.role, active: a.active, expires: a.expires_at ? a.expires_at.slice(0, 16) : "" }), children: "Change" }) })
       ] }, a.user_id)) })
     ] }) }),
-    /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("div", { className: "card boxed stack", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("h2", { children: "Add or change an admin" }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("label", { className: "field", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "Google email" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("input", { type: "email", value: draft.email, onChange: (e) => setDraft({ ...draft, email: e.target.value }), placeholder: "name@gmail.com", "data-testid": "admin-email" })
+    /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("div", { className: "card boxed stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("h2", { children: "Add or change an admin" }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { children: "Google email" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("input", { type: "email", value: draft.email, onChange: (e) => setDraft({ ...draft, email: e.target.value }), placeholder: "name@gmail.com", "data-testid": "admin-email" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("label", { className: "field", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("span", { children: "Role" }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("select", { value: draft.role, onChange: (e) => setDraft({ ...draft, role: e.target.value }), "data-testid": "admin-role", children: ALL_ROLES.map((r) => /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("option", { value: r, children: ROLE_LABEL[r] }, r)) })
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("span", { children: "Role" }),
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("select", { value: draft.role, onChange: (e) => setDraft({ ...draft, role: e.target.value }), "data-testid": "admin-role", children: ALL_ROLES.map((r) => /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("option", { value: r, children: ROLE_LABEL[r] }, r)) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("small", { className: "muted", children: ROLE_HELP[draft.role] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("label", { className: "field", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("span", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("small", { className: "muted", children: ROLE_HELP[draft.role] }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("span", { children: [
           "Access ends ",
           needsExpiry ? "(required for a regulator)" : "(optional)"
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("input", { type: "datetime-local", value: draft.expires, onChange: (e) => setDraft({ ...draft, expires: e.target.value }) })
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("input", { type: "datetime-local", value: draft.expires, onChange: (e) => setDraft({ ...draft, expires: e.target.value }) })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("label", { className: "row", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("input", { type: "checkbox", checked: draft.active, onChange: (e) => setDraft({ ...draft, active: e.target.checked }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("label", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("input", { type: "checkbox", checked: draft.active, onChange: (e) => setDraft({ ...draft, active: e.target.checked }) }),
         " Active (untick to switch this admin off)"
       ] }),
-      needsExpiry && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("p", { className: "notice warn", style: { margin: 0 }, children: "A regulator sees nothing until they are given a case scope (named agents and dates). Case files come in a later batch." }),
-      /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("button", { className: "btn gold", disabled: !valid, onClick: () => setConfirm(draft), "data-testid": "admin-save", children: "Save\u2026" }),
-      done && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("small", { role: "status", className: "gold", children: done })
+      needsExpiry && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("p", { className: "notice warn", style: { margin: 0 }, children: "A regulator sees nothing until they are given a case scope (named agents and dates). Case files come in a later batch." }),
+      /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("button", { className: "btn gold", disabled: !valid, onClick: () => setConfirm(draft), "data-testid": "admin-save", children: "Save\u2026" }),
+      done && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("small", { role: "status", className: "gold", children: done })
     ] }),
-    confirm && /* @__PURE__ */ (0, import_jsx_runtime7.jsx)(
+    confirm && /* @__PURE__ */ (0, import_jsx_runtime12.jsx)(
       ConfirmDialog,
       {
         title: "Confirm admin change",
-        body: /* @__PURE__ */ (0, import_jsx_runtime7.jsxs)("p", { children: [
+        body: /* @__PURE__ */ (0, import_jsx_runtime12.jsxs)("p", { children: [
           confirm.email,
           " \u2192 ",
-          /* @__PURE__ */ (0, import_jsx_runtime7.jsx)("b", { children: ROLE_LABEL[confirm.role] }),
+          /* @__PURE__ */ (0, import_jsx_runtime12.jsx)("b", { children: ROLE_LABEL[confirm.role] }),
           ", ",
           confirm.active ? "active" : "switched off",
           confirm.expires ? `, access ends ${confirm.expires.replace("T", " ")}` : "",
@@ -15130,42 +18571,6890 @@ function AdminsScreen() {
   ] });
 }
 
+// src/screens/Agents.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react12 = __toESM(require_react(), 1);
+var import_jsx_runtime13 = __toESM(require_jsx_runtime(), 1);
+var TABS2 = [
+  { f: "all", label: "All agents", help: "Every agent with account status, licence, last sign-in and the Terms version they accepted." },
+  { f: "security", label: "Login security", help: "Agents with failed Google sign-ins, lockouts (30 tries on one phone, then 1 hour) or blocked attempts in the last 30 days." },
+  { f: "not_active", label: "Suspended / banned / closed", help: "Accounts that cannot use the app. Open one to re-activate it." },
+  { f: "licence", label: "Licence", help: "Agents who entered a licence number in their profile. Unverified first. Check each number on the board\u2019s website, then tick it verified." }
+];
+var PAGE2 = 100;
+function AgentsScreen({ filter }) {
+  const { api: api2, go, me } = useAdmin();
+  const [q, setQ] = (0, import_react12.useState)("");
+  const [picking, setPicking] = (0, import_react12.useState)(false);
+  const [sel, setSel] = (0, import_react12.useState)({});
+  const [applied, setApplied] = (0, import_react12.useState)(null);
+  const [rows, setRows] = (0, import_react12.useState)(null);
+  const [more, setMore] = (0, import_react12.useState)(false);
+  const [err, setErr] = (0, import_react12.useState)(null);
+  const load = (0, import_react12.useCallback)(async (offset = 0) => {
+    setErr(null);
+    if (!offset) setRows(null);
+    try {
+      const page = await api2.agents(filter, applied, PAGE2, offset);
+      setRows((r) => offset && r ? [...r, ...page] : page);
+      setMore(page.length === PAGE2);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, filter, applied]);
+  (0, import_react12.useEffect)(() => {
+    void load(0);
+  }, [load]);
+  const submit = (e) => {
+    e.preventDefault();
+    setApplied(q.trim() || null);
+  };
+  const tab = TABS2.find((t) => t.f === filter);
+  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("h1", { className: "spacer", children: "Agents" }),
+      can(me.role, "bulkActions") && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn", "aria-pressed": picking, onClick: () => {
+        setPicking(!picking);
+        setSel({});
+      }, "data-testid": "bulk-toggle", children: picking ? "Stop choosing" : "Choose agents" })
+    ] }),
+    picking && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(BulkBar, { sel, rows: rows ?? [], setSel, onDone: () => {
+      setSel({});
+      void load(0);
+    } }),
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "tabs", role: "toolbar", "aria-label": "Agent lists", children: TABS2.map((t) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { "aria-pressed": t.f === filter, onClick: () => go({ k: "agents", filter: t.f }), "data-testid": `agents-tab-${t.f}`, children: t.label }, t.f)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "muted", style: { margin: 0 }, children: tab.help }),
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("form", { className: "row", onSubmit: submit, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("input", { type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Filter by name, email or user ID", style: { flex: 1, minWidth: 200 }, "aria-label": "Filter agents", "data-testid": "agents-filter" }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn", type: "submit", children: "Filter" }),
+      applied && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn ghost", type: "button", onClick: () => {
+        setQ("");
+        setApplied(null);
+      }, children: "Clear" })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(ErrorBox, { text: err, onRetry: () => void load(0) }),
+    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(Loading, { text: "Loading agents\u2026" }),
+    rows && rows.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: "muted", "data-testid": "agents-empty", children: filter === "security" ? "No failed sign-ins or lockouts in the last 30 days." : filter === "not_active" ? "Every account is active." : filter === "licence" ? "No agent has entered a licence number yet." : "No agents found." }),
+    rows && rows.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("div", { className: "list", "data-testid": "agents-list", children: rows.map((a) => /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(
+      "button",
+      {
+        className: `item${picking && sel[a.user_id] ? " picked" : ""}`,
+        "aria-pressed": picking ? !!sel[a.user_id] : void 0,
+        onClick: () => picking ? setSel((s) => {
+          const n = { ...s };
+          if (n[a.user_id]) delete n[a.user_id];
+          else if (Object.keys(n).length < BULK_MAX) n[a.user_id] = a.name || a.email;
+          return n;
+        }) : go({ k: "agent", id: a.user_id }),
+        "data-testid": "agent-row",
+        children: [
+          picking && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "row small", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: `tick${sel[a.user_id] ? " on" : ""}`, "aria-hidden": "true", children: sel[a.user_id] ? "\u2611" : "\u2610" }),
+            " ",
+            sel[a.user_id] ? "Chosen" : "Tap to choose"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("b", { className: "spacer", children: a.name || a.email }),
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(StatusTag, { status: a.status }),
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)(LicenceTag, { licence: a.licence })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("small", { className: "muted", children: a.email }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "row small", style: { marginTop: 4, gap: 14 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { children: [
+              "Last sign-in: ",
+              a.last_login ? `${fmtTime(a.last_login.at)}${a.last_login.platform ? ` \xB7 ${platformLabel(a.last_login.platform)}` : ""}${a.last_login.app_version ? ` \xB7 v${a.last_login.app_version}` : ""}` : /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "muted", children: "none recorded" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { children: [
+              "Terms: ",
+              a.terms_version ?? /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "muted", children: "not accepted" })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { children: [
+              "Records: ",
+              a.records
+            ] }),
+            (a.failed_30d > 0 || a.lockouts_30d > 0 || a.blocked_30d > 0) && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("span", { className: "tag amber", "data-testid": "security-counts", children: [
+              a.failed_30d,
+              " failed \xB7 ",
+              a.lockouts_30d,
+              " lockout",
+              a.lockouts_30d === 1 ? "" : "s",
+              a.blocked_30d ? ` \xB7 ${a.blocked_30d} blocked` : ""
+            ] })
+          ] }),
+          a.status !== "active" && a.status_reason && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("small", { className: "muted", children: [
+            "Reason: ",
+            a.status_reason,
+            a.status_changed_at ? ` (${fmtTime(a.status_changed_at)})` : ""
+          ] })
+        ]
+      },
+      a.user_id
+    )) }),
+    more && rows && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn", onClick: () => void load(rows.length), children: "Show more" })
+  ] });
+}
+function BulkBar({ sel, rows, setSel, onDone }) {
+  const { api: api2, go } = useAdmin();
+  const [action, setAction] = (0, import_react12.useState)("");
+  const [reason, setReason] = (0, import_react12.useState)("");
+  const [tag, setTag] = (0, import_react12.useState)("");
+  const [step, setStep] = (0, import_react12.useState)(1);
+  const [busy, setBusy] = (0, import_react12.useState)(false);
+  const [msg, setMsg] = (0, import_react12.useState)(null);
+  const ids = Object.keys(sel);
+  const problems = bulkProblems(action, ids.length, reason, tag);
+  const pickAll = () => {
+    const n = { ...sel };
+    for (const r of rows) {
+      if (Object.keys(n).length >= BULK_MAX) break;
+      n[r.user_id] = r.name || r.email;
+    }
+    setSel(n);
+  };
+  const go2 = () => {
+    if (action === "message") {
+      go({ k: "broadcasts", to: ids.map((id) => ({ id, label: sel[id] })) });
+      return;
+    }
+    setStep(2);
+  };
+  const run = async () => {
+    if (!action || action === "message") return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api2.bulkAction(action, ids, reason.trim(), action === "tag_add" || action === "tag_remove" ? cleanTag(tag) : null);
+      setMsg({ ok: true, text: `${r.ref}: done for ${r.count} agent${r.count === 1 ? "" : "s"}. Each one is in the Master Audit Log.` });
+      setStep(1);
+      setReason("");
+      setAction("");
+      onDone();
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+      setStep(1);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "card boxed stack", "data-testid": "bulk-bar", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("b", { className: "spacer", "data-testid": "bulk-count", children: [
+        ids.length,
+        " of at most ",
+        BULK_MAX,
+        " agents chosen"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn small", onClick: pickAll, "data-testid": "bulk-all", children: "Choose all shown" }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn small", onClick: () => setSel({}), children: "Clear" })
+    ] }),
+    step === 1 ? /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "grid2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { children: "What to do" }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("select", { value: action, onChange: (e) => setAction(e.target.value), "data-testid": "bulk-action", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("option", { value: "", children: "\u2014 choose \u2014" }),
+            Object.keys(BULK_LABEL).map((k) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("option", { value: k, children: BULK_LABEL[k] }, k))
+          ] })
+        ] }),
+        (action === "tag_add" || action === "tag_remove") && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { children: "Tag" }),
+          /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("input", { value: tag, onChange: (e) => setTag(e.target.value), placeholder: "e.g. vip", "data-testid": "bulk-tag" })
+        ] })
+      ] }),
+      action && action !== "message" && /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { children: "Reason (saved in the Master Audit Log for every agent)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("textarea", { rows: 2, maxLength: 1e3, value: reason, onChange: (e) => setReason(e.target.value), "data-testid": "bulk-reason" })
+      ] }),
+      action === "message" && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("small", { className: "muted", children: "Opens a new email or WhatsApp broadcast for exactly these agents. You write it and send it there." }),
+      problems.length > 0 && ids.length > 0 && action && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("ul", { className: "error small", "data-testid": "bulk-problems", children: problems.map((p) => /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("li", { children: p }, p)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn gold", disabled: problems.length > 0, onClick: go2, "data-testid": "bulk-continue", children: "Continue" })
+      ] })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)(import_jsx_runtime13.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "notice warn", "data-testid": "bulk-confirm", children: [
+        "Please confirm: ",
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("b", { children: BULK_LABEL[action] }),
+        action === "tag_add" || action === "tag_remove" ? ` \u201C${cleanTag(tag)}\u201D` : "",
+        " for ",
+        ids.length,
+        " agent",
+        ids.length === 1 ? "" : "s",
+        ":",
+        " ",
+        ids.slice(0, 10).map((id) => sel[id]).join(", "),
+        ids.length > 10 ? ` and ${ids.length - 10} more` : "",
+        ".",
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("br", {}),
+        "Reason: ",
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("i", { children: [
+          "\u201C",
+          reason.trim(),
+          "\u201D"
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime13.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: "btn", disabled: busy, onClick: () => setStep(1), children: "Back" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("button", { className: `btn ${action === "suspend" ? "danger" : "gold"}`, disabled: busy, onClick: () => void run(), "data-testid": "bulk-do", children: busy ? "Working\u2026" : "Do it" })
+      ] })
+    ] }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime13.jsx)("p", { className: `small ${msg.ok ? "" : "error"}`, role: "status", "data-testid": "bulk-msg", children: msg.text })
+  ] });
+}
+
+// src/screens/Settings.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react13 = __toESM(require_react(), 1);
+var import_jsx_runtime14 = __toESM(require_jsx_runtime(), 1);
+function SettingsScreen() {
+  const { api: api2, me } = useAdmin();
+  const [s, setS] = (0, import_react13.useState)(null);
+  const [err, setErr] = (0, import_react13.useState)(null);
+  const [draft, setDraft] = (0, import_react13.useState)(null);
+  const [confirm, setConfirm] = (0, import_react13.useState)(null);
+  const [done, setDone] = (0, import_react13.useState)(null);
+  const edit = can(me.role, "editSettings");
+  const load = (0, import_react13.useCallback)(async () => {
+    setErr(null);
+    try {
+      setS(await api2.settings());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react13.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s) return /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Loading, {});
+  const startEdit = () => setDraft({ company_name: s.company_name, support_email: s.support_email ?? "", business_address: s.business_address ?? "" });
+  const changes = draft ? Object.keys(draft).reduce((acc, k) => {
+    const before = s[k] ?? "";
+    if (draft[k].trim() !== before) acc[k] = draft[k].trim();
+    return acc;
+  }, {}) : {};
+  const emailOk = !draft || !draft.support_email.trim() || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(draft.support_email.trim());
+  const nameOk = !draft || draft.company_name.trim().length > 0;
+  return /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("h1", { children: "System Settings" }),
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("p", { className: "muted", style: { margin: 0 }, children: "Shared with Estate Agent AI Buddy. A change shows in the main app the next time it opens or syncs." }),
+    /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "card boxed stack", "data-testid": "settings", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(Kv, { rows: [
+        { k: "Company name", v: s.company_name },
+        { k: "Support email", v: s.support_email ?? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "tag amber", children: "Not set \u2014 suspended agents see \u201Ccontact details coming soon\u201D" }) },
+        { k: "Business address", v: s.business_address ?? /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "tag amber", children: "Not set" }) },
+        { k: "Last changed", v: fmtTime(s.updated_at) }
+      ] }),
+      edit && !draft && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { className: "btn gold", onClick: startEdit, "data-testid": "settings-edit", children: "Change\u2026" }),
+      !edit && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("small", { className: "muted", children: "Only the Owner or an Admin can change these." })
+    ] }),
+    draft && /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "card boxed stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "Company name (required)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("input", { type: "text", value: draft.company_name, maxLength: 200, onChange: (e) => setDraft({ ...draft, company_name: e.target.value }), "data-testid": "set-company" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "Support email (leave empty to clear)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("input", { type: "email", value: draft.support_email, maxLength: 320, onChange: (e) => setDraft({ ...draft, support_email: e.target.value }), "data-testid": "set-email" })
+      ] }),
+      !emailOk && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("small", { className: "error", children: "That does not look like an email address." }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { children: "Business address (leave empty to clear)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("textarea", { value: draft.business_address, maxLength: 500, onChange: (e) => setDraft({ ...draft, business_address: e.target.value }), "data-testid": "set-address" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { className: "btn", onClick: () => setDraft(null), children: "Cancel" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("button", { className: "btn gold", disabled: !Object.keys(changes).length || !emailOk || !nameOk, onClick: () => setConfirm(changes), "data-testid": "settings-save", children: "Save\u2026" })
+      ] })
+    ] }),
+    done && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("small", { role: "status", className: "gold", children: done }),
+    confirm && /* @__PURE__ */ (0, import_jsx_runtime14.jsx)(
+      ConfirmDialog,
+      {
+        title: "Change shared settings",
+        body: /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("ul", { children: Object.entries(confirm).map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime14.jsxs)("li", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("b", { children: k.replace("_", " ") }),
+          ": ",
+          v ? v : /* @__PURE__ */ (0, import_jsx_runtime14.jsx)("i", { children: "cleared" })
+        ] }, k)) }),
+        confirmLabel: "Save settings",
+        onClose: () => setConfirm(null),
+        onConfirm: async (reason) => {
+          try {
+            setS(await api2.setSettings(confirm, reason));
+          } catch (e) {
+            throw new Error(errText(e));
+          }
+          setDraft(null);
+          setDone("Settings saved.");
+        }
+      }
+    )
+  ] });
+}
+
+// src/screens/Cases.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react14 = __toESM(require_react(), 1);
+var import_jsx_runtime15 = __toESM(require_jsx_runtime(), 1);
+var STATUS_TABS = [
+  { s: "open", label: "Open" },
+  { s: "supplied", label: "Supplied" },
+  { s: "closed", label: "Closed" },
+  { s: null, label: "All" }
+];
+var CASE_STATUS_LABEL = { open: "Open", supplied: "Supplied", closed: "Closed" };
+function CaseStatusTag({ s }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: `tag ${s === "open" ? "amber" : s === "supplied" ? "gold" : "ok"}`, "data-testid": "case-status", children: CASE_STATUS_LABEL[s] });
+}
+var today = () => new Date(Date.now() + 8 * 36e5).toISOString().slice(0, 10);
+var daysLeft = (deadline) => deadline ? Math.ceil((Date.parse(`${deadline}T23:59:59+08:00`) - Date.now()) / 864e5) : null;
+function CasesScreen() {
+  const { api: api2, me, go } = useAdmin();
+  const regulator = me.role === "regulator";
+  const [status, setStatus] = (0, import_react14.useState)(regulator ? null : "open");
+  const [rows, setRows] = (0, import_react14.useState)(null);
+  const [err, setErr] = (0, import_react14.useState)(null);
+  const [q, setQ] = (0, import_react14.useState)("");
+  const [applied, setApplied] = (0, import_react14.useState)(null);
+  const [creating, setCreating] = (0, import_react14.useState)(false);
+  const load = (0, import_react14.useCallback)(async () => {
+    setErr(null);
+    setRows(null);
+    try {
+      setRows(await api2.cases(status, applied));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, status, applied]);
+  (0, import_react14.useEffect)(() => {
+    void load();
+  }, [load]);
+  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h1", { className: "spacer", children: regulator ? "My case" : "Regulator Request Cases" }),
+      can(me.role, "editCases") && !creating && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { className: "btn gold", onClick: () => setCreating(true), "data-testid": "case-new", children: "New case" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "muted", style: { margin: 0 }, children: regulator ? "The case you were given read-only access to. Open it to see the agents and the packs prepared for you." : "One case per request from JPPH, the police, a court, the agents\u2019 board, or an agent asking for a copy of their own data (PDPA). Cases are kept 7 years and cannot be deleted." }),
+    creating && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(NewCaseForm, { onCancel: () => setCreating(false), onCreated: (c) => {
+      setCreating(false);
+      go({ k: "case", id: c.id });
+    } }),
+    !regulator && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)(import_jsx_runtime15.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "tabs", children: STATUS_TABS.map((t) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { "aria-pressed": status === t.s, onClick: () => setStatus(t.s), "data-testid": `cases-tab-${t.label.toLowerCase()}`, children: t.label }, t.label)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("form", { className: "row", onSubmit: (e) => {
+        e.preventDefault();
+        setApplied(q.trim() || null);
+      }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("input", { type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Case number, officer, their reference or words in the request", style: { flex: 1, minWidth: 200 }, "aria-label": "Filter cases" }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { className: "btn", type: "submit", children: "Filter" })
+      ] })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
+    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(Loading, { text: "Loading cases\u2026" }),
+    rows && rows.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("p", { className: "muted", "data-testid": "cases-empty", children: [
+      "No cases",
+      status ? ` that are ${CASE_STATUS_LABEL[status].toLowerCase()}` : "",
+      "."
+    ] }),
+    rows && rows.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("div", { className: "list", "data-testid": "cases-list", children: rows.map((c) => {
+      const d = c.status === "closed" ? null : daysLeft(c.deadline);
+      return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("button", { className: "item", onClick: () => go({ k: "case", id: c.id }), "data-testid": "case-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("span", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("b", { className: "spacer", children: c.case_no }),
+          /* @__PURE__ */ (0, import_jsx_runtime15.jsx)(CaseStatusTag, { s: c.status }),
+          d !== null && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: `tag ${d < 0 ? "red" : d <= 3 ? "amber" : ""}`, children: d < 0 ? `${-d} day(s) late` : `${d} day(s) left` })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("small", { children: [
+          REQUESTER_LABEL[c.requester_type] ?? c.requester_type,
+          " \xB7 ",
+          c.requester_name,
+          c.requester_ref ? ` \xB7 ${c.requester_ref}` : ""
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("br", {}),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("small", { className: "muted", children: [
+          c.description.slice(0, 140),
+          c.description.length > 140 ? "\u2026" : ""
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("br", {}),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("small", { className: "muted", children: [
+          "Received ",
+          c.received_on,
+          c.deadline ? ` \xB7 deadline ${c.deadline}` : "",
+          " \xB7 ",
+          typeof c.agents === "number" ? c.agents : c.agents.length,
+          " agent(s) \xB7 ",
+          typeof c.packs === "number" ? c.packs : c.packs.length,
+          " pack(s)"
+        ] })
+      ] }, c.id);
+    }) })
+  ] });
+}
+function NewCaseForm({ onCancel, onCreated }) {
+  const { api: api2 } = useAdmin();
+  const [f, setF] = (0, import_react14.useState)({ requester_type: "jpph", requester_name: "", requester_ref: "", requester_contact: "", received_on: today(), deadline: "", description: "" });
+  const [busy, setBusy] = (0, import_react14.useState)(false);
+  const [err, setErr] = (0, import_react14.useState)(null);
+  const ok = f.requester_name.trim() && f.description.trim() && /^\d{4}-\d{2}-\d{2}$/.test(f.received_on) && (!f.deadline || f.deadline >= f.received_on);
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      onCreated(await api2.caseCreate({ ...f, deadline: f.deadline || void 0 }));
+    } catch (e) {
+      setErr(errText(e));
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "card boxed stack", "data-testid": "case-form", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("h2", { children: "New case" }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "Who is asking" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("select", { value: f.requester_type, onChange: (e) => setF({ ...f, requester_type: e.target.value }), "data-testid": "case-type", children: Object.keys(REQUESTER_LABEL).map((k) => /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("option", { value: k, children: REQUESTER_LABEL[k] }, k)) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: f.requester_type === "pdpa" ? "Agent\u2019s name (as written in their request)" : "Officer and office" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("input", { type: "text", value: f.requester_name, maxLength: 200, onChange: (e) => setF({ ...f, requester_name: e.target.value }), "data-testid": "case-name" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "Their reference number (optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("input", { type: "text", value: f.requester_ref, maxLength: 120, onChange: (e) => setF({ ...f, requester_ref: e.target.value }), "data-testid": "case-ref" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "Contact (email / phone / address, optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("input", { type: "text", value: f.requester_contact, maxLength: 300, onChange: (e) => setF({ ...f, requester_contact: e.target.value }) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", style: { flex: 1, minWidth: 150 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "Received on" }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("input", { type: "date", value: f.received_on, onChange: (e) => setF({ ...f, received_on: e.target.value }), "data-testid": "case-received" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", style: { flex: 1, minWidth: 150 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "Deadline (optional)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("input", { type: "date", value: f.deadline, min: f.received_on, onChange: (e) => setF({ ...f, deadline: e.target.value }), "data-testid": "case-deadline" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { children: "What was asked for" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("textarea", { value: f.description, maxLength: 4e3, onChange: (e) => setF({ ...f, description: e.target.value }), "data-testid": "case-desc" })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("p", { className: "error", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { className: "btn", onClick: onCancel, disabled: busy, children: "Cancel" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("button", { className: "btn gold", disabled: !ok || busy, onClick: () => void save(), "data-testid": "case-create", children: busy ? "Saving\u2026" : "Create case" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime15.jsx)("small", { className: "muted", children: "The case number is given by the database (CASE-YYYY-####). Creating it is recorded in the Master Audit Log." })
+  ] });
+}
+
+// src/screens/Case.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react15 = __toESM(require_react(), 1);
+var import_jsx_runtime16 = __toESM(require_jsx_runtime(), 1);
+var plusDays = (n) => new Date(Date.now() + 8 * 36e5 + n * 864e5).toISOString().slice(0, 10);
+var sizeText = (b) => b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+var KIND_LABEL2 = {
+  case_pack: "Case pack",
+  agent_profile: "Agent profile export",
+  pdpa_access: "PDPA copy for the agent",
+  board_report: "Monthly Board report",
+  audit_bundle: "Annual audit bundle"
+};
+function CaseScreen({ id }) {
+  const { api: api2, me, go } = useAdmin();
+  const [c, setC] = (0, import_react15.useState)(null);
+  const [err, setErr] = (0, import_react15.useState)(null);
+  const [ask, setAsk] = (0, import_react15.useState)(null);
+  const [msg, setMsg] = (0, import_react15.useState)(null);
+  const edit = can(me.role, "editCases");
+  const owner = can(me.role, "grantRegulator");
+  const load = (0, import_react15.useCallback)(async () => {
+    setErr(null);
+    try {
+      setC(await api2.caseGet(id));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, id]);
+  (0, import_react15.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!c) return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Loading, { text: "Loading case\u2026" });
+  const agents = Array.isArray(c.agents) ? c.agents : [];
+  const current = agents.filter((a) => !a.removed_at);
+  const packs = (Array.isArray(c.packs) ? c.packs : []).filter((p) => p.stored);
+  const closed = c.status === "closed";
+  const d = closed ? null : daysLeft(c.deadline);
+  const run = async (reason) => {
+    if (!ask) return;
+    try {
+      let next;
+      if (ask.k === "status") next = await api2.caseUpdate(c.id, { status: ask.status, ...ask.outcome.trim() ? { outcome: ask.outcome.trim() } : {} }, reason);
+      else if (ask.k === "add") next = await api2.caseAddAgent(c.id, ask.agent.user_id, ask.from || null, ask.to || null, reason);
+      else if (ask.k === "remove") next = await api2.caseRemoveAgent(c.id, ask.agent.user_id, reason);
+      else if (ask.k === "grant") next = await api2.caseGrant(c.id, ask.email.trim(), (/* @__PURE__ */ new Date(`${ask.until}T23:59:59+08:00`)).toISOString(), reason);
+      else next = await api2.caseRevoke(c.id, ask.grant.admin_user, reason);
+      setC(next);
+      setMsg({ ok: true, text: ask.k === "grant" ? `Access given to ${ask.email.trim()} until ${ask.until}. They sign in to Admin EAB with that Google account.` : "Saved." });
+    } catch (e) {
+      throw new Error(errText(e));
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "split", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("aside", { className: "side stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "card boxed stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h1", { style: { fontSize: "1.25rem" }, className: "spacer", children: c.case_no }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(CaseStatusTag, { s: c.status })
+        ] }),
+        d !== null && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: `tag ${d < 0 ? "red" : d <= 3 ? "amber" : ""}`, style: { alignSelf: "flex-start" }, children: d < 0 ? `${-d} day(s) past the deadline` : `${d} day(s) to the deadline` }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(Kv, { rows: [
+          { k: "Requested by", v: REQUESTER_LABEL[c.requester_type] ?? c.requester_type },
+          { k: c.requester_type === "pdpa" ? "Agent" : "Officer / office", v: c.requester_name },
+          { k: "Their reference", v: c.requester_ref ?? "" },
+          { k: "Contact", v: c.requester_contact ?? "" },
+          { k: "Received", v: c.received_on },
+          { k: "Deadline", v: c.deadline ?? "" },
+          { k: "Request", v: c.description },
+          ...c.outcome ? [{ k: "Outcome", v: c.outcome }] : [],
+          { k: "Opened", v: fmtTime(c.created_at) },
+          ...c.closed_at ? [{ k: "Closed", v: fmtTime(c.closed_at) }] : []
+        ] }),
+        edit && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(StatusButtons, { c, onAsk: (status, outcome) => setAsk({ k: "status", status, outcome }) })
+      ] }),
+      edit && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(PackBox, { c, onBuilt: (text, ok) => {
+        setMsg({ ok, text });
+        void load();
+      } }),
+      owner && !closed && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+        GrantBox,
+        {
+          c,
+          grants: c.grants ?? [],
+          agentsCount: current.length,
+          onGrant: (email, until) => setAsk({ k: "grant", email, until }),
+          onRevoke: (g) => setAsk({ k: "revoke", grant: g })
+        }
+      ),
+      msg && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: `notice ${msg.ok ? "ok" : "error"}`, role: "status", "data-testid": "case-msg", children: msg.text })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("section", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("h2", { children: [
+        "Agents (",
+        current.length,
+        ")"
+      ] }),
+      current.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { className: "muted", children: "No agents on this case yet." }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "list", "data-testid": "case-agents", children: agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: `item ${a.removed_at ? "deleted" : ""}`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "linkbtn spacer", style: { textAlign: "left" }, onClick: () => go({ k: "agent", id: a.user_id }), children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: a.name || a.email }) }),
+          a.removed_at ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "tag", children: [
+            "Removed ",
+            fmtTime(a.removed_at)
+          ] }) : edit && !closed && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn small", onClick: () => setAsk({ k: "remove", agent: a }), "data-testid": "case-remove-agent", children: "Remove" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("small", { className: "muted", children: [
+          a.email,
+          " \xB7 period ",
+          a.date_from ?? "start",
+          " to ",
+          a.date_to ?? "today"
+        ] })
+      ] }, a.user_id)) }),
+      edit && !closed && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(AddAgent, { onPick: (agent, from, to) => setAsk({ k: "add", agent, from, to }), exclude: current.map((a) => a.user_id) }, current.map((a) => a.user_id).join(",")),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("h2", { children: [
+        "Packs (",
+        packs.length,
+        ")"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(PackList, { packs })
+    ] }),
+    ask && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)(
+      ConfirmDialog,
+      {
+        title: ask.k === "status" ? `Mark case ${CASE_STATUS_LABEL[ask.status].toLowerCase()}` : ask.k === "add" ? "Add agent to case" : ask.k === "remove" ? "Remove agent from case" : ask.k === "grant" ? "Give regulator access" : "End regulator access",
+        danger: ask.k === "remove" || ask.k === "grant" || ask.k === "revoke" || ask.k === "status" && ask.status === "closed",
+        body: ask.k === "status" ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { children: [
+          c.case_no,
+          " \u2192 ",
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: CASE_STATUS_LABEL[ask.status] }),
+          ask.outcome.trim() ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+            ". Outcome: \u201C",
+            ask.outcome.trim(),
+            "\u201D"
+          ] }) : null,
+          ask.status === "closed" ? ". A closed case cannot get new agents or regulator access." : ""
+        ] }) : ask.k === "add" ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { children: [
+          ask.agent.name || ask.agent.email,
+          " (",
+          ask.agent.email,
+          "), period ",
+          ask.from || "start",
+          " to ",
+          ask.to || "today",
+          ". Any regulator already given access to this case will see this agent too."
+        ] }) : ask.k === "remove" ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { children: [
+          ask.agent.email,
+          " is taken off ",
+          c.case_no,
+          " (kept in the record as removed). Regulator access to this agent through this case ends now."
+        ] }) : ask.k === "grant" ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: ask.email.trim() }),
+          " can sign in to Admin EAB until ",
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: ask.until }),
+          " and see, read-only, the ",
+          current.length,
+          " agent(s) on ",
+          c.case_no,
+          " and the packs in this case. Everything they open is recorded."
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("p", { children: [
+          ask.grant.email,
+          " loses access to ",
+          c.case_no,
+          " now. If they have no other case, their login is switched off."
+        ] }),
+        confirmLabel: ask.k === "status" ? "Save" : ask.k === "add" ? "Add agent" : ask.k === "remove" ? "Remove" : ask.k === "grant" ? "Give access" : "End access",
+        onClose: () => setAsk(null),
+        onConfirm: run
+      }
+    )
+  ] });
+}
+function StatusButtons({ c, onAsk }) {
+  const [outcome, setOutcome] = (0, import_react15.useState)(c.outcome ?? "");
+  const next = ["open", "supplied", "closed"].filter((s) => s !== c.status);
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "Outcome / what was supplied (optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("textarea", { value: outcome, maxLength: 4e3, onChange: (e) => setOutcome(e.target.value), style: { minHeight: 60 }, "data-testid": "case-outcome" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "row", children: next.map((s) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("button", { className: `btn small ${s === "closed" ? "" : "gold"}`, onClick: () => onAsk(s, outcome), "data-testid": `case-mark-${s}`, children: [
+      "Mark ",
+      CASE_STATUS_LABEL[s].toLowerCase()
+    ] }, s)) })
+  ] });
+}
+function PackBox({ c, onBuilt }) {
+  const { api: api2, me } = useAdmin();
+  const [busy, setBusy] = (0, import_react15.useState)(null);
+  const current = (Array.isArray(c.agents) ? c.agents : []).filter((a) => !a.removed_at);
+  const go = async (format) => {
+    setBusy("Starting\u2026");
+    try {
+      const r = await buildCasePack(api2, me.email, c, format, setBusy);
+      onBuilt(`${r.pack.reference}: ${r.how} \xB7 kept in the Document Vault \xB7 fingerprint ${shortFp(r.pack.sha256)}`, true);
+    } catch (e) {
+      onBuilt(errText(e), false);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "card stack", "data-testid": "pack-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h3", { children: c.requester_type === "pdpa" ? "Make the agent\u2019s data copy" : "Build a pack for the requester" }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: "One file with a cover page and every agent\u2019s complete record (listings including deleted ones, change history, sign-ins in each agent\u2019s period, Terms answers). It gets a reference number and fingerprints and is kept in the Document Vault." }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn gold", disabled: !!busy || !current.length, onClick: () => void go("pdf"), "data-testid": "pack-pdf", children: "PDF" }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn gold", disabled: !!busy || !current.length, onClick: () => void go("xlsx"), "data-testid": "pack-xlsx", children: "Excel" })
+    ] }),
+    !current.length && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: "Add an agent first." }),
+    busy && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { role: "status", children: busy })
+  ] });
+}
+function GrantBox({ c, grants, agentsCount, onGrant, onRevoke }) {
+  const [email, setEmail] = (0, import_react15.useState)("");
+  const [until, setUntil] = (0, import_react15.useState)(plusDays(14));
+  const valid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) && until > plusDays(0) && until <= plusDays(90) && agentsCount > 0;
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "card stack", "data-testid": "grant-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h3", { children: "Regulator access" }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: "Let an officer look at this case themselves, read-only, until a date (at most 90 days). They sign in to Admin EAB with their own Google account (it must have signed in once). They see only this case\u2019s agents and packs. They cannot export, change anything, or see other staff." }),
+    grants.map((g) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "row small", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("span", { className: "spacer", children: [
+        g.email,
+        " \xB7 until ",
+        fmtTime(g.expires_at)
+      ] }),
+      g.active ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "tag ok", children: "Active" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn small", onClick: () => onRevoke(g), "data-testid": "grant-revoke", children: "End now" })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "tag", children: "Ended" })
+    ] }, g.admin_user)),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "Officer\u2019s Google email" }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("input", { type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "officer@gmail.com", "data-testid": "grant-email" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "Access ends (end of day, Malaysia time)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("input", { type: "date", value: until, min: plusDays(1), max: plusDays(90), onChange: (e) => setUntil(e.target.value), "data-testid": "grant-until" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn", disabled: !valid, onClick: () => onGrant(email, until), "data-testid": "grant-give", children: "Give access\u2026" }),
+    agentsCount === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: "Add an agent to the case first." }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: c.case_no })
+  ] });
+}
+function AddAgent({ onPick, exclude }) {
+  const { api: api2 } = useAdmin();
+  const [q, setQ] = (0, import_react15.useState)("");
+  const [hits, setHits] = (0, import_react15.useState)(null);
+  const [pick, setPick] = (0, import_react15.useState)(null);
+  const [from, setFrom] = (0, import_react15.useState)("");
+  const [to, setTo] = (0, import_react15.useState)("");
+  const [err, setErr] = (0, import_react15.useState)(null);
+  const find = async (e) => {
+    e.preventDefault();
+    setErr(null);
+    setPick(null);
+    if (q.trim().length < 2) return;
+    try {
+      setHits((await api2.agents("all", q.trim(), 20)).filter((a) => !exclude.includes(a.user_id)));
+    } catch (x) {
+      setErr(errText(x));
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "card stack", "data-testid": "add-agent", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("h3", { children: "Add an agent" }),
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("form", { className: "row", onSubmit: find, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("input", { type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Agent name or email", style: { flex: 1, minWidth: 180 }, "data-testid": "add-agent-q" }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn", type: "submit", children: "Find" })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { className: "error", children: err }),
+    hits && hits.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: "No agent found (or already on the case)." }),
+    hits && hits.length > 0 && !pick && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "list", children: hits.map((a) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("button", { className: "item", onClick: () => setPick(a), "data-testid": "add-agent-hit", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: a.name || a.email }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("br", {}),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: a.email })
+    ] }, a.user_id)) }),
+    pick && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("b", { children: pick.name || pick.email }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("label", { className: "field", style: { flex: 1, minWidth: 140 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "Period from (optional)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("input", { type: "date", value: from, onChange: (e) => setFrom(e.target.value) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("label", { className: "field", style: { flex: 1, minWidth: 140 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { children: "to (optional)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("input", { type: "date", value: to, min: from || void 0, onChange: (e) => setTo(e.target.value) })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn", onClick: () => setPick(null), children: "Back" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn gold", disabled: !!(from && to && to < from), onClick: () => onPick(pick, from, to), "data-testid": "add-agent-go", children: "Add\u2026" })
+      ] })
+    ] })
+  ] });
+}
+function PackList({ packs, showCase = false }) {
+  const { api: api2 } = useAdmin();
+  const [busy, setBusy] = (0, import_react15.useState)(null);
+  const [msg, setMsg] = (0, import_react15.useState)(null);
+  if (!packs.length) return /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("p", { className: "muted", "data-testid": "packs-empty", children: "No packs yet." });
+  const get = async (p) => {
+    setBusy(p.id);
+    setMsg(null);
+    try {
+      setMsg({ ok: true, text: `${p.reference}: ${await downloadPack(api2, p)} (fingerprint checked)` });
+    } catch (e) {
+      setMsg({ ok: false, text: e.message?.startsWith("WARNING") ? e.message : errText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("table", { "data-testid": "packs-table", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", { children: "Made" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", { children: "Reference" }),
+        showCase && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", { children: "Case / agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", { children: "What" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", { children: "File" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", { children: "Fingerprint" }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("tbody", { children: packs.map((p) => /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("td", { children: [
+          fmtTime(p.created_at),
+          p.created_by_email ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: p.created_by_email })
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("td", { className: "mono", children: p.reference }),
+        showCase && /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("td", { children: [
+          p.case_no ?? "",
+          p.agent_email ? /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)(import_jsx_runtime16.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("small", { className: "muted", children: p.agent_email })
+          ] }) : null
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("td", { children: KIND_LABEL2[p.kind] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsxs)("td", { children: [
+          p.format.toUpperCase(),
+          " \xB7 ",
+          sizeText(p.bytes)
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("td", { className: "mono", title: p.sha256, children: shortFp(p.sha256) }),
+        /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("button", { className: "btn small", disabled: busy === p.id, onClick: () => void get(p), "data-testid": "pack-download", children: busy === p.id ? "Getting\u2026" : "Download" }) })
+      ] }, p.id)) })
+    ] }) }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime16.jsx)("div", { className: `notice ${msg.ok ? "ok" : "error"}`, role: "status", "data-testid": "pack-msg", children: msg.text })
+  ] });
+}
+
+// src/screens/Vault.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react16 = __toESM(require_react(), 1);
+var import_jsx_runtime17 = __toESM(require_jsx_runtime(), 1);
+function VaultScreen() {
+  const { api: api2, me, go } = useAdmin();
+  const [rows, setRows] = (0, import_react16.useState)(null);
+  const [err, setErr] = (0, import_react16.useState)(null);
+  const load = (0, import_react16.useCallback)(async () => {
+    setErr(null);
+    try {
+      setRows(await api2.vault());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react16.useEffect)(() => {
+    void load();
+  }, [load]);
+  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h1", { children: "Document Vault" }),
+    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "muted", style: { margin: 0 }, children: "Every case pack and agent export, kept for 7 years. Nobody can change or delete a file here. Downloads are recorded." }),
+    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(CheckFile, {}),
+    can(me.role, "reports") && /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("small", { className: "muted spacer", children: "Weekly summary reports are kept here too and listed in Scheduled Reports." }),
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("button", { className: "btn small", onClick: () => go({ k: "weeklyReports" }), "data-testid": "vault-reports", children: "Weekly reports" })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
+    !rows && !err && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Loading, {}),
+    rows && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(PackList, { packs: rows, showCase: true })
+  ] });
+}
+function CheckFile() {
+  const { api: api2, me } = useAdmin();
+  const [busy, setBusy] = (0, import_react16.useState)(false);
+  const [res, setRes] = (0, import_react16.useState)(null);
+  const [err, setErr] = (0, import_react16.useState)(null);
+  const onFile = async (f) => {
+    if (!f) return;
+    setBusy(true);
+    setErr(null);
+    setRes(null);
+    try {
+      const sha = await sha256Hex(f);
+      const pack = await api2.checkFile(sha);
+      const report = !pack && can(me.role, "reports") ? await api2.checkReport(sha) : null;
+      setRes({ name: f.name, sha, pack, report });
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "card boxed stack", "data-testid": "check-file", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("h3", { children: "Check a file" }),
+    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("small", { className: "muted", children: "Choose a PDF or Excel file. Its fingerprint is worked out on this device (the file is not uploaded) and looked up in the vault." }),
+    /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(
+      "input",
+      {
+        type: "file",
+        accept: ".pdf,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        onChange: (e) => void onFile(e.target.files?.[0]),
+        disabled: busy,
+        "data-testid": "check-file-input"
+      }
+    ),
+    busy && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("small", { role: "status", children: "Checking\u2026" }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("p", { className: "error", children: err }),
+    res && (res.pack ? /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "notice ok", "data-testid": "check-file-ok", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: "Genuine and unchanged." }),
+      " \u201C",
+      res.name,
+      "\u201D is exactly the file made by Admin EAB:",
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Kv, { rows: [
+        { k: "Reference", v: res.pack.reference },
+        { k: "What", v: KIND_LABEL2[res.pack.kind] },
+        { k: "Case", v: res.pack.case_no ?? "" },
+        { k: "Agent", v: res.pack.agent_email ?? "" },
+        { k: "Made", v: `${fmtTime(res.pack.created_at)}${res.pack.created_by_email ? ` by ${res.pack.created_by_email}` : ""}` },
+        { k: "Fingerprint", v: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "mono", children: res.sha }) }
+      ] })
+    ] }) : res.report ? /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "notice ok", "data-testid": "check-file-ok", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: "Genuine and unchanged." }),
+      " \u201C",
+      res.name,
+      "\u201D is exactly the weekly report made by Admin EAB:",
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)(Kv, { rows: [
+        { k: "Reference", v: res.report.ref },
+        { k: "Week", v: `${res.report.period_from} \u2013 ${res.report.period_to}` },
+        { k: "Made", v: `${fmtTime(res.report.created_at)}${res.report.started_by_email ? ` (${res.report.trigger === "manual" ? "by" : "schedule of"} ${res.report.started_by_email})` : ""}` },
+        { k: "Fingerprint", v: /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("span", { className: "mono", children: res.sha }) }
+      ] })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime17.jsxs)("div", { className: "notice error", "data-testid": "check-file-bad", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime17.jsx)("b", { children: "Not found." }),
+      " \u201C",
+      res.name,
+      "\u201D (fingerprint ",
+      shortFp(res.sha),
+      ") is not a file Admin EAB made \u2014 or it was changed after it was made, even by one character."
+    ] }))
+  ] });
+}
+
+// src/screens/Health.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react17 = __toESM(require_react(), 1);
+
+// src/export/health.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var TARGET_LABEL = { supabase: "Supabase", aws: "AWS", other: "Other" };
+var KIND_LABEL3 = { restore_test: "Restore test", backup_check: "Backup check" };
+var RESULT_LABEL = { pass: "Passed", partial: "Partly passed", fail: "Failed" };
+function storageForecasts(s, today2) {
+  const dbPoints = s.daily.map((d) => ({ day: d.day, bytes: d.db_bytes }));
+  const filePoints = cumulativeFromUploads(s.uploads, s.today.storage_bytes, today2);
+  return {
+    db: forecast(s.today.db_bytes, s.limits.db_limit_mb * MB, dbPoints, today2),
+    files: forecast(s.today.storage_bytes, s.limits.storage_limit_mb * MB, filePoints, today2)
+  };
+}
+function buildHealthDoc(x) {
+  const f = storageForecasts(x.storage, x.today);
+  const b = [
+    { t: "title", text: "System Health report", sub: `${x.companyName ?? ""}${x.companyName ? " \xB7 " : ""}Estate Agent AI Buddy` },
+    { t: "rows", rows: [
+      { k: "Reference", v: x.reference, strong: true },
+      { k: "Made", v: `${fmtTime(x.createdAt)} by ${x.adminEmail}` },
+      { k: "Contains", v: "Sizes, counts and backup records only. No agent personal data." }
+    ] },
+    { t: "heading", text: "Storage" },
+    { t: "rows", rows: [
+      { k: "Database", v: `${fmtBytes(f.db.used)} of ${fmtBytes(f.db.limit)} (${fmtPct(f.db.usedPct)})`, warn: f.db.level !== "ok" },
+      { k: "Database forecast", v: f.db.sentence },
+      { k: "Stored files", v: `${fmtBytes(f.files.used)} of ${fmtBytes(f.files.limit)} (${fmtPct(f.files.usedPct)}) \xB7 ${x.storage.today.storage_files} files`, warn: f.files.level !== "ok" },
+      { k: "Files forecast", v: f.files.sentence },
+      ...x.storage.buckets.map((bk) => ({ k: `  ${bk.bucket}`, v: `${fmtBytes(bk.bytes)} \xB7 ${bk.files} files`, sub: true }))
+    ] },
+    { t: "heading", text: "Backups" },
+    { t: "rows", rows: [
+      { k: "Supabase", v: "Backups are made by Supabase according to the plan. Proof that they restore is the test log below." },
+      { k: "AWS", v: x.storage.limits.aws_backup === "set_up" ? `Set up${x.storage.limits.aws_note ? ` \u2014 ${x.storage.limits.aws_note}` : ""}` : "Not set up yet", warn: x.storage.limits.aws_backup !== "set_up" },
+      { k: "Last restore test passed", v: x.storage.backup_tests.last_restore_pass ? `${x.storage.backup_tests.last_restore_pass.tested_on} (${x.storage.backup_tests.last_restore_pass.ref})` : "None recorded", warn: !x.storage.backup_tests.last_restore_pass },
+      { k: "Recorded checks and tests", v: String(x.tests.length) }
+    ] }
+  ];
+  if (x.tests.length) {
+    b.push({ t: "heading", text: "Backup check and restore test log" });
+    for (const t of x.tests) b.push({ t: "rows", rows: [
+      { k: t.ref, v: `${t.tested_on} \xB7 ${TARGET_LABEL[t.target]} \xB7 ${KIND_LABEL3[t.kind]} \xB7 ${RESULT_LABEL[t.result]}`, strong: true, warn: t.result !== "pass" },
+      { k: "What", v: t.what, sub: true },
+      ...t.duration_minutes != null ? [{ k: "Took", v: `${t.duration_minutes} minutes`, sub: true }] : [],
+      ...t.notes ? [{ k: "Notes", v: t.notes, sub: true }] : [],
+      { k: "Recorded", v: `${fmtTime(t.recorded_at)} by ${t.recorded_by_email ?? t.recorded_by}`, sub: true }
+    ] });
+  }
+  const c = x.db.connections, st = x.db.stats;
+  b.push(
+    { t: "heading", text: "Database health" },
+    { t: "rows", rows: [
+      { k: "Checked", v: fmtTime(x.db.checked_at) },
+      { k: "Postgres", v: x.db.postgres },
+      { k: "Connections", v: `${c.total} of ${c.max} (${c.active} working, ${c.idle} idle)`, warn: c.total / c.max > 0.8 },
+      { k: "Cache hit rate", v: fmtPct(st?.cache_hit_pct ?? null, 2), warn: (st?.cache_hit_pct ?? 100) < 95 },
+      { k: "Slow queries now", v: `${x.db.slow_queries} (longest ${x.db.longest_query_s} s)`, warn: x.db.slow_queries > 0 },
+      { k: "Deadlocks", v: String(st?.deadlocks ?? 0), warn: (st?.deadlocks ?? 0) > 0 }
+    ] },
+    { t: "heading", text: "Largest tables" },
+    { t: "rows", rows: x.db.tables.slice(0, 25).map((t) => ({ k: t.name, v: `${fmtBytes(t.total_bytes)} \xB7 ${t.rows.toLocaleString()} rows${t.dead_rows ? ` \xB7 ${t.dead_rows} dead` : ""}` })) }
+  );
+  return { blocks: b, footer: `${x.reference} \xB7 System Health report \xB7 ${fmtTime(x.createdAt)}` };
+}
+function buildHealthSheets(x) {
+  const f = storageForecasts(x.storage, x.today);
+  return [
+    { name: "Summary", widths: [30, 70], rows: [
+      ["System Health report", x.reference],
+      ["Made", `${fmtTime(x.createdAt)} by ${x.adminEmail}`],
+      ["Company", x.companyName ?? ""],
+      [],
+      ["Database used (bytes)", f.db.used],
+      ["Database limit (bytes)", f.db.limit],
+      ["Database forecast", f.db.sentence],
+      ["Stored files used (bytes)", f.files.used],
+      ["Stored files limit (bytes)", f.files.limit],
+      ["Stored files count", x.storage.today.storage_files],
+      ["Files forecast", f.files.sentence],
+      ["AWS backup", x.storage.limits.aws_backup === "set_up" ? `Set up ${x.storage.limits.aws_note ?? ""}`.trim() : "Not set up"],
+      ["Last restore test passed", x.storage.backup_tests.last_restore_pass?.tested_on ?? "None recorded"],
+      ["Connections", `${x.db.connections.total} of ${x.db.connections.max}`],
+      ["Cache hit %", x.db.stats?.cache_hit_pct ?? ""],
+      ["Deadlocks", x.db.stats?.deadlocks ?? 0],
+      ["Postgres", x.db.postgres]
+    ] },
+    { name: "Backup tests", widths: [14, 12, 10, 14, 12, 60, 10, 40, 22, 28], rows: [
+      ["Reference", "Date", "Where", "What kind", "Result", "What was checked or restored", "Minutes", "Notes", "Recorded at", "Recorded by"],
+      ...x.tests.map((t) => [t.ref, t.tested_on, TARGET_LABEL[t.target], KIND_LABEL3[t.kind], RESULT_LABEL[t.result], t.what, t.duration_minutes ?? "", t.notes ?? "", fmtTime(t.recorded_at), t.recorded_by_email ?? t.recorded_by])
+    ] },
+    { name: "Storage by day", widths: [12, 16, 16, 12], rows: [
+      ["Day", "Database bytes", "Stored file bytes", "Files"],
+      ...x.storage.daily.map((d) => [d.day, d.db_bytes, d.storage_bytes, d.storage_files])
+    ] },
+    { name: "Buckets", widths: [20, 10, 16, 22, 22], rows: [
+      ["Bucket", "Files", "Bytes", "First file", "Last file"],
+      ...x.storage.buckets.map((b) => [b.bucket, b.files, b.bytes, fmtTime(b.first_at), fmtTime(b.last_at)])
+    ] },
+    { name: "Tables", widths: [30, 14, 14, 12, 10, 22, 22], rows: [
+      ["Table", "Total bytes", "Data bytes", "Rows", "Dead rows", "Last vacuum", "Last analyse"],
+      ...x.db.tables.map((t) => [t.name, t.total_bytes, t.data_bytes, t.rows, t.dead_rows, fmtTime(t.last_vacuum), fmtTime(t.last_analyze)])
+    ] }
+  ];
+}
+var healthFileName = (reference, ext) => `System-Health-${reference}.${ext}`;
+async function exportHealthReport(api2, adminEmail, format, today2) {
+  const [db, storage, tests, companyName] = await Promise.all([
+    api2.healthDb(),
+    api2.healthStorage(),
+    api2.backupTests(1e3),
+    api2.settings().then((s) => s.company_name).catch(() => void 0)
+  ]);
+  const reg = await api2.startExport("health_report", format, null, { backup_tests: tests.length });
+  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, companyName, today: today2, db, storage, tests };
+  const name = healthFileName(reg.reference, format);
+  const blob = format === "pdf" ? await renderPagesToPdf(layoutDocument(buildHealthDoc(input), canvasMeasure()), `System Health ${reg.reference}`) : new Blob([buildXlsx(buildHealthSheets(input), { title: `System Health ${reg.reference}`, author: adminEmail })], { type: XLSX_MIME });
+  return { reference: reg.reference, how: await saveLocally(blob, name) };
+}
+
+// src/screens/Health.tsx
+var import_jsx_runtime18 = __toESM(require_jsx_runtime(), 1);
+var TABS3 = [
+  { k: "db", label: "Database" },
+  { k: "storage", label: "Storage" },
+  { k: "backups", label: "Backups" },
+  { k: "sync", label: "Sync" },
+  { k: "push", label: "Push" },
+  { k: "performance", label: "Performance" },
+  { k: "errors", label: "Problems" }
+];
+function HealthScreen({ tab: first }) {
+  const { me } = useAdmin();
+  const [tab, setTab] = (0, import_react17.useState)(first);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h1", { className: "spacer", children: "System Health" }),
+      can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(HealthExport, {})
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tabs", role: "group", "aria-label": "System Health sections", children: TABS3.map((t) => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { "aria-pressed": tab === t.k, onClick: () => setTab(t.k), "data-testid": `htab-${t.k}`, children: t.label }, t.k)) }),
+    tab === "db" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(DbTab, {}),
+    tab === "storage" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(StorageTab, {}),
+    tab === "backups" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(BackupsTab, {}),
+    tab === "sync" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(SyncTab, {}),
+    tab === "push" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(PushTab, {}),
+    tab === "performance" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(PerformanceTab, {}),
+    tab === "errors" && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorsTab, {})
+  ] });
+}
+function useLoad4(fn, deps) {
+  const [data, setData] = (0, import_react17.useState)(null);
+  const [err, setErr] = (0, import_react17.useState)(null);
+  const [busy, setBusy] = (0, import_react17.useState)(false);
+  const load = (0, import_react17.useCallback)(async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setData(await fn());
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  }, deps);
+  (0, import_react17.useEffect)(() => {
+    void load();
+  }, [load]);
+  return { data, err, busy, load, setData };
+}
+function Head2({ title, checked, onRefresh, busy, children }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { className: "spacer", children: title }),
+    children,
+    checked && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("small", { className: "muted", children: [
+      "Checked ",
+      fmtTime(checked)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn small", onClick: onRefresh, disabled: busy, "data-testid": "health-refresh", children: busy ? "Checking\u2026" : "Refresh" })
+  ] });
+}
+function Stat2({ label, value, sub, level }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: `stat ${level ?? ""}`, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "l", children: label }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { className: "v", children: value }),
+    sub && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: sub })
+  ] });
+}
+function Meter({ title, used, limit, sub, testid }) {
+  const p = pct(used, limit), lvl = levelFor(p);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: `card boxed meter ${lvl}`, "data-testid": testid, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { className: "spacer", children: title }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { className: `tag ${lvl === "ok" ? "ok" : lvl === "amber" ? "amber" : "red"}`, children: [
+        fmtPct(p),
+        " used"
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "bar", role: "meter", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.round(Math.min(p, 100)), "aria-label": `${title} used`, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { style: { width: `${Math.min(p, 100)}%` } }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row small", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { children: [
+        "Used ",
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: fmtBytes(used) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { children: [
+        "Free ",
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: fmtBytes(Math.max(0, limit - used)) }),
+        " of ",
+        fmtBytes(limit)
+      ] })
+    ] }),
+    sub
+  ] });
+}
+function Bars2({ items, label, redLabel }) {
+  if (!items.length) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "muted small", children: "Nothing recorded in this period." });
+  const max = Math.max(1, ...items.map((i) => i.value));
+  const w = 600, h = 140, gap = 2, bw = Math.max(2, (w - gap * items.length) / items.length);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("figure", { className: "chart", "aria-label": label, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("svg", { viewBox: `0 0 ${w} ${h}`, role: "img", preserveAspectRatio: "none", children: items.map((it, i) => {
+      const x = i * (bw + gap), vh = it.value / max * h, rh = (it.red ?? 0) / max * h;
+      return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("g", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("title", { children: `${it.label}: ${it.value}${it.red ? ` (${it.red} ${redLabel ?? "failed"})` : ""}` }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("rect", { x, y: h - vh, width: bw, height: vh, className: "b" }),
+        rh > 0 && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("rect", { x, y: h - rh, width: bw, height: rh, className: "r" })
+      ] }, i);
+    }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row small muted", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: items[0].label }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: items[items.length - 1].label })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("figcaption", { className: "small muted", children: [
+      label,
+      " \xB7 highest ",
+      max.toLocaleString(),
+      redLabel && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+        " \xB7 ",
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "error", children: "\u25A0" }),
+        " ",
+        redLabel
+      ] })
+    ] })
+  ] });
+}
+function DbTab() {
+  const { api: api2 } = useAdmin();
+  const { data: d, err, busy, load } = useLoad4(() => api2.healthDb(), [api2]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!d) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  const c = d.connections, hit = d.stats?.cache_hit_pct ?? null;
+  const connPct = pct(c.total, c.max);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-db", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "Database health", checked: d.checked_at, onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Database size", value: fmtBytes(d.db_bytes), sub: `of ${fmtBytes(d.limits.db_limit_mb * MB)} plan limit`, level: levelFor(pct(d.db_bytes, d.limits.db_limit_mb * MB)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Connections", value: `${c.total} / ${c.max}`, sub: `${c.active} working \xB7 ${c.idle} idle${c.idle_in_transaction ? ` \xB7 ${c.idle_in_transaction} stuck` : ""}`, level: levelFor(connPct) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Cache hit rate", value: fmtPct(hit, 2), sub: "99%+ is healthy", level: hit === null ? void 0 : hit < 90 ? "red" : hit < 99 ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Slow queries now", value: d.slow_queries, sub: `longest running ${d.longest_query_s} s`, level: d.slow_queries ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Deadlocks", value: d.stats?.deadlocks ?? 0, sub: d.stats?.since ? `since ${fmtTime(d.stats.since)}` : "since the server started", level: d.stats?.deadlocks ?? 0 ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Postgres", value: d.postgres })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("h3", { children: [
+      "Tables (",
+      d.tables.length,
+      "), largest first"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { "data-testid": "db-tables", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Table" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Size" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Rows" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Dead rows" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Last tidy-up" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Reads by index" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: d.tables.map((t) => {
+        const deadPct = pct(t.dead_rows, t.rows + t.dead_rows);
+        const scans = t.seq_scans + t.index_scans;
+        return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "mono", children: t.name }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: fmtBytes(t.total_bytes) }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: t.rows.toLocaleString() }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: t.dead_rows ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: deadPct > 20 ? "tag amber" : "", children: t.dead_rows.toLocaleString() }) : "0" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "small", children: t.last_vacuum ? fmtTime(t.last_vacuum) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "muted", children: "not yet" }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "small", children: scans ? fmtPct(pct(t.index_scans, scans), 0) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "muted", children: "\u2014" }) })
+        ] }, t.name);
+      }) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "\u201CDead rows\u201D are old copies left after changes; Postgres tidies them up automatically (\u201Clast tidy-up\u201D). Amber means more than 1 in 5 rows is dead." })
+  ] });
+}
+function ForecastLine({ f }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: `small ${f.daysLeft !== null && f.daysLeft < 90 ? "error" : "muted"}`, style: { margin: 0 }, "data-testid": "forecast", children: f.sentence });
+}
+function StorageTab() {
+  const { api: api2, me } = useAdmin();
+  const { data: s, err, busy, load, setData } = useLoad4(() => api2.healthStorage(), [api2]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  const today2 = todayKL();
+  const f = storageForecasts(s, today2);
+  const days = s.daily.slice(-60);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-storage", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "Storage and forecast", checked: s.checked_at, onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Meter, { title: "Database", used: f.db.used, limit: f.db.limit, testid: "meter-db", sub: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ForecastLine, { f: f.db }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+        Meter,
+        {
+          title: "Stored files (photos, documents, packs)",
+          used: f.files.used,
+          limit: f.files.limit,
+          testid: "meter-files",
+          sub: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("small", { className: "muted", children: [
+              s.today.storage_files.toLocaleString(),
+              " files"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ForecastLine, { f: f.files })
+          ] })
+        }
+      )
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Database size by day" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Bars2, { label: "Database size (one reading a day, last 60 days)", items: days.map((d) => ({ label: d.day, value: Math.round(d.db_bytes / 1024) })) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "A reading is saved the first time someone opens this screen each day (Malaysia date). Values in KB." })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Files uploaded by day" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Bars2, { label: "Uploaded per day (KB, last 180 days)", items: s.uploads.map((u) => ({ label: u.day, value: Math.round(u.bytes / 1024) })) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { "data-testid": "buckets", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Storage area" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Files" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Size" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Newest file" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: s.buckets.map((b) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "mono", children: b.bucket }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: b.files.toLocaleString() }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: fmtBytes(b.bytes) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "small", children: fmtTime(b.last_at) })
+      ] }, b.bucket)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(LimitsBox, { limits: s.limits, canEdit: can(me.role, "editHealthLimits"), onSaved: (l) => setData({ ...s, limits: l }) })
+  ] });
+}
+function LimitsBox({ limits, canEdit, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const [draft, setDraft] = (0, import_react17.useState)(null);
+  const [confirm, setConfirm] = (0, import_react17.useState)(null);
+  const [done, setDone] = (0, import_react17.useState)(null);
+  const start = () => setDraft({ db: String(limits.db_limit_mb), files: String(limits.storage_limit_mb), aws: limits.aws_backup, note: limits.aws_note ?? "" });
+  const num = (v) => /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN;
+  const patch = {};
+  if (draft) {
+    if (num(draft.db) !== limits.db_limit_mb) patch.db_limit_mb = num(draft.db);
+    if (num(draft.files) !== limits.storage_limit_mb) patch.storage_limit_mb = num(draft.files);
+    if (draft.aws !== limits.aws_backup) patch.aws_backup = draft.aws;
+    if (draft.note.trim() !== (limits.aws_note ?? "")) patch.aws_note = draft.note.trim();
+  }
+  const valid = !draft || num(draft.db) >= 1 && num(draft.files) >= 1;
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "card stack", "data-testid": "limits", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Plan limits used for the boxes" }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Kv, { rows: [
+      { k: "Database limit", v: `${limits.db_limit_mb.toLocaleString()} MB` },
+      { k: "Stored files limit", v: `${limits.storage_limit_mb.toLocaleString()} MB` },
+      { k: "AWS backup", v: limits.aws_backup === "set_up" ? `Set up${limits.aws_note ? ` \u2014 ${limits.aws_note}` : ""}` : "Not set up yet" },
+      { k: "Last changed", v: fmtTime(limits.updated_at) }
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "The database cannot see the Supabase plan, so enter the limits of your plan here (Supabase \u2192 Organization \u2192 Billing). Free plan: 500 MB database, 1,024 MB files." }),
+    canEdit && !draft && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn", onClick: start, "data-testid": "limits-edit", children: "Change\u2026" }),
+    draft && /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "grid2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "Database limit (MB)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { type: "text", inputMode: "numeric", value: draft.db, onChange: (e) => setDraft({ ...draft, db: e.target.value }), "data-testid": "limit-db" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "Stored files limit (MB)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { type: "text", inputMode: "numeric", value: draft.files, onChange: (e) => setDraft({ ...draft, files: e.target.value }), "data-testid": "limit-files" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "AWS backup" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("select", { value: draft.aws, onChange: (e) => setDraft({ ...draft, aws: e.target.value }), "data-testid": "limit-aws", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "not_set_up", children: "Not set up yet" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "set_up", children: "Set up" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "AWS note (where, how often)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { type: "text", maxLength: 500, value: draft.note, onChange: (e) => setDraft({ ...draft, note: e.target.value }) })
+      ] }),
+      !valid && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "error", children: "Limits must be whole numbers of 1 or more." }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn", onClick: () => setDraft(null), children: "Cancel" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn gold", disabled: !valid || !Object.keys(patch).length, onClick: () => setConfirm(patch), "data-testid": "limits-save", children: "Save\u2026" })
+      ] })
+    ] }),
+    done && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { role: "status", className: "gold", children: done }),
+    confirm && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+      ConfirmDialog,
+      {
+        title: "Change plan limits",
+        confirmLabel: "Save limits",
+        onClose: () => setConfirm(null),
+        body: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("ul", { children: Object.entries(confirm).map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("li", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: k.replace(/_/g, " ") }),
+          ": ",
+          String(v) || /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("i", { children: "cleared" })
+        ] }, k)) }),
+        onConfirm: async (reason) => {
+          try {
+            onSaved(await api2.setHealthLimits(confirm, reason));
+          } catch (e) {
+            throw new Error(errText(e));
+          }
+          setDraft(null);
+          setDone("Limits saved.");
+        }
+      }
+    )
+  ] });
+}
+function BackupsTab() {
+  const { api: api2, me } = useAdmin();
+  const s = useLoad4(() => api2.healthStorage(), [api2]);
+  const t = useLoad4(() => api2.backupTests(500), [api2]);
+  const [adding, setAdding] = (0, import_react17.useState)(false);
+  if (s.err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: s.err, onRetry: () => void s.load() });
+  if (t.err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: t.err, onRetry: () => void t.load() });
+  if (!s.data || !t.data) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  const st = s.data, today2 = todayKL();
+  const total = st.today.db_bytes + st.today.storage_bytes;
+  const limit = (st.limits.db_limit_mb + st.limits.storage_limit_mb) * MB;
+  const lastPass = st.backup_tests.last_restore_pass;
+  const age = daysSince(lastPass?.tested_on, today2);
+  const overdue2 = age === null || age > RESTORE_TEST_DUE_DAYS;
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-backups", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "Backup status", checked: st.checked_at, onRefresh: () => {
+      void s.load();
+      void t.load();
+    }, busy: s.busy || t.busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(
+        Meter,
+        {
+          title: "Supabase backup",
+          used: total,
+          limit,
+          testid: "box-supabase",
+          sub: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("small", { className: "muted", children: [
+            "Database ",
+            fmtBytes(st.today.db_bytes),
+            " + files ",
+            fmtBytes(st.today.storage_bytes),
+            ". Supabase makes the backups according to your plan; the log below is the proof they restore."
+          ] })
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: `card boxed meter ${st.limits.aws_backup === "set_up" ? "ok" : "amber"}`, "data-testid": "box-aws", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { className: "spacer", children: "AWS backup" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: `tag ${st.limits.aws_backup === "set_up" ? "ok" : "amber"}`, children: st.limits.aws_backup === "set_up" ? "Set up" : "Not set up yet" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "small muted", style: { margin: 0 }, children: st.limits.aws_backup === "set_up" ? st.limits.aws_note ?? "No details given." : "The second backup (AWS) has not been set up. When it is, mark it in Storage \u2192 Plan limits." }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "AWS sizes cannot be read from here; record AWS checks in the log below." })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: `notice ${overdue2 ? "warn" : "ok"}`, "data-testid": "restore-due", children: lastPass ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+      "Last restore test that passed: ",
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { children: lastPass.tested_on }),
+      " (",
+      lastPass.ref,
+      "), ",
+      age,
+      " day",
+      age === 1 ? "" : "s",
+      " ago.",
+      overdue2 && " A new test is due (one a month is recommended)."
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(import_jsx_runtime18.Fragment, { children: "No restore test has been recorded yet. Auditors expect proof that backups can be restored \u2014 record one after you test." }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("h3", { className: "spacer", children: [
+        "Backup check and restore test log (",
+        t.data.length,
+        ")"
+      ] }),
+      can(me.role, "recordBackupTest") && !adding && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn gold", onClick: () => setAdding(true), "data-testid": "bt-add", children: "Record a test\u2026" })
+    ] }),
+    adding && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(NewTest, { onClose: () => setAdding(false), onSaved: (r) => {
+      t.setData([r, ...t.data ?? []]);
+      setAdding(false);
+      void s.load();
+    } }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "Kept for good: an entry cannot be changed or deleted after it is saved. Each one is also in the Master Audit Log." }),
+    !t.data.length ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "muted", children: "Nothing recorded yet." }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "list", "data-testid": "bt-list", children: t.data.map((r) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "item stack", style: { gap: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("b", { className: "spacer", children: [
+          r.ref,
+          " \xB7 ",
+          r.tested_on
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "tag", children: TARGET_LABEL[r.target] }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "tag", children: KIND_LABEL3[r.kind] }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: `tag ${r.result === "pass" ? "ok" : r.result === "partial" ? "amber" : "red"}`, children: RESULT_LABEL[r.result] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: r.what }),
+      r.notes && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: r.notes }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("small", { className: "muted", children: [
+        r.duration_minutes != null ? `Took ${r.duration_minutes} min \xB7 ` : "",
+        "Recorded ",
+        fmtTime(r.recorded_at),
+        " by ",
+        r.recorded_by_email ?? r.recorded_by
+      ] })
+    ] }, r.id)) })
+  ] });
+}
+function NewTest({ onClose, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const today2 = todayKL();
+  const [f, setF] = (0, import_react17.useState)(
+    { tested_on: today2, target: "supabase", kind: "restore_test", result: "pass", what: "", mins: "", notes: "" }
+  );
+  const [confirm, setConfirm] = (0, import_react17.useState)(false);
+  const minsOk = !f.mins.trim() || /^\d+$/.test(f.mins.trim()) && Number(f.mins) <= 10080;
+  const ok = !!f.tested_on && f.tested_on <= today2 && f.what.trim().length >= 5 && minsOk;
+  const body = {
+    tested_on: f.tested_on,
+    target: f.target,
+    kind: f.kind,
+    result: f.result,
+    what: f.what.trim(),
+    duration_minutes: f.mins.trim() ? Number(f.mins) : null,
+    notes: f.notes.trim() || void 0
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "card boxed stack", "data-testid": "bt-form", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Record a backup check or restore test" }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "Date of the test" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { type: "date", max: today2, value: f.tested_on, onChange: (e) => setF({ ...f, tested_on: e.target.value }), "data-testid": "bt-date" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "Which backup" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("select", { value: f.target, onChange: (e) => setF({ ...f, target: e.target.value }), "data-testid": "bt-target", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "supabase", children: "Supabase" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "aws", children: "AWS" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "other", children: "Other" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "What kind" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("select", { value: f.kind, onChange: (e) => setF({ ...f, kind: e.target.value }), "data-testid": "bt-kind", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "restore_test", children: "Restore test (restored a copy and checked it)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "backup_check", children: "Backup check (confirmed a backup exists)" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "Result" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("select", { value: f.result, onChange: (e) => setF({ ...f, result: e.target.value }), "data-testid": "bt-result", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "pass", children: "Passed" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "partial", children: "Partly passed" }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("option", { value: "fail", children: "Failed" })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "What was checked or restored (required)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("textarea", { maxLength: 1e3, value: f.what, onChange: (e) => setF({ ...f, what: e.target.value }), placeholder: "e.g. Restored the 20 Oct backup into a scratch project and opened 10 listings and 5 photos", "data-testid": "bt-what" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "How long it took (minutes, optional)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { type: "text", inputMode: "numeric", value: f.mins, onChange: (e) => setF({ ...f, mins: e.target.value }), "data-testid": "bt-mins" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: "Notes (optional)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("input", { type: "text", maxLength: 2e3, value: f.notes, onChange: (e) => setF({ ...f, notes: e.target.value }) })
+      ] })
+    ] }),
+    !minsOk && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "error", children: "Minutes must be a whole number." }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn", onClick: onClose, children: "Cancel" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn gold", disabled: !ok, onClick: () => setConfirm(true), "data-testid": "bt-save", children: "Save\u2026" })
+    ] }),
+    confirm && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(SaveTest, { body, onClose: () => setConfirm(false), onSaved: (r) => onSaved(r), save: () => api2.backupTestAdd(body) })
+  ] });
+}
+function SaveTest({ body, save, onClose, onSaved }) {
+  const [busy, setBusy] = (0, import_react17.useState)(false);
+  const [err, setErr] = (0, import_react17.useState)(null);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "overlay", role: "presentation", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "dialog card boxed stack", role: "dialog", "aria-modal": "true", "aria-label": "Save test record", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h2", { children: "Save this record?" }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Kv, { rows: [
+      { k: "Date", v: body.tested_on },
+      { k: "Backup", v: TARGET_LABEL[body.target] },
+      { k: "Kind", v: KIND_LABEL3[body.kind] },
+      { k: "Result", v: RESULT_LABEL[body.result] },
+      { k: "What", v: body.what }
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "notice warn", children: "It cannot be changed or deleted afterwards, and it is recorded with your name and the time." }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "error", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn", disabled: busy, onClick: onClose, children: "Back" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn gold", disabled: busy, "data-testid": "confirm-final", onClick: async () => {
+        setBusy(true);
+        setErr(null);
+        try {
+          onSaved(await save());
+          onClose();
+        } catch (e) {
+          setErr(errText(e));
+          setBusy(false);
+        }
+      }, children: busy ? "Saving\u2026" : "Save record" })
+    ] })
+  ] }) });
+}
+function SyncTab() {
+  const { api: api2, me, go } = useAdmin();
+  const [days, setDays] = (0, import_react17.useState)(30);
+  const allowed = can(me.role, "viewHealthAgents");
+  const { data: s, err, busy, load } = useLoad4(() => allowed ? api2.syncHealth(days) : Promise.resolve(null), [api2, days, allowed]);
+  if (!allowed) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "notice", children: "Sync failures name individual agents, so they are shown to the Owner, Admin and Compliance only." });
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  const rate = failRate(s.totals.runs, s.totals.fails);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-sync", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "Sync", checked: s.checked_at, onRefresh: () => void load(), busy, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(DaysPicker, { days, onDays: setDays }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Sync runs", value: s.totals.runs.toLocaleString(), sub: `last ${s.days} days` }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Failed", value: s.totals.fails.toLocaleString(), sub: fmtPct(rate), level: rate === null ? void 0 : rate > 10 ? "red" : rate > 2 ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Agents syncing", value: s.totals.agents }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Agents with a failure", value: s.totals.agents_failing, level: s.totals.agents_failing ? "amber" : "ok" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "card", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Bars2, { label: "Sync runs per day", redLabel: "failed", items: s.by_day.map((d) => ({ label: d.day, value: d.runs, red: d.fails })) }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Per agent (most failures first)" }),
+    !s.agents.length ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "muted", children: "No agent synced in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { "data-testid": "sync-agents", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Runs" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Failed" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Last failure" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Last good sync" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Waiting to upload" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Phone / app" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: s.agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: a.user_id }), children: a.name || a.email }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: a.email })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: a.runs }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: a.fails ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { className: "tag red", children: [
+          a.fails,
+          " (",
+          fmtPct(failRate(a.runs, a.fails), 0),
+          ")"
+        ] }) : "0" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "small", children: fmtTime(a.last_fail) || /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "muted", children: "\u2014" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "small", children: fmtTime(a.last_ok) || /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "tag amber", children: "none" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: a.pending == null ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "muted", children: "\u2014" }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: a.pending > 20 ? "tag amber" : "", children: a.pending }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { className: "small", children: [
+          platformLabel(a.platform),
+          " ",
+          a.app_version ?? "",
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("br", {}),
+          a.phones ? `${a.phones} phone${a.phones === 1 ? "" : "s"} for push` : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "muted", children: "no push phone" })
+        ] })
+      ] }, a.user_id)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "From the main app's sync log. \u201CWaiting to upload\u201D is the number of changes on the agent's device not yet saved to the cloud, at its last report. This list is recorded in the access log." })
+  ] });
+}
+function DaysPicker({ days, onDays }) {
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("select", { value: days, onChange: (e) => onDays(Number(e.target.value)), "aria-label": "Period", style: { width: "auto", minHeight: 36 }, "data-testid": "days", children: [7, 30, 90, 365].map((d) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("option", { value: d, children: [
+    "Last ",
+    d,
+    " days"
+  ] }, d)) });
+}
+function PushTab() {
+  const { api: api2 } = useAdmin();
+  const { data: p, err, busy, load } = useLoad4(() => api2.pushHealth(), [api2]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!p) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  const reach = pct(p.agents_with_phone, p.agents);
+  const others = Object.entries(p.other_pushes_30d);
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-push", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "Push notifications", checked: p.checked_at, onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Agents who can get a push", value: `${p.agents_with_phone} of ${p.agents}`, sub: fmtPct(reach, 0), level: reach < 50 ? "amber" : "ok" }),
+      p.phones.map((ph) => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: `${platformLabel(ph.platform)} phones`, value: ph.phones, sub: `${ph.agents} agent${ph.agents === 1 ? "" : "s"}` }, ph.platform)),
+      others.map(([k, n]) => /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: `Other pushes (30 days): ${k.replace(/_/g, " ")}`, value: n }, k))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Broadcasts" }),
+    !p.broadcasts.length ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "muted", "data-testid": "no-broadcasts", children: "No broadcast has been sent yet. Sent / delivered / opened will show here for each one." }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { "data-testid": "broadcasts", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Post" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Status" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Aimed at" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Sent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Delivered" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Opened" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Failed" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: p.broadcasts.map((b) => {
+        const sent = b.sent ?? 0;
+        return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { children: [
+            b.title || /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "muted", children: "(no title)" }),
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: fmtTime(b.queued_at) })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: `tag ${b.status === "done" ? "ok" : "amber"}`, children: b.status }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { children: [
+            b.targeted ?? "\u2014",
+            b.no_phone ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)(import_jsx_runtime18.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("br", {}),
+              /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("small", { className: "muted", children: [
+                b.no_phone,
+                " no phone"
+              ] })
+            ] }) : null
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: sent }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { children: [
+            b.received,
+            " ",
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: fmtPct(pct(b.received, sent), 0) })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("td", { children: [
+            b.opened,
+            " ",
+            /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: fmtPct(pct(b.opened, sent), 0) })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: b.failed ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "tag red", title: Object.entries(b.errors).map(([e, n]) => `${e}: ${n}`).join(", "), children: b.failed }) : "0" })
+        ] }, b.item_id);
+      }) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "\u201CDelivered\u201D and \u201Copened\u201D are reported back by the agent's phone, so they can rise for a while after sending." })
+  ] });
+}
+function PerformanceTab() {
+  const { api: api2 } = useAdmin();
+  const [days, setDays] = (0, import_react17.useState)(30);
+  const { data: p, err, busy, load } = useLoad4(() => api2.performance(days), [api2, days]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!p) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  const s = p.startup_all;
+  const lvl = (ms) => ms === null ? void 0 : ms > 8e3 ? "red" : ms > 4e3 ? "amber" : "ok";
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-performance", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "App performance", checked: p.checked_at, onRefresh: () => void load(), busy, children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(DaysPicker, { days, onDays: setDays }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "App start (typical)", value: fmtMs(s.p50_ms), sub: `${s.opens} opens measured`, level: lvl(s.p50_ms) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "App start (slowest 10%)", value: fmtMs(s.p90_ms), level: lvl(s.p90_ms) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Google calls", value: p.google_calls.calls.toLocaleString(), sub: `${p.google_calls.failed} failed`, level: p.google_calls.failed ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Stat2, { label: "Crash-free rate", value: "\u2014", sub: "Needs crash reporting in the main app (tool not chosen yet)" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "card", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Bars2, { label: "App opens per day", items: p.sessions_by_day.map((d) => ({ label: d.day, value: d.sessions })) }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Start time by version" }),
+    !p.startup.length ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "muted", children: "No start times recorded in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { "data-testid": "startup", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Version" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Device" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Opens" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Typical" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Slowest 10%" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Slowest" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: p.startup.map((r) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: r.app_version }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: platformLabel(r.platform) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: r.opens }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: fmtMs(r.p50_ms) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: fmtMs(r.p90_ms) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: fmtMs(r.max_ms) })
+      ] }, r.app_version + r.platform)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Versions in use" }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "row", children: p.versions.map((v) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("span", { className: "tag", children: [
+      v.app_version,
+      ": ",
+      v.agents,
+      " agent",
+      v.agents === 1 ? "" : "s"
+    ] }, v.app_version)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "Start time is measured by the main app from launch until the home screen is ready. Slow screens need screen timings, which the main app does not record yet." })
+  ] });
+}
+var REPORT_LABEL = { new: "New", seen: "Seen", fixed: "Fixed", closed: "Closed" };
+function ErrorsTab() {
+  const { api: api2, me, go } = useAdmin();
+  const [status, setStatus] = (0, import_react17.useState)(null);
+  const allowed = can(me.role, "viewHealthAgents");
+  const { data: r, err, busy, load } = useLoad4(() => allowed ? api2.errorReports(status) : Promise.resolve(null), [api2, status, allowed]);
+  if (!allowed) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "notice", children: "Problem reports name the agents who sent them, so they are shown to the Owner, Admin and Compliance only." });
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!r) return /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "stack", "data-testid": "health-errors", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)(Head2, { title: "Problems and errors", checked: r.checked_at, onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "notice warn small", children: "Automatic crash reports are not collected yet: the main app needs a crash-reporting tool first (not chosen). Shown here: problems agents reported, and failures the app recorded." }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { children: "Failures recorded in the last 7 days" }),
+    !r.failures_7d.length ? /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("p", { className: "muted", "data-testid": "no-failures", children: "None." }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("table", { "data-testid": "failures", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "What" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Failed" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Of" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Agents" }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("th", { children: "Last" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("tbody", { children: r.failures_7d.map((f) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "mono", children: f.name }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: "tag red", children: f.failed }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: f.total }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { children: f.agents }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("td", { className: "small", children: fmtTime(f.last_at) })
+      ] }, f.kind + f.name)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("h3", { className: "spacer", children: "Problem reports from agents" }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "tabs", role: "group", "aria-label": "Report status", style: { margin: 0 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { "aria-pressed": status === null, onClick: () => setStatus(null), children: "All" }),
+        Object.keys(REPORT_LABEL).map((k) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("button", { "aria-pressed": status === k, onClick: () => setStatus(k), children: [
+          REPORT_LABEL[k],
+          " (",
+          r.counts[k] ?? 0,
+          ")"
+        ] }, k))
+      ] })
+    ] }),
+    !r.reports.length ? /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("p", { className: "muted", "data-testid": "no-reports", children: [
+      "No reports",
+      status ? ` marked \u201C${REPORT_LABEL[status]}\u201D` : "",
+      "."
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("div", { className: "list", "data-testid": "reports", children: r.reports.map((x) => /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "item stack", style: { gap: 4 }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("b", { className: "spacer", children: fmtTime(x.created_at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { className: `tag ${x.status === "new" ? "amber" : x.status === "fixed" ? "ok" : ""}`, children: REPORT_LABEL[x.status] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("span", { children: x.description }),
+      /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("small", { className: "muted", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: x.user_id }), children: x.email ?? x.user_id }),
+        " \xB7 ",
+        platformLabel(x.platform),
+        " ",
+        x.app_version ?? "",
+        x.screen ? ` \xB7 screen \u201C${x.screen}\u201D` : "",
+        x.has_screenshot ? " \xB7 screenshot attached" : ""
+      ] })
+    ] }, x.id)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "Changing a report's status belongs to Support Tickets (feature 65), not built yet. This list is recorded in the access log." })
+  ] });
+}
+function HealthExport() {
+  const { api: api2, me } = useAdmin();
+  const [busy, setBusy] = (0, import_react17.useState)(null);
+  const [msg, setMsg] = (0, import_react17.useState)(null);
+  const run = async (format) => {
+    setBusy(format);
+    setMsg(null);
+    try {
+      const r = await exportHealthReport(api2, me.email, format, todayKL());
+      setMsg({ ok: true, text: `${r.reference}: ${r.how}` });
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime18.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: "muted", children: "Report for auditors:" }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn small gold", disabled: !!busy, onClick: () => void run("pdf"), "data-testid": "health-pdf", children: busy === "pdf" ? "Making\u2026" : "PDF" }),
+    /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("button", { className: "btn small gold", disabled: !!busy, onClick: () => void run("xlsx"), "data-testid": "health-xlsx", children: busy === "xlsx" ? "Making\u2026" : "Excel" }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime18.jsx)("small", { className: msg.ok ? "" : "error", role: "status", "data-testid": "health-export-msg", children: msg.text })
+  ] });
+}
+
+// src/screens/News.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react18 = __toESM(require_react(), 1);
+
+// src/admin/news.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var KIND_TITLE = { news: "Market News", project: "Projects", announcement: "Announcements" };
+var KIND_ONE = { news: "news post", project: "project", announcement: "announcement" };
+var STATUS_WORD = { draft: "Draft", published: "Published", withdrawn: "Withdrawn" };
+var AUDIENCE_WORD = { all: "Everyone", groups: "Chosen groups", codes: "Invitation code only" };
+var HTTPS = /^https:\/\/[^\s]{3,}$/;
+var isHttps = (u) => !u || HTTPS.test(u.trim());
+function draftProblems(d, now = /* @__PURE__ */ new Date()) {
+  const p = [];
+  if (!d.title_en?.trim()) p.push("The English title is needed (BM and Chinese are optional; English is shown when they are empty).");
+  for (const k of ["title_en", "title_bm", "title_zh"]) if ((d[k] ?? "").length > 200) p.push("Titles can be at most 200 letters.");
+  for (const k of ["body_en", "body_bm", "body_zh"]) if ((d[k] ?? "").length > 1e4) p.push("The text can be at most 10,000 letters.");
+  if (!isHttps(d.image_url)) p.push("The picture link must start with https://");
+  if (!isHttps(d.link_url)) p.push("The website link must start with https://");
+  if (!isHttps(d.pdf_url)) p.push("The PDF link must start with https://");
+  if (d.kind === "announcement" && !d.display) p.push("Choose banner or pop-up.");
+  if (d.audience === "groups" && !d.group_ids?.length) p.push("Choose at least one audience group.");
+  if (d.audience === "codes" && d.kind !== "project") p.push("Invitation codes are for Projects only.");
+  if (d.expires_at && new Date(d.expires_at).getTime() <= now.getTime()) p.push("The end date is already past.");
+  return [...new Set(p)];
+}
+var MEDIA_MAX = 10 * 1024 * 1024;
+var EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
+function mediaPath(file, want, id, now = /* @__PURE__ */ new Date()) {
+  const ext = EXT[file.type];
+  if (!ext || want === "pdf" !== (ext === "pdf")) return { error: want === "pdf" ? "Choose a PDF file." : "Choose a JPG, PNG or WEBP picture." };
+  if (file.size > MEDIA_MAX) return { error: "The file is larger than 10 MB." };
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) return { error: "Could not name the file." };
+  return { path: `${now.getUTCFullYear()}/${id}.${ext}` };
+}
+function moveTo(list2, from, to) {
+  if (from < 0 || from >= list2.length) return list2.slice();
+  const t = Math.max(0, Math.min(list2.length - 1, to));
+  const out = list2.slice();
+  const [x] = out.splice(from, 1);
+  out.splice(t, 0, x);
+  return out;
+}
+function placeAt(list2, from, typed) {
+  const n = Number(typed.trim());
+  if (!Number.isInteger(n) || n < 1) return null;
+  return moveTo(list2, from, n - 1);
+}
+function mergeOrder(saved, items) {
+  const known = new Set(items.map((i) => i.id));
+  const first = [...saved].sort((a, b) => a.position - b.position).map((s) => s.item_id).filter((id) => known.has(id));
+  const rest = items.filter((i) => !first.includes(i.id)).sort((a, b) => b.created_at.localeCompare(a.created_at)).map((i) => i.id);
+  return [...first, ...rest];
+}
+var EMPTY_FILTER_FORM = {
+  emails: "",
+  countries: "",
+  licence_types: [],
+  languages: [],
+  platforms: [],
+  app_versions: "",
+  joined_from: "",
+  joined_to: "",
+  last_login_from: "",
+  last_login_to: "",
+  min_logins: ""
+};
+var list = (s) => [...new Set(s.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean))];
+var startKL = (d) => `${d}T00:00:00+08:00`;
+var endKL = (d) => `${d}T23:59:59+08:00`;
+function formToFilters(f) {
+  const out = {};
+  const emails = list(f.emails).map((e) => e.toLowerCase());
+  if (emails.length) out.emails = emails;
+  const countries = [...new Set(f.countries.split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean))];
+  if (countries.length) out.countries = countries;
+  if (f.licence_types.length) out.licence_types = f.licence_types;
+  if (f.languages.length) out.languages = f.languages;
+  if (f.platforms.length) out.platforms = f.platforms;
+  const versions = list(f.app_versions);
+  if (versions.length) out.app_versions = versions;
+  if (f.joined_from) out.joined_from = startKL(f.joined_from);
+  if (f.joined_to) out.joined_to = endKL(f.joined_to);
+  if (f.last_login_from) out.last_login_from = startKL(f.last_login_from);
+  if (f.last_login_to) out.last_login_to = endKL(f.last_login_to);
+  const n = Number(f.min_logins);
+  if (f.min_logins.trim() && Number.isInteger(n) && n > 0) out.min_logins = n;
+  return out;
+}
+function filtersToForm(g) {
+  const day = (s) => s ? s.slice(0, 10) : "";
+  return {
+    emails: (g?.emails ?? []).join(", "),
+    countries: (g?.countries ?? []).join(", "),
+    licence_types: g?.licence_types ?? [],
+    languages: g?.languages ?? [],
+    platforms: g?.platforms ?? [],
+    app_versions: (g?.app_versions ?? []).join(", "),
+    joined_from: day(g?.joined_from),
+    joined_to: day(g?.joined_to),
+    last_login_from: day(g?.last_login_from),
+    last_login_to: day(g?.last_login_to),
+    min_logins: g?.min_logins ? String(g.min_logins) : ""
+  };
+}
+function filterProblems(f) {
+  const p = [];
+  const bad = list(f.emails).filter((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+  if (bad.length) p.push(`Not an email address: ${bad.slice(0, 3).join(", ")}`);
+  if (list(f.app_versions).some((v) => !/^[0-9]+(\.[0-9]+){0,3}$/.test(v))) p.push("App versions look like 2.2.0");
+  if (f.joined_from && f.joined_to && f.joined_from > f.joined_to) p.push('"Joined from" is after "joined to".');
+  if (f.last_login_from && f.last_login_to && f.last_login_from > f.last_login_to) p.push('"Last sign-in from" is after "last sign-in to".');
+  if (f.min_logins.trim() && !(Number.isInteger(Number(f.min_logins)) && Number(f.min_logins) > 0)) p.push("Number of sign-ins must be a whole number.");
+  return p;
+}
+var LANGS = [{ v: "en", label: "English" }, { v: "bm", label: "Bahasa Melayu" }, { v: "zh", label: "Chinese" }];
+var LICENCES = [{ v: "REN", label: "REN" }, { v: "REA", label: "REA" }, { v: "PEA", label: "PEA" }, { v: "EA", label: "EA" }, { v: "FIRM", label: "Firm / agency" }];
+var PLATFORMS = [{ v: "android", label: "Android" }, { v: "ios", label: "iPhone / iPad" }, { v: "web", label: "Web browser" }];
+function describeFilters(g) {
+  if (!g || !Object.keys(g).length) return "Every agent";
+  const label = (opts, v) => opts.find((o) => o.v === v)?.label ?? v;
+  const parts = [];
+  if (g.emails?.length) parts.push(`${g.emails.length} email${g.emails.length === 1 ? "" : "s"}`);
+  if (g.user_ids?.length) parts.push(`${g.user_ids.length} chosen agent${g.user_ids.length === 1 ? "" : "s"}`);
+  if (g.countries?.length) parts.push(`Country: ${g.countries.join(", ")}`);
+  if (g.licence_types?.length) parts.push(`Licence: ${g.licence_types.map((v) => label(LICENCES, v)).join(", ")}`);
+  if (g.languages?.length) parts.push(`Language: ${g.languages.map((v) => label(LANGS, v)).join(", ")}`);
+  if (g.platforms?.length) parts.push(`Platform: ${g.platforms.map((v) => label(PLATFORMS, v)).join(", ")}`);
+  if (g.app_versions?.length) parts.push(`Version: ${g.app_versions.join(", ")}`);
+  if (g.joined_from || g.joined_to) parts.push(`Joined ${g.joined_from ? `from ${g.joined_from.slice(0, 10)}` : ""}${g.joined_from && g.joined_to ? " " : ""}${g.joined_to ? `to ${g.joined_to.slice(0, 10)}` : ""}`);
+  if (g.last_login_from || g.last_login_to) parts.push(`Last sign-in ${g.last_login_from ? `from ${g.last_login_from.slice(0, 10)}` : ""}${g.last_login_from && g.last_login_to ? " " : ""}${g.last_login_to ? `to ${g.last_login_to.slice(0, 10)}` : ""}`);
+  if (g.min_logins) parts.push(`At least ${g.min_logins} sign-ins`);
+  return parts.join(" \xB7 ");
+}
+var sortGroups = (gs) => [...gs].sort((a, b) => a.priority - b.priority || a.created_at.localeCompare(b.created_at));
+var VERSION_RE = /^[0-9]+(\.[0-9]+){0,3}$/;
+var TICKET_WORD = { new: "New", seen: "Seen", fixed: "Fixed", closed: "Closed" };
+var TICKET_NEXT = { new: ["seen", "fixed", "closed"], seen: ["fixed", "closed", "new"], fixed: ["closed", "seen"], closed: ["seen"] };
+function flagKey(label) {
+  const k = label.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);
+  return /^[a-z0-9]/.test(k) && k.length >= 2 ? k : "";
+}
+var FLAG_KEY_RE = /^[a-z0-9][a-z0-9_.-]{1,59}$/;
+var toLocalInput = (iso) => iso ? new Date(new Date(iso).getTime() + 8 * 36e5).toISOString().slice(0, 16) : "";
+var fromLocalInput = (v) => v ? (/* @__PURE__ */ new Date(`${v}:00+08:00`)).toISOString() : null;
+function pushLine(r) {
+  const n = (x) => (x ?? 0).toLocaleString();
+  return `${n(r.sent)} sent of ${n(r.targeted)} \xB7 at least ${n(r.delivered)} delivered \xB7 ${n(r.opened)} opened${r.failed ? ` \xB7 ${n(r.failed)} failed` : ""}${r.no_phone ? ` \xB7 ${n(r.no_phone)} without a phone` : ""}`;
+}
+
+// src/screens/News.tsx
+var import_jsx_runtime19 = __toESM(require_jsx_runtime(), 1);
+var TABS4 = [
+  { k: "news", label: "Market News" },
+  { k: "project", label: "Projects" },
+  { k: "announcement", label: "Announcements" },
+  { k: "groups", label: "Audience groups" },
+  { k: "codes", label: "Invitation codes" },
+  { k: "push", label: "Push alerts" }
+];
+function NewsScreen({ tab: first }) {
+  const { me } = useAdmin();
+  const [tab, setTab] = (0, import_react18.useState)(first);
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h1", { children: "News & Announcements" }),
+    !can(me.role, "editContent") && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "notice small", "data-testid": "read-only", children: "Your role can look but not change anything here." }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tabs", role: "group", "aria-label": "News & Announcements", children: TABS4.map((t) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { "aria-pressed": tab === t.k, onClick: () => setTab(t.k), "data-testid": `ntab-${t.k}`, children: t.label }, t.k)) }),
+    (tab === "news" || tab === "project" || tab === "announcement") && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(PostsTab, { kind: tab }, tab),
+    tab === "groups" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(GroupsTab, {}),
+    tab === "codes" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(CodesTab, {}),
+    tab === "push" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(PushTab2, {})
+  ] });
+}
+function useLoad5(fn, deps) {
+  const [data, setData] = (0, import_react18.useState)(null);
+  const [err, setErr] = (0, import_react18.useState)(null);
+  const load = (0, import_react18.useCallback)(async () => {
+    setErr(null);
+    try {
+      setData(await fn());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, deps);
+  (0, import_react18.useEffect)(() => {
+    void load();
+  }, [load]);
+  return { data, err, load, setData };
+}
+function useConfirm() {
+  const [c, setC] = (0, import_react18.useState)(null);
+  const node = c && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) });
+  return { ask: setC, node };
+}
+var uuid = () => crypto.randomUUID?.() ?? "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (ch) => {
+  const r = Math.random() * 16 | 0;
+  return (ch === "x" ? r : r & 3 | 8).toString(16);
+});
+function PostsTab({ kind }) {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editContent");
+  const { data: items, err, load } = useLoad5(() => api2.feedList(kind), [api2, kind]);
+  const { data: groups } = useLoad5(() => api2.groups(), [api2]);
+  const { data: pushes, load: loadPush } = useLoad5(() => api2.pushList(), [api2]);
+  const [editing, setEditing] = (0, import_react18.useState)(null);
+  const [ordering, setOrdering] = (0, import_react18.useState)(false);
+  const [msg, setMsg] = (0, import_react18.useState)(null);
+  const confirm = useConfirm();
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!items) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Loading, {});
+  const pushOf = (id) => pushes?.find((p) => p.item_id === id);
+  const setStatus = (i, status) => confirm.ask({
+    title: status === "published" ? `Publish this ${KIND_ONE[kind]}` : status === "withdrawn" ? `Withdraw this ${KIND_ONE[kind]}` : "Back to draft",
+    body: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: i.title_en }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+      status === "published" ? `Agents in "${AUDIENCE_WORD[i.audience]}" will see it${i.push_alert ? " and a push alert will be waiting to be sent" : ""}.` : status === "withdrawn" ? "It disappears from every agent at once (no archive on the phone). It stays here and in the audit log." : "Agents stop seeing it until it is published again."
+    ] }),
+    label: status === "published" ? "Publish" : status === "withdrawn" ? "Withdraw" : "Back to draft",
+    danger: status === "withdrawn",
+    run: async (reason) => {
+      await api2.feedSetStatus(i.id, status, reason);
+      setMsg(`${STATUS_WORD[status]}: ${i.title_en}`);
+      await load();
+      await loadPush();
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "stack", "data-testid": `posts-${kind}`, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("h2", { className: "spacer", children: [
+        KIND_TITLE[kind],
+        " (",
+        items.length,
+        ")"
+      ] }),
+      edit && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => setOrdering((o) => !o), "data-testid": "order-open", children: ordering ? "Close order" : "Order" }),
+      edit && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("button", { className: "btn small gold", onClick: () => setEditing("new"), "data-testid": "post-new", children: [
+        "New ",
+        KIND_ONE[kind]
+      ] })
+    ] }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "notice ok small", role: "status", "data-testid": "post-msg", children: msg }),
+    ordering && groups && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(OrderBox, { kind, items, groups, onDone: (m) => {
+      setMsg(m);
+      setOrdering(false);
+    } }),
+    editing && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+      PostEditor,
+      {
+        kind,
+        item: editing === "new" || "copy" in editing ? null : editing,
+        copyFrom: editing !== "new" && "copy" in editing ? editing.copy : null,
+        groups: groups ?? [],
+        onClose: () => setEditing(null),
+        onSaved: async (m) => {
+          setMsg(m);
+          setEditing(null);
+          await load();
+          await loadPush();
+        }
+      },
+      editing === "new" ? "new" : "copy" in editing ? `copy-${editing.copy.id}` : editing.id
+    ),
+    items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { className: "muted", children: [
+      "Nothing yet. ",
+      edit ? `Press \u201CNew ${KIND_ONE[kind]}\u201D.` : ""
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "stack", "data-testid": "post-list", children: items.map((i) => {
+      const p = pushOf(i.id);
+      const expired = i.expires_at && new Date(i.expires_at).getTime() < Date.now();
+      const later = i.status === "published" && !!i.published_at && new Date(i.published_at).getTime() > Date.now();
+      return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "card post", "data-testid": "post-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: `tag ${i.status === "published" && !expired && !later ? "ok" : i.status === "withdrawn" ? "red" : later ? "amber" : ""}`, "data-testid": "post-state", children: expired && i.status === "published" ? "Ended" : later ? `Scheduled ${fmtTime(i.published_at)}` : STATUS_WORD[i.status] }),
+          i.display && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag", children: i.display === "banner" ? "Banner" : "Pop-up" }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("span", { className: "tag", children: [
+            AUDIENCE_WORD[i.audience],
+            i.audience === "groups" ? `: ${i.group_ids.map((g) => groups?.find((x) => x.id === g)?.name ?? "?").join(", ")}` : ""
+          ] }),
+          i.push_alert && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag gold", children: "Push alert" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { className: "ptitle", children: i.title_en }),
+        i.body_en && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "small muted clamp", children: i.body_en }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+          i.published_at ? `Published ${fmtTime(i.published_at)}` : `Made ${fmtTime(i.created_at)}`,
+          i.expires_at ? ` \xB7 ends ${fmtTime(i.expires_at)}` : "",
+          " \xB7 ",
+          "opened by ",
+          i.opened ?? 0,
+          i.kind === "announcement" ? ` \xB7 OK pressed ${i.acknowledged ?? 0} \xB7 closed ${i.dismissed ?? 0}` : "",
+          i.kind === "project" && i.code_grants ? ` \xB7 ${i.code_grants} through codes` : ""
+        ] }),
+        p && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", "data-testid": "post-push", children: [
+          "Push: ",
+          p.status === "queued" ? "waiting to be sent" : p.status === "sending" ? "sending\u2026" : pushLine(p)
+        ] }),
+        edit && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => setEditing(i), "data-testid": "post-edit", children: "Edit" }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => setEditing({ copy: i }), "data-testid": "post-copy", children: "Copy" }),
+          i.status !== "published" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small gold", onClick: () => setStatus(i, "published"), "data-testid": "post-publish", children: "Publish" }),
+          i.status === "published" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small danger", onClick: () => setStatus(i, "withdrawn"), "data-testid": "post-withdraw", children: "Withdraw" }),
+          i.status === "withdrawn" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => setStatus(i, "draft"), children: "Back to draft" }),
+          p?.status === "queued" && api2.files.sendPush && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(SendNow, { itemId: i.id, onDone: () => void loadPush() })
+        ] })
+      ] }, i.id);
+    }) }),
+    confirm.node
+  ] });
+}
+function SendNow({ itemId, onDone }) {
+  const { api: api2 } = useAdmin();
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [msg, setMsg] = (0, import_react18.useState)(null);
+  const confirm = useConfirm();
+  const go = () => confirm.ask({
+    title: itemId ? "Send this push alert now" : "Send every waiting push alert",
+    body: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { children: "Each agent who can see the post gets one alert on their phone, in their language. It cannot be called back. Alerts are never sent twice." }),
+    label: "Send",
+    danger: true,
+    run: async () => {
+      setBusy(true);
+      setMsg(null);
+      try {
+        const r = await api2.files.sendPush(itemId);
+        const sent = r.reduce((s, x) => s + (x.sent ?? 0), 0), skipped = r.filter((x) => x.skipped).length;
+        setMsg({ ok: true, t: r.length ? `Sent to ${sent} agent${sent === 1 ? "" : "s"}${skipped ? ` \xB7 ${skipped} skipped (already sent or not due)` : ""}.` : "Nothing was waiting." });
+        onDone();
+      } catch (e) {
+        setMsg({ ok: false, t: errText(e) });
+        throw e;
+      } finally {
+        setBusy(false);
+      }
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)(import_jsx_runtime19.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small gold", disabled: busy, onClick: go, "data-testid": itemId ? "push-send-one" : "push-send-all", children: busy ? "Sending\u2026" : itemId ? "Send alert now" : "Send waiting alerts" }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: msg.ok ? "" : "error", role: "status", "data-testid": "push-msg", children: msg.t }),
+    confirm.node
+  ] });
+}
+var LANG_TAB = [{ k: "en", label: "English" }, { k: "bm", label: "BM" }, { k: "zh", label: "\u4E2D\u6587" }];
+function PostEditor({ kind, item, copyFrom, groups, onClose, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const src = item ?? copyFrom ?? null;
+  const [at, setAt] = (0, import_react18.useState)("");
+  const [d, setD] = (0, import_react18.useState)(() => src ? {
+    ...item ? { id: item.id } : {},
+    kind,
+    title_en: item ? src.title_en : `${src.title_en} (copy)`.slice(0, 200),
+    title_bm: src.title_bm,
+    title_zh: src.title_zh,
+    body_en: src.body_en,
+    body_bm: src.body_bm,
+    body_zh: src.body_zh,
+    image_url: src.image_url,
+    link_url: src.link_url,
+    pdf_url: src.pdf_url,
+    push_alert: src.push_alert,
+    display: src.display,
+    project: src.project,
+    audience: src.audience,
+    expires_at: item ? src.expires_at : null,
+    group_ids: src.group_ids
+  } : { kind, title_en: "", audience: "all", push_alert: false, display: kind === "announcement" ? "banner" : null, group_ids: [], project: kind === "project" ? {} : null });
+  const [lang, setLang] = (0, import_react18.useState)("en");
+  const [preview, setPreview] = (0, import_react18.useState)(null);
+  const [touched, setTouched] = (0, import_react18.useState)(false);
+  const confirm = useConfirm();
+  const problems = draftProblems(d);
+  const set = (p) => setD((x) => ({ ...x, ...p }));
+  const setProject = (p) => setD((x) => ({ ...x, project: { ...x.project ?? {}, ...p } }));
+  const tk = `title_${lang}`, bk = `body_${lang}`;
+  const atIso = fromLocalInput(at);
+  const atBad = !!at && (!atIso || new Date(atIso).getTime() < Date.now() - 6e4 || !!d.expires_at && new Date(d.expires_at).getTime() <= new Date(atIso).getTime());
+  const schedule = () => {
+    setTouched(true);
+    if (problems.length || !atIso || atBad) return;
+    confirm.ask({
+      title: `Schedule this ${KIND_ONE[kind]}`,
+      body: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: d.title_en }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+        'Agents in "',
+        AUDIENCE_WORD[d.audience ?? "all"],
+        '" see it from ',
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: at.replace("T", " ") }),
+        " (Malaysia time).",
+        d.push_alert ? " The push alert waits until then." : ""
+      ] }),
+      label: "Save and schedule",
+      run: async (reason) => {
+        const clean = { ...d, project: kind === "project" ? d.project ?? {} : null, display: kind === "announcement" ? d.display : null, group_ids: d.audience === "groups" ? d.group_ids : [] };
+        const saved = await api2.feedSave(clean, reason);
+        await api2.feedSchedule(saved.id, atIso, reason);
+        await onSaved(`Scheduled for ${at.replace("T", " ")}: ${saved.title_en}`);
+      }
+    });
+  };
+  const save = (publish) => {
+    setTouched(true);
+    if (problems.length) return;
+    confirm.ask({
+      title: publish ? `Save and publish this ${KIND_ONE[kind]}` : `Save this ${KIND_ONE[kind]}`,
+      body: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: d.title_en }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+        publish ? `Agents in "${AUDIENCE_WORD[d.audience ?? "all"]}" will see it.` : item?.status === "published" ? "It is already published: agents see the change at once." : "Saved as a draft; agents do not see it yet.",
+        publish && d.push_alert ? " A push alert will be waiting; send it from this screen." : ""
+      ] }),
+      label: publish ? "Save and publish" : "Save",
+      run: async (reason) => {
+        const clean = {
+          ...d,
+          project: kind === "project" ? d.project ?? {} : null,
+          display: kind === "announcement" ? d.display : null,
+          group_ids: d.audience === "groups" ? d.group_ids : []
+        };
+        const saved = await api2.feedSave(clean, reason);
+        if (publish && saved.status !== "published") await api2.feedSetStatus(saved.id, "published", reason);
+        await onSaved(`${publish ? "Published" : "Saved"}: ${saved.title_en}`);
+      }
+    });
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "card boxed stack editor", "data-testid": "post-editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("h3", { className: "spacer", children: [
+        item ? "Edit" : copyFrom ? "Copy of a" : "New",
+        " ",
+        KIND_ONE[kind]
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: onClose, children: "Cancel" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tabs", role: "group", "aria-label": "Language", style: { margin: 0 }, children: LANG_TAB.map((l) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("button", { "aria-pressed": lang === l.k, onClick: () => setLang(l.k), "data-testid": `lang-${l.k}`, children: [
+      l.label,
+      l.k !== "en" && !(d[`title_${l.k}`] ?? "").trim() ? " (empty \u2192 English)" : ""
+    ] }, l.k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("span", { children: [
+        "Title (",
+        LANG_TAB.find((l) => l.k === lang).label,
+        ")",
+        lang === "en" ? " \u2014 needed" : ""
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: d[tk] ?? "", maxLength: 200, onChange: (e) => set({ [tk]: e.target.value }), "data-testid": `title-${lang}` })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("span", { children: [
+        "Text (",
+        LANG_TAB.find((l) => l.k === lang).label,
+        ")"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("textarea", { rows: 6, value: d[bk] ?? "", maxLength: 1e4, onChange: (e) => set({ [bk]: e.target.value }), "data-testid": `body-${lang}` })
+    ] }),
+    kind === "announcement" && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("fieldset", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Shown as" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "radio", checked: d.display === "banner", onChange: () => set({ display: "banner" }), "data-testid": "display-banner" }),
+          " Banner at the top of the home screen (closable)"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "radio", checked: d.display === "popup", onChange: () => set({ display: "popup" }), "data-testid": "display-popup" }),
+          " Full-screen pop-up (needs \u201COK, got it\u201D)"
+        ] })
+      ] })
+    ] }),
+    kind === "project" && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Developer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: d.project?.developer ?? "", onChange: (e) => setProject({ developer: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Location" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: d.project?.location ?? "", onChange: (e) => setProject({ location: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Price from (RM)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { inputMode: "numeric", value: d.project?.price_from ?? "", onChange: (e) => setProject({ price_from: e.target.value ? Number(e.target.value.replace(/[^0-9.]/g, "")) : null }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Price to (RM)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { inputMode: "numeric", value: d.project?.price_to ?? "", onChange: (e) => setProject({ price_to: e.target.value ? Number(e.target.value.replace(/[^0-9.]/g, "")) : null }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Launch" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: d.project?.launch ?? "", placeholder: "e.g. Q1 2027", onChange: (e) => setProject({ launch: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Project status" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: d.project?.status ?? "", placeholder: "e.g. Under construction", onChange: (e) => setProject({ status: e.target.value }) })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(MediaField, { label: "Picture", want: "image", value: d.image_url ?? "", onChange: (v) => set({ image_url: v || null }), testid: "image" }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Website link (https://\u2026)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: d.link_url ?? "", onChange: (e) => set({ link_url: e.target.value || null }), "data-testid": "link" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(MediaField, { label: "PDF", want: "pdf", value: d.pdf_url ?? "", onChange: (v) => set({ pdf_url: v || null }), testid: "pdf" }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("fieldset", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Who sees it" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "row", children: ["all", "groups", ...kind === "project" ? ["codes"] : []].map((a) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "radio", checked: d.audience === a, onChange: () => set({ audience: a }), "data-testid": `aud-${a}` }),
+        " ",
+        AUDIENCE_WORD[a]
+      ] }, a)) })
+    ] }),
+    d.audience === "groups" && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "checks", "data-testid": "aud-groups", children: [
+      sortGroups(groups).filter((g) => g.id !== EVERYONE && g.active).map((g) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+          "input",
+          {
+            type: "checkbox",
+            checked: d.group_ids?.includes(g.id) ?? false,
+            onChange: (e) => set({ group_ids: e.target.checked ? [...d.group_ids ?? [], g.id] : (d.group_ids ?? []).filter((x) => x !== g.id) })
+          }
+        ),
+        " ",
+        g.name,
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+          "(",
+          g.agents ?? 0,
+          " agents \xB7 ",
+          describeFilters(g.filters),
+          ")"
+        ] })
+      ] }, g.id)),
+      !groups.some((g) => g.id !== EVERYONE) && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted small", children: "No groups yet: make one in \u201CAudience groups\u201D." })
+    ] }),
+    d.audience === "codes" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted small", children: "Only agents who type an invitation code for this project see it. Make the code in \u201CInvitation codes\u201D after saving." }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "grid2", children: [
+      item?.status !== "published" && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Publish later at (optional, Malaysia time)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "datetime-local", value: at, onChange: (e) => setAt(e.target.value), "data-testid": "publish-at" }),
+        atBad && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "error", children: "Pick a time from now on, before the end date." })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Ends on (optional, Malaysia time)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "datetime-local", value: toLocalInput(d.expires_at), onChange: (e) => set({ expires_at: fromLocalInput(e.target.value) }), "data-testid": "expires" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice switch", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "checkbox", checked: !!d.push_alert, onChange: (e) => set({ push_alert: e.target.checked }), "data-testid": "push-alert" }),
+        " ",
+        "Send a push alert when published"
+      ] })
+    ] }),
+    touched && problems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("ul", { className: "error small", "data-testid": "post-problems", children: problems.map((p) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("li", { children: p }, p)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn", onClick: () => setPreview(preview ? null : lang), "data-testid": "preview", children: preview ? "Hide preview" : "Preview" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn", onClick: () => save(false), "data-testid": "post-save", children: "Save" }),
+      item?.status !== "published" && (at ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn gold", disabled: atBad, onClick: schedule, "data-testid": "post-schedule", children: "Save and schedule" }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn gold", onClick: () => save(true), "data-testid": "post-save-publish", children: "Save and publish" }))
+    ] }),
+    preview && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Preview, { d, lang: preview, onLang: setPreview }),
+    confirm.node
+  ] });
+}
+function MediaField({ label, want, value, onChange, testid }) {
+  const { api: api2 } = useAdmin();
+  const input = (0, import_react18.useRef)(null);
+  const [busy, setBusy] = (0, import_react18.useState)(false);
+  const [err, setErr] = (0, import_react18.useState)(null);
+  const pick = async (f) => {
+    if (!f) return;
+    setErr(null);
+    const p = mediaPath(f, want, uuid());
+    if ("error" in p) {
+      setErr(p.error);
+      return;
+    }
+    setBusy(true);
+    try {
+      onChange(await api2.files.media(p.path, f));
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "field", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("span", { children: [
+      label,
+      " \u2014 upload, or paste a link (https://\u2026)"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { className: "spacer", value, onChange: (e) => onChange(e.target.value), placeholder: "https://", "data-testid": `${testid}-url` }),
+      api2.files.media && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)(import_jsx_runtime19.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", type: "button", disabled: busy, onClick: () => input.current?.click(), "data-testid": `${testid}-upload`, children: busy ? "Uploading\u2026" : "Upload" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { ref: input, type: "file", hidden: true, accept: want === "pdf" ? "application/pdf" : "image/jpeg,image/png,image/webp", onChange: (e) => void pick(e.target.files?.[0]), "data-testid": `${testid}-file` })
+      ] }),
+      value && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", type: "button", onClick: () => onChange(""), children: "Remove" })
+    ] }),
+    want === "image" && value && /^https:\/\//.test(value) && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("img", { src: value, alt: "", className: "thumb" }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "error", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "muted", children: "Uploaded files are public (agents open them by link) and cannot be replaced or deleted. Max 10 MB." })
+  ] });
+}
+function Preview({ d, lang, onLang }) {
+  const t = (d[`title_${lang}`] ?? "").trim() || d.title_en;
+  const b = (d[`body_${lang}`] ?? "").trim() || d.body_en || "";
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "stack", "data-testid": "preview-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tabs", role: "group", "aria-label": "Preview language", style: { margin: 0 }, children: LANG_TAB.map((l) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { "aria-pressed": lang === l.k, onClick: () => onLang(l.k), children: l.label }, l.k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: `phone ${d.kind === "announcement" && d.display === "popup" ? "popup" : ""}`, children: d.kind === "announcement" && d.display === "banner" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "pv-banner", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: t }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "small", children: b.slice(0, 140) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "x", children: "\xD7" })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "pv-card", children: [
+      d.image_url && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("img", { src: d.image_url, alt: "" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: t }),
+      d.kind === "project" && d.project && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+        [d.project.developer, d.project.location, d.project.launch].filter(Boolean).join(" \xB7 "),
+        d.project.price_from ? ` \xB7 from RM ${Number(d.project.price_from).toLocaleString()}` : ""
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "small", children: b }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row small", children: [
+        d.link_url && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "gold", children: "Open website \u2197" }),
+        d.pdf_url && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "gold", children: "Open PDF \u2197" })
+      ] }),
+      d.kind === "announcement" && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "btn small gold", children: "OK, got it" })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+      "A preview of how an agent sees it in ",
+      LANG_TAB.find((l) => l.k === lang).label,
+      ". Empty BM / Chinese shows the English."
+    ] })
+  ] });
+}
+function OrderBox({ kind, items, groups, onDone }) {
+  const { api: api2 } = useAdmin();
+  const ranked = sortGroups(groups);
+  const [group, setGroup] = (0, import_react18.useState)(EVERYONE);
+  const live = (0, import_react18.useMemo)(() => items.filter((i) => i.status !== "withdrawn"), [items]);
+  const [saved, setSaved] = (0, import_react18.useState)(null);
+  const [order, setOrder] = (0, import_react18.useState)([]);
+  const [err, setErr] = (0, import_react18.useState)(null);
+  const [drag, setDrag] = (0, import_react18.useState)(null);
+  const confirm = useConfirm();
+  (0, import_react18.useEffect)(() => {
+    let on = true;
+    setSaved(null);
+    setErr(null);
+    api2.orderGet(group).then((s) => {
+      if (!on) return;
+      setSaved(s);
+      setOrder(mergeOrder(s, live));
+    }).catch((e) => on && setErr(errText(e)));
+    return () => {
+      on = false;
+    };
+  }, [api2, group, live]);
+  const title = (id) => live.find((i) => i.id === id)?.title_en ?? "?";
+  const onMove = (e) => {
+    if (drag === null) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-idx]");
+    const to = el ? Number(el.dataset.idx) : null;
+    if (to !== null && to !== drag) {
+      setOrder((o) => moveTo(o, drag, to));
+      setDrag(to);
+    }
+  };
+  const save = () => confirm.ask({
+    title: `Save the order of ${KIND_TITLE[kind]} for \u201C${ranked.find((g) => g.id === group)?.name}\u201D`,
+    body: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("ol", { className: "small", children: order.map((id) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("li", { children: title(id) }, id)) }),
+    label: "Save order",
+    run: async (reason) => {
+      const others = (saved ?? []).sort((a, b) => a.position - b.position).map((s) => s.item_id).filter((id) => !items.some((i) => i.id === id));
+      await api2.orderSet(group, [...order, ...others], reason);
+      onDone(`Order saved for \u201C${ranked.find((g) => g.id === group)?.name}\u201D.`);
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "card boxed stack", "data-testid": "order-box", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("h3", { children: [
+      "Order of ",
+      KIND_TITLE[kind]
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "For the group (an agent in several groups sees the order of their highest-ranked group)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("select", { value: group, onChange: (e) => setGroup(e.target.value), "data-testid": "order-group", children: ranked.map((g) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("option", { value: g.id, children: [
+        g.priority === 1e3 ? "" : `#${g.priority} `,
+        g.name
+      ] }, g.id)) })
+    ] }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ErrorBox, { text: err }) : !saved ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Loading, {}) : order.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted", children: "Nothing to order." }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("ol", { className: "orderlist", onPointerMove: onMove, onPointerUp: () => setDrag(null), onPointerCancel: () => setDrag(null), "data-testid": "order-list", children: order.map((id, i) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("li", { "data-idx": i, className: drag === i ? "dragging" : "", "data-testid": "order-row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "handle", "aria-label": "Drag to move", onPointerDown: (e) => {
+        e.target.setPointerCapture?.(e.pointerId);
+        setDrag(i);
+      }, children: "\u283F" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "spacer", children: title(id) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(
+        "input",
+        {
+          "aria-label": `Position of ${title(id)}`,
+          className: "pos",
+          inputMode: "numeric",
+          defaultValue: i + 1,
+          onKeyDown: (e) => {
+            if (e.key === "Enter") {
+              const r = placeAt(order, i, e.target.value);
+              if (r) setOrder(r);
+            }
+          },
+          onBlur: (e) => {
+            const r = placeAt(order, i, e.target.value);
+            if (r && r.join() !== order.join()) setOrder(r);
+          },
+          "data-testid": "order-pos"
+        },
+        `${id}-${i}`
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", "aria-label": "Up", disabled: i === 0, onClick: () => setOrder((o) => moveTo(o, i, i - 1)), children: "\u2191" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", "aria-label": "Down", disabled: i === order.length - 1, onClick: () => setOrder((o) => moveTo(o, i, i + 1)), children: "\u2193" })
+    ] }, id)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "muted", children: "Drag \u283F with the mouse or a finger, or type a position number (1 = first) and press Enter." }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn gold", onClick: save, disabled: !saved || !order.length, "data-testid": "order-save", children: "Save order" })
+    ] }),
+    confirm.node
+  ] });
+}
+function GroupsTab() {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editContent");
+  const { data: groups, err, load } = useLoad5(() => api2.groups(), [api2]);
+  const [editing, setEditing] = (0, import_react18.useState)(null);
+  const [msg, setMsg] = (0, import_react18.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!groups) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "stack", "data-testid": "groups", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h2", { className: "spacer", children: "Audience groups" }),
+      edit && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small gold", onClick: () => setEditing("new"), "data-testid": "group-new", children: "New group" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Rank 1 is the highest. An agent in two groups sees the order of the higher-ranked one. \u201CEveryone\u201D is always last." }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "notice ok small", role: "status", children: msg }),
+    editing && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(GroupEditor, { group: editing === "new" ? null : editing, onClose: () => setEditing(null), onSaved: async (m) => {
+      setMsg(m);
+      setEditing(null);
+      await load();
+    } }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("table", { "data-testid": "group-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Rank" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Group" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Who" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Agents now" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("tbody", { children: sortGroups(groups).map((g) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { className: g.active ? "" : "muted", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: g.id === EVERYONE ? "last" : g.priority }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: g.name }),
+          !g.active && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)(import_jsx_runtime19.Fragment, { children: [
+            " ",
+            /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag", children: "Off" })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { className: "small", children: describeFilters(g.filters) }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: g.agents ?? "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: edit && g.id !== EVERYONE && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => setEditing(g), "data-testid": "group-edit", children: "Edit" }) })
+      ] }, g.id)) })
+    ] }) })
+  ] });
+}
+function GroupEditor({ group, onClose, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const [name, setName] = (0, import_react18.useState)(group?.name ?? "");
+  const [rank, setRank] = (0, import_react18.useState)(String(group?.priority ?? 10));
+  const [active, setActive] = (0, import_react18.useState)(group?.active ?? true);
+  const [form, setForm] = (0, import_react18.useState)(() => group ? filtersToForm(group.filters) : EMPTY_FILTER_FORM);
+  const [count, setCount] = (0, import_react18.useState)(null);
+  const [countErr, setCountErr] = (0, import_react18.useState)(null);
+  const confirm = useConfirm();
+  const problems = filterProblems(form);
+  const rankN = Number(rank);
+  const rankBad = !(Number.isInteger(rankN) && rankN >= 1 && rankN <= 999);
+  const filters = (0, import_react18.useMemo)(() => formToFilters(form), [form]);
+  const key = JSON.stringify(filters);
+  (0, import_react18.useEffect)(() => {
+    if (problems.length) return;
+    let on = true;
+    setCountErr(null);
+    const t = window.setTimeout(() => {
+      api2.groupPreview(filters).then((c) => on && setCount(c)).catch((e) => on && setCountErr(errText(e)));
+    }, 400);
+    return () => {
+      on = false;
+      window.clearTimeout(t);
+    };
+  }, [api2, key, problems.length]);
+  const set = (p) => setForm((f) => ({ ...f, ...p }));
+  const toggle = (k, v) => set({ [k]: form[k].includes(v) ? form[k].filter((x) => x !== v) : [...form[k], v] });
+  const ok = name.trim() && !problems.length && !rankBad;
+  const save = () => confirm.ask({
+    title: group ? `Save group \u201C${name.trim()}\u201D` : `Make group \u201C${name.trim()}\u201D`,
+    body: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { children: [
+      describeFilters(filters),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+      count ? `${count.agents} of ${count.of} agents match now.` : "",
+      " Rank ",
+      rankN,
+      "."
+    ] }),
+    label: "Save group",
+    run: async (reason) => {
+      await api2.groupSave({ ...group ? { id: group.id } : {}, name: name.trim(), priority: rankN, active, filters }, reason);
+      await onSaved(`Group saved: ${name.trim()}`);
+    }
+  });
+  const chips = (k, opts) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "row", children: opts.map((o) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "checkbox", checked: form[k].includes(o.v), onChange: () => toggle(k, o.v), "data-testid": `f-${k}-${o.v}` }),
+    " ",
+    o.label
+  ] }, o.v)) });
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "card boxed stack", "data-testid": "group-editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h3", { className: "spacer", children: group ? "Edit group" : "New group" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: onClose, children: "Cancel" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Name" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: name, maxLength: 120, onChange: (e) => setName(e.target.value), "data-testid": "group-name" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Rank (1 = highest)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { inputMode: "numeric", value: rank, onChange: (e) => setRank(e.target.value), "data-testid": "group-rank" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Leave a filter empty to ignore it. Every filter you fill in must match." }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Emails (comma or new line)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("textarea", { rows: 2, value: form.emails, onChange: (e) => set({ emails: e.target.value }), "data-testid": "f-emails" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Countries (comma)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: form.countries, placeholder: "Malaysia", onChange: (e) => set({ countries: e.target.value }) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Licence type" }),
+      chips("licence_types", LICENCES)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Language" }),
+      chips("languages", LANGS)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Platform" }),
+      chips("platforms", PLATFORMS)
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "App versions (comma)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: form.app_versions, placeholder: "2.2.0", onChange: (e) => set({ app_versions: e.target.value }) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Joined from" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "date", value: form.joined_from, onChange: (e) => set({ joined_from: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Joined to" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "date", value: form.joined_to, onChange: (e) => set({ joined_to: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Last sign-in from" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "date", value: form.last_login_from, onChange: (e) => set({ last_login_from: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Last sign-in to" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "date", value: form.last_login_to, onChange: (e) => set({ last_login_to: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "At least this many sign-ins" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { inputMode: "numeric", value: form.min_logins, onChange: (e) => set({ min_logins: e.target.value }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice switch", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "checkbox", checked: active, onChange: (e) => setActive(e.target.checked) }),
+        " Group is on"
+      ] })
+    ] }),
+    problems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("ul", { className: "error small", children: problems.map((p) => /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("li", { children: p }, p)) }),
+    rankBad && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "error small", children: "Rank must be a whole number from 1 to 999." }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "notice small", "data-testid": "group-count", children: countErr ? countErr : count ? /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)(import_jsx_runtime19.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: count.agents }),
+      " of ",
+      count.of,
+      " agents match these filters now."
+    ] }) : "Counting\u2026" }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn gold", disabled: !ok, onClick: save, "data-testid": "group-save", children: "Save group" })
+    ] }),
+    confirm.node
+  ] });
+}
+function CodesTab() {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editContent");
+  const names = can(me.role, "viewTickets");
+  const { data: codes, err, load } = useLoad5(() => api2.codes(), [api2]);
+  const { data: projects } = useLoad5(() => api2.feedList("project"), [api2]);
+  const [making, setMaking] = (0, import_react18.useState)(false);
+  const [open, setOpen] = (0, import_react18.useState)(null);
+  const [made, setMade] = (0, import_react18.useState)(null);
+  const confirm = useConfirm();
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!codes) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Loading, {});
+  const title = (id) => projects?.find((p) => p.id === id)?.title_en ?? "project";
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "stack", "data-testid": "codes", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h2", { className: "spacer", children: "Invitation codes" }),
+      edit && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small gold", onClick: () => setMaking(true), "data-testid": "code-new", children: "New code" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "An agent types the code in Projects to see projects shared \u201Cby invitation code only\u201D. 20 wrong tries per hour, then a wait." }),
+    made && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "notice ok", "data-testid": "code-made", children: [
+      "New code: ",
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { className: "code", children: made.code }),
+      " \u2014 give it to the team leader or agents."
+    ] }),
+    making && projects && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(CodeMaker, { projects, onClose: () => setMaking(false), onMade: async (c) => {
+      setMade(c);
+      setMaking(false);
+      await load();
+    } }),
+    codes.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted", children: "No codes yet." }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("table", { "data-testid": "code-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Code" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Projects" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Used" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Ends" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("tbody", { children: codes.map((c) => {
+        const ended = c.expires_at && new Date(c.expires_at).getTime() < Date.now() || c.max_uses !== null && c.uses >= c.max_uses;
+        return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { className: "code", children: c.code }),
+            c.label && /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)(import_jsx_runtime19.Fragment, { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+              /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "muted", children: c.label })
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { className: "small", children: c.item_ids.map(title).join(", ") }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+            c.uses,
+            c.max_uses ? ` / ${c.max_uses}` : "",
+            " ",
+            /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+              "(",
+              c.agents,
+              " agents)"
+            ] })
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { className: "small", children: c.expires_at ? fmtTime(c.expires_at) : "no end" }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: !c.active ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag red", children: "Disabled" }) : ended ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag", children: "Used up / ended" }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag ok", children: "Active" }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { className: "row", children: [
+            names && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => setOpen(open === c.code ? null : c.code), "data-testid": "code-who", children: "Who used it" }),
+            edit && c.active && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small danger", "data-testid": "code-disable", onClick: () => confirm.ask({
+              title: `Disable code ${c.code}`,
+              body: /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { children: "Nobody can use it any more. Agents who already used it keep their projects (remove them one by one in \u201CWho used it\u201D)." }),
+              label: "Disable",
+              danger: true,
+              run: async (reason) => {
+                await api2.codeDisable(c.code, reason);
+                await load();
+              }
+            }), children: "Disable" })
+          ] })
+        ] }, c.code);
+      }) })
+    ] }) }),
+    open && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(CodeGrants, { code: open }),
+    confirm.node
+  ] });
+}
+function CodeMaker({ projects, onClose, onMade }) {
+  const { api: api2 } = useAdmin();
+  const [label, setLabel] = (0, import_react18.useState)("");
+  const [pick, setPick] = (0, import_react18.useState)([]);
+  const [ends, setEnds] = (0, import_react18.useState)("");
+  const [max, setMax] = (0, import_react18.useState)("");
+  const confirm = useConfirm();
+  const live = projects.filter((p) => p.status !== "withdrawn");
+  const maxN = max.trim() ? Number(max) : null;
+  const ok = pick.length > 0 && (maxN === null || Number.isInteger(maxN) && maxN >= 1);
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "card boxed stack", "data-testid": "code-maker", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h3", { className: "spacer", children: "New invitation code" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: onClose, children: "Cancel" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Note (who it is for)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { value: label, maxLength: 200, onChange: (e) => setLabel(e.target.value), "data-testid": "code-label" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Projects in this code" }),
+      live.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted small", children: "No projects yet: add one in Projects first." }) : live.map((p) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "checkbox", checked: pick.includes(p.id), onChange: (e) => setPick(e.target.checked ? [...pick, p.id] : pick.filter((x) => x !== p.id)), "data-testid": "code-project" }),
+        " ",
+        p.title_en,
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+          "(",
+          STATUS_WORD[p.status],
+          ")"
+        ] })
+      ] }, p.id))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Ends on (optional)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { type: "datetime-local", value: ends, onChange: (e) => setEnds(e.target.value) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { children: "Most uses (optional)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("input", { inputMode: "numeric", value: max, onChange: (e) => setMax(e.target.value), "data-testid": "code-max" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn gold", disabled: !ok, "data-testid": "code-create", onClick: () => confirm.ask({
+        title: "Make an invitation code",
+        body: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { children: [
+          pick.length,
+          " project",
+          pick.length === 1 ? "" : "s",
+          maxN ? ` \xB7 at most ${maxN} uses` : "",
+          ends ? ` \xB7 ends ${ends.replace("T", " ")}` : "",
+          "."
+        ] }),
+        label: "Make code",
+        run: async (reason) => {
+          await onMade(await api2.codeCreate(label.trim(), pick, fromLocalInput(ends), maxN, reason));
+        }
+      }), children: "Make code" })
+    ] }),
+    confirm.node
+  ] });
+}
+function CodeGrants({ code }) {
+  const { api: api2, me } = useAdmin();
+  const { data, err, load } = useLoad5(() => api2.codeGrants(code), [api2, code]);
+  const confirm = useConfirm();
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "card stack", "data-testid": "code-grants", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("h3", { children: [
+      "Who used ",
+      code
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "muted", children: "Opening this list is recorded." }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ErrorBox, { text: err }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Loading, {}) : data.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted", children: "Nobody yet." }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("table", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Project" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Since" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("tbody", { children: data.map((g) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+          g.name ?? g.email,
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("small", { className: "muted", children: g.email })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: g.title }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { className: "small", children: fmtTime(g.granted_at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: can(me.role, "editContent") && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small danger", "data-testid": "grant-revoke", onClick: () => confirm.ask({
+          title: "Remove this agent\u2019s access",
+          body: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { children: [
+            g.email,
+            " stops seeing \u201C",
+            g.title,
+            "\u201D. The code itself stays."
+          ] }),
+          label: "Remove access",
+          danger: true,
+          run: async (reason) => {
+            await api2.codeRevoke(g.user_id, g.item_id, reason);
+            await load();
+          }
+        }), children: "Remove access" }) })
+      ] }, `${g.user_id}/${g.item_id}`)) })
+    ] }) }),
+    confirm.node
+  ] });
+}
+function PushTab2() {
+  const { api: api2, me } = useAdmin();
+  const { data, err, load } = useLoad5(() => api2.pushList(), [api2]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!data) return /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(Loading, {});
+  const waiting = data.filter((p) => p.status === "queued").length;
+  return /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "stack", "data-testid": "push", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("h2", { className: "spacer", children: "Push alerts" }),
+      can(me.role, "editContent") && api2.files.sendPush && /* @__PURE__ */ (0, import_jsx_runtime19.jsx)(SendNow, { itemId: null, onDone: () => void load() }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("button", { className: "btn small", onClick: () => void load(), children: "Refresh" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      waiting,
+      " waiting to be sent. A post published with \u201CSend a push alert\u201D on waits here until it is sent; it is never sent twice. \u201CDelivered\u201D is at least this many: Android shows an alert by itself when the app is closed and only tells us if the agent taps it."
+    ] }),
+    data.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("p", { className: "muted", children: "No post has had a push alert yet." }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("table", { "data-testid": "push-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Post" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Sent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Delivered (at least)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Opened" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("th", { children: "Failed / no phone" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("tbody", { children: data.map((p) => /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("b", { children: p.title_en }),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+            p.kind ? KIND_ONE[p.kind] : "",
+            " \xB7 queued ",
+            fmtTime(p.queued_at)
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: p.status === "queued" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag amber", children: "Waiting" }) : p.status === "sending" ? /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag", children: "Sending" }) : /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("span", { className: "tag ok", children: "Done" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+          p.sent ?? "\u2014",
+          p.targeted != null ? /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("small", { className: "muted", children: [
+            " of ",
+            p.targeted
+          ] }) : ""
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: p.status === "done" ? p.delivered : "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsx)("td", { children: p.status === "done" ? p.opened : "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime19.jsxs)("td", { children: [
+          p.failed ?? 0,
+          " / ",
+          p.no_phone ?? 0
+        ] })
+      ] }, p.item_id)) })
+    ] }) })
+  ] });
+}
+
+// src/screens/Tickets.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react19 = __toESM(require_react(), 1);
+var import_jsx_runtime20 = __toESM(require_jsx_runtime(), 1);
+var FILTERS = [
+  { k: "open", label: "Open (new + seen)" },
+  { k: "new", label: "New" },
+  { k: "seen", label: "Seen" },
+  { k: "fixed", label: "Fixed" },
+  { k: "closed", label: "Closed" },
+  { k: "all", label: "All" }
+];
+var tagFor = (s) => s === "new" ? "amber" : s === "seen" ? "" : "ok";
+function TicketsScreen() {
+  const { api: api2, go } = useAdmin();
+  const [filter, setFilter] = (0, import_react19.useState)("open");
+  const [q, setQ] = (0, import_react19.useState)("");
+  const [query, setQuery] = (0, import_react19.useState)("");
+  const [data, setData] = (0, import_react19.useState)(null);
+  const [err, setErr] = (0, import_react19.useState)(null);
+  const load = (0, import_react19.useCallback)(async () => {
+    setErr(null);
+    setData(null);
+    try {
+      setData(await api2.tickets(filter === "all" ? null : filter, query || null));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, filter, query]);
+  (0, import_react19.useEffect)(() => {
+    void load();
+  }, [load]);
+  const c = data?.counts ?? {};
+  return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "stack", "data-testid": "tickets", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("h1", { children: "Support tickets" }),
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Problems agents sent from the main app (Profile \u2192 Report a problem). Opening this list is recorded." }),
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { className: "stats", children: ["new", "seen", "fixed", "closed"].map((s) => /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: `stat ${s === "new" && c.new ? "amber" : ""}`, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "l", children: TICKET_WORD[s] }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("b", { className: "v", children: c[s] ?? 0 })
+    ] }, s)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { className: "tabs", role: "group", "aria-label": "Show", style: { margin: 0 }, children: FILTERS.map((f) => /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("button", { "aria-pressed": filter === f.k, onClick: () => setFilter(f.k), "data-testid": `tfilter-${f.k}`, children: f.label }, f.k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("form", { className: "row", onSubmit: (e) => {
+      e.preventDefault();
+      setQuery(q.trim());
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("input", { className: "spacer", type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Search the text or the agent's email", "data-testid": "ticket-q" }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("button", { className: "btn", type: "submit", children: "Search" })
+    ] }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Loading, {}) : data.tickets.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "muted", children: "No tickets here." }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("div", { className: "stack", "data-testid": "ticket-list", children: data.tickets.map((t) => /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("button", { className: "item ticket", onClick: () => go({ k: "ticket", id: t.id }), "data-testid": "ticket-row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: `tag ${tagFor(t.status)}`, children: TICKET_WORD[t.status] }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("b", { className: "spacer", children: t.name ?? t.email ?? "agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("small", { className: "muted", children: fmtTime(t.created_at) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "clamp", children: t.description }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("small", { className: "muted", children: [t.screen && `screen ${t.screen}`, t.app_version, platformLabel(t.platform), t.has_screenshot && "screenshot", t.notes ? `${t.notes} note${t.notes === 1 ? "" : "s"}` : ""].filter(Boolean).join(" \xB7 ") })
+    ] }, t.id)) })
+  ] });
+}
+function TicketScreen({ id }) {
+  const { api: api2, me, go } = useAdmin();
+  const edit = can(me.role, "editTickets");
+  const [t, setT] = (0, import_react19.useState)(null);
+  const [err, setErr] = (0, import_react19.useState)(null);
+  const [note, setNote] = (0, import_react19.useState)("");
+  const [to, setTo] = (0, import_react19.useState)(null);
+  const [busy, setBusy] = (0, import_react19.useState)(false);
+  const [actErr, setActErr] = (0, import_react19.useState)(null);
+  const [shot, setShot] = (0, import_react19.useState)(null);
+  const [shotErr, setShotErr] = (0, import_react19.useState)(null);
+  (0, import_react19.useEffect)(() => {
+    api2.ticket(id).then(setT).catch((e) => setErr(errText(e)));
+  }, [api2, id]);
+  (0, import_react19.useEffect)(() => () => {
+    if (shot) URL.revokeObjectURL(shot);
+  }, [shot]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(ErrorBox, { text: err });
+  if (!t) return /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(Loading, {});
+  const run = async (fn) => {
+    setBusy(true);
+    setActErr(null);
+    try {
+      setT(await fn());
+      setNote("");
+      setTo(null);
+    } catch (e) {
+      setActErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const showShot = async () => {
+    setShotErr(null);
+    try {
+      setShot(URL.createObjectURL(await api2.files.screenshot(t.screenshot_path)));
+    } catch (e) {
+      setShotErr(errText(e));
+    }
+  };
+  const mail = t.email ? `mailto:${encodeURIComponent(t.email)}?subject=${encodeURIComponent("Your problem report \u2014 Estate Agent AI Buddy")}&body=${encodeURIComponent(`Hello${t.name ? ` ${t.name}` : ""},
+
+About the problem you reported on ${fmtTime(t.created_at)}:
+\u201C${t.description.slice(0, 300)}\u201D
+
+`)}` : null;
+  return /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "stack", "data-testid": "ticket", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("h1", { className: "spacer", children: "Ticket" }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: `tag ${tagFor(t.status)}`, "data-testid": "ticket-status", children: TICKET_WORD[t.status] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: t.user_id }), children: t.name ?? t.email }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("small", { className: "muted", children: t.email }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "spacer" }),
+        mail && /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("a", { className: "btn small", href: mail, "data-testid": "ticket-email", children: "Email the agent" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { style: { whiteSpace: "pre-wrap", margin: 0 }, "data-testid": "ticket-text", children: t.description }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("small", { className: "muted", children: [
+        fmtTime(t.created_at),
+        " \xB7 ",
+        [t.screen && `screen ${t.screen}`, t.app_version && `app ${t.app_version}`, platformLabel(t.platform), t.language].filter(Boolean).join(" \xB7 ")
+      ] }),
+      t.screenshot_path && (shot ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("img", { src: shot, alt: "Screenshot sent with the report", className: "shot", "data-testid": "ticket-shot" }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("button", { className: "btn small", onClick: () => void showShot(), "data-testid": "ticket-shot-open", children: "Show screenshot" }),
+        shotErr && /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("small", { className: "error", children: shotErr })
+      ] }))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("h2", { children: "History" }),
+    t.history.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "muted", children: "No notes yet." }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("ol", { className: "history", "data-testid": "ticket-history", children: t.history.map((n) => /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("li", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("small", { className: "muted", children: [
+        fmtTime(n.at),
+        " \xB7 ",
+        n.by_email
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("br", {}),
+      n.kind === "status" ? /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(import_jsx_runtime20.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("b", { children: [
+          TICKET_WORD[n.from_status],
+          " \u2192 ",
+          TICKET_WORD[n.to_status]
+        ] }),
+        n.body && /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)(import_jsx_runtime20.Fragment, { children: [
+          " \u2014 ",
+          n.body
+        ] })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { children: n.body })
+    ] }, n.id)) }),
+    edit ? /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "card boxed stack", "data-testid": "ticket-actions", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { children: "Internal note (the agent does not see it; kept for good)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("textarea", { rows: 3, maxLength: 4e3, value: note, onChange: (e) => setNote(e.target.value), "data-testid": "ticket-note" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "muted small", children: "Change status to:" }),
+        TICKET_NEXT[t.status].map((s) => /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("button", { className: `btn small ${to === s ? "gold" : ""}`, "aria-pressed": to === s, onClick: () => setTo(to === s ? null : s), "data-testid": `ticket-to-${s}`, children: TICKET_WORD[s] }, s))
+      ] }),
+      actErr && /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "error small", role: "alert", children: actErr }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime20.jsx)(
+          "button",
+          {
+            className: "btn gold",
+            disabled: busy || !note.trim(),
+            "data-testid": "ticket-save",
+            onClick: () => void run(() => to ? api2.ticketStatus(t.id, to, note.trim()) : api2.ticketNote(t.id, note.trim())),
+            children: busy ? "Saving\u2026" : to ? `Save note and mark ${TICKET_WORD[to]}` : "Save note"
+          }
+        )
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("small", { className: "muted", children: "A status change needs a note. Both go into the Master Audit Log with your name and the time." })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime20.jsx)("p", { className: "notice small", children: "Your role can read tickets but not change them." })
+  ] });
+}
+
+// src/screens/Ops.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react20 = __toESM(require_react(), 1);
+var import_jsx_runtime21 = __toESM(require_jsx_runtime(), 1);
+var TABS5 = [{ k: "maintenance", label: "Maintenance mode" }, { k: "release", label: "App release" }, { k: "flags", label: "Feature flags" }];
+function OpsScreen({ tab: first }) {
+  const { me } = useAdmin();
+  const [tab, setTab] = (0, import_react20.useState)(first);
+  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("h1", { children: "Operations" }),
+    !can(me.role, "editOps") && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "notice small", "data-testid": "read-only", children: "Your role can look but not change anything here." }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "tabs", role: "group", "aria-label": "Operations", children: TABS5.map((t) => /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { "aria-pressed": tab === t.k, onClick: () => setTab(t.k), "data-testid": `otab-${t.k}`, children: t.label }, t.k)) }),
+    tab === "maintenance" && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(MaintenanceTab, {}),
+    tab === "release" && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ReleaseTab, {}),
+    tab === "flags" && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(FlagsTab, {})
+  ] });
+}
+function useSettings() {
+  const { api: api2 } = useAdmin();
+  const [s, setS] = (0, import_react20.useState)(null);
+  const [err, setErr] = (0, import_react20.useState)(null);
+  const load = (0, import_react20.useCallback)(async () => {
+    setErr(null);
+    try {
+      setS(await api2.opsSettings());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react20.useEffect)(() => {
+    void load();
+  }, [load]);
+  return { s, setS, err, load };
+}
+function MaintenanceTab() {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editOps");
+  const { s, setS, err, load } = useSettings();
+  const [form, setForm] = (0, import_react20.useState)(null);
+  const [c, setC] = (0, import_react20.useState)(null);
+  const [msg, setMsg] = (0, import_react20.useState)(null);
+  (0, import_react20.useEffect)(() => {
+    if (s && !form) setForm({ en: s.maintenance_message_en ?? "", bm: s.maintenance_message_bm ?? "", zh: s.maintenance_message_zh ?? "", back: toLocalInput(s.maintenance_back_at) });
+  }, [s, form]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s || !form) return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(Loading, {});
+  const on = s.maintenance_on;
+  const patch = (turnOn) => ({ maintenance_on: turnOn, maintenance_message_en: form.en.trim(), maintenance_message_bm: form.bm.trim(), maintenance_message_zh: form.zh.trim(), maintenance_back_at: fromLocalInput(form.back) });
+  const ask = (turnOn) => setC({
+    title: turnOn === true ? "Switch maintenance mode ON" : turnOn === false ? "Switch maintenance mode OFF" : "Save the maintenance message",
+    body: turnOn === true ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("p", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { children: "Every agent is blocked from using the app" }),
+      " (also the sign-in screen) and sees your message, until you switch it off. Phones that miss \u201Coff\u201D unlock by themselves 12 hours after they last heard it."
+    ] }) : turnOn === false ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { children: "Agents can use the app again at their next launch or sync." }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("p", { children: [
+      "The message is saved; maintenance stays ",
+      on ? "ON" : "off",
+      "."
+    ] }),
+    label: turnOn === true ? "Switch ON" : turnOn === false ? "Switch OFF" : "Save",
+    danger: turnOn === true,
+    run: async (reason) => {
+      const r = await api2.setOps(turnOn === null ? { ...patch(on) } : patch(turnOn), reason);
+      setS({ ...s, ...r });
+      setMsg(turnOn === true ? "Maintenance mode is ON." : turnOn === false ? "Maintenance mode is off." : "Message saved.");
+    }
+  });
+  const okToTurnOn = form.en.trim().length > 0;
+  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "stack", "data-testid": "maintenance", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: `card boxed row ${on ? "alert-red" : ""}`, "data-testid": "maint-state", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { className: "spacer", children: on ? "Maintenance mode is ON \u2014 agents cannot use the app" : "Maintenance mode is off" }),
+      s.maintenance_back_at && on && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("small", { children: [
+        "Back at ",
+        fmtTime(s.maintenance_back_at)
+      ] }),
+      edit && (on ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn gold", onClick: () => ask(false), "data-testid": "maint-off", children: "Switch off" }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn danger", disabled: !okToTurnOn, onClick: () => ask(true), "data-testid": "maint-on", children: "Switch on" }))
+    ] }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "notice ok small", role: "status", "data-testid": "ops-msg", children: msg }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Message in English (needed)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("textarea", { rows: 3, maxLength: 1e3, disabled: !edit, value: form.en, onChange: (e) => setForm({ ...form, en: e.target.value }), "data-testid": "maint-en" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Bahasa Melayu (empty \u2192 English)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("textarea", { rows: 3, maxLength: 1e3, disabled: !edit, value: form.bm, onChange: (e) => setForm({ ...form, bm: e.target.value }), "data-testid": "maint-bm" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "\u4E2D\u6587 Chinese (empty \u2192 English)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("textarea", { rows: 3, maxLength: 1e3, disabled: !edit, value: form.zh, onChange: (e) => setForm({ ...form, zh: e.target.value }), "data-testid": "maint-zh" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Expected back (Malaysia time, optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "datetime-local", disabled: !edit, value: form.back, onChange: (e) => setForm({ ...form, back: e.target.value }), "data-testid": "maint-back" })
+    ] }),
+    edit && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn", onClick: () => ask(null), "data-testid": "maint-save", children: "Save message only" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("small", { className: "muted", children: [
+      "Last changed ",
+      fmtTime(s.updated_at),
+      ". Every change is in the Master Audit Log."
+    ] }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+function ReleaseTab() {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editOps");
+  const { s, setS, err, load } = useSettings();
+  const [v, setV] = (0, import_react20.useState)(null);
+  const [mode, setMode] = (0, import_react20.useState)("soft");
+  const [url, setUrl] = (0, import_react20.useState)("");
+  const [c, setC] = (0, import_react20.useState)(null);
+  const [msg, setMsg] = (0, import_react20.useState)(null);
+  (0, import_react20.useEffect)(() => {
+    if (s && v === null) {
+      setV(s.min_version ?? "");
+      setMode(s.min_version_mode ?? "soft");
+      setUrl(s.update_url ?? "");
+    }
+  }, [s, v]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s || v === null) return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(Loading, {});
+  const vBad = v.trim() !== "" && !VERSION_RE.test(v.trim());
+  const urlBad = url.trim() !== "" && !/^https:\/\/\S+$/.test(url.trim());
+  const ok = !vBad && !urlBad;
+  const save = () => setC({
+    title: v.trim() ? `Minimum version ${v.trim()} \u2014 ${mode === "hard" ? "hard block" : "soft warning"}` : "Remove the minimum version",
+    body: v.trim() ? mode === "hard" ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("p", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { children: "Agents on an older version cannot use the app" }),
+      " until they update (the \u201CUpdate now\u201D button opens ",
+      url.trim() || "the store",
+      ")."
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { children: "Agents on an older version see a notice they can close; they can keep using the app." }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { children: "No agent is asked to update." }),
+    label: "Save",
+    danger: mode === "hard" && !!v.trim(),
+    run: async (reason) => {
+      const r = await api2.setOps({ min_version: v.trim() || null, min_version_mode: mode, update_url: url.trim() || null }, reason);
+      setS({ ...s, ...r });
+      setMsg("Saved.");
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "stack", "data-testid": "release", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "card boxed", "data-testid": "release-state", children: [
+      s.min_version ? /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("b", { children: [
+          "Minimum version ",
+          s.min_version
+        ] }),
+        " \xB7 ",
+        s.min_version_mode === "hard" ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tag red", children: "Hard block" }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tag amber", children: "Soft warning" })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { children: "No minimum version set" }),
+      s.update_url && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("br", {}),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("small", { className: "muted", children: [
+          "Update link: ",
+          s.update_url
+        ] })
+      ] })
+    ] }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "notice ok small", role: "status", "data-testid": "ops-msg", children: msg }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Minimum app version (e.g. 2.2.0; empty = none)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { value: v, disabled: !edit, onChange: (e) => setV(e.target.value), "data-testid": "rel-version" })
+    ] }),
+    vBad && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "error small", children: "A version looks like 2.2.0" }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("fieldset", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Older versions get" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "radio", disabled: !edit, checked: mode === "soft", onChange: () => setMode("soft"), "data-testid": "rel-soft" }),
+          " Soft warning (can continue)"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "radio", disabled: !edit, checked: mode === "hard", onChange: () => setMode("hard"), "data-testid": "rel-hard" }),
+          " Hard block (must update)"
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Update link (https://\u2026, e.g. the Play Store or GitHub release page)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { value: url, disabled: !edit, onChange: (e) => setUrl(e.target.value), "data-testid": "rel-url" })
+    ] }),
+    urlBad && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "error small", children: "The link must start with https://" }),
+    edit && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn gold", disabled: !ok, onClick: save, "data-testid": "rel-save", children: "Save" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("small", { className: "muted", children: "The versions agents use now are in Dashboards \u2192 Versions & phones." }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+function FlagsTab() {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editOps");
+  const [flags, setFlags] = (0, import_react20.useState)(null);
+  const [groups, setGroups] = (0, import_react20.useState)([]);
+  const [err, setErr] = (0, import_react20.useState)(null);
+  const [editing, setEditing] = (0, import_react20.useState)(null);
+  const [c, setC] = (0, import_react20.useState)(null);
+  const load = (0, import_react20.useCallback)(async () => {
+    setErr(null);
+    try {
+      const [f, g] = await Promise.all([api2.flags(), api2.groups().catch(() => [])]);
+      setFlags(f);
+      setGroups(g);
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react20.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!flags) return /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(Loading, {});
+  const gname = (id) => groups.find((g) => g.id === id)?.name ?? "?";
+  const flip = (f) => setC({
+    title: `${f.enabled ? "Switch off" : "Switch on"}: ${f.label}`,
+    body: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("p", { children: [
+      f.enabled ? "The feature is switched off" : "The feature is switched on",
+      " for ",
+      f.audience === "all" ? "every agent" : f.group_ids.map(gname).join(", "),
+      "."
+    ] }),
+    label: f.enabled ? "Switch off" : "Switch on",
+    danger: f.enabled,
+    run: async (reason) => {
+      await api2.flagSave({ key: f.key, enabled: !f.enabled }, reason);
+      await load();
+    }
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "stack", "data-testid": "flags", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("h2", { className: "spacer", children: "Feature flags" }),
+      edit && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn small gold", onClick: () => setEditing("new"), "data-testid": "flag-new", children: "New flag" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "notice small stack", "data-testid": "flags-note", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "The main app reads these switches after every sync (main-app version with MainForAdmin-E). Two kinds of key do something on phones:" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { className: "mono", children: "tile.<card>" }),
+        " switched ",
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { children: "OFF" }),
+        " hides that card on the agents\u2019 Home (e.g. ",
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "mono", children: "tile.gps" }),
+        "). No flag, or ON = the card shows as before. It only hides the card; it is not a permission."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { className: "mono", children: "beta.<name>" }),
+        " switched ",
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { children: "ON" }),
+        " shows a test feature to these agents. No feature uses one yet."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "muted", children: "Card keys: project, sales, opportunities, creative, contacts, activity, gps, finance, calculator, matching, expert, market, agenda, property, voice. Any other key changes nothing." })
+    ] }),
+    editing && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(FlagEditor, { flag: editing === "new" ? null : editing, groups, taken: flags.map((f) => f.key), onClose: () => setEditing(null), onSaved: async () => {
+      setEditing(null);
+      await load();
+    } }),
+    flags.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "muted", children: "No flags yet." }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("table", { "data-testid": "flag-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { children: "Feature" }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { children: "Key" }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { children: "For" }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", { children: "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("tbody", { children: flags.map((f) => /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("b", { children: f.label }),
+          f.description && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("small", { className: "muted", children: f.description })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("td", { className: "mono small", children: f.key }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("td", { className: "small", children: f.audience === "all" ? "Every agent" : f.group_ids.map(gname).join(", ") }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("td", { children: [
+          f.enabled ? /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tag ok", children: "On" }) : /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "tag", children: "Off" }),
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("small", { className: "muted", children: fmtTime(f.updated_at) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("td", { className: "row", children: edit && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)(import_jsx_runtime21.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: `btn small ${f.enabled ? "" : "gold"}`, onClick: () => flip(f), "data-testid": "flag-flip", children: f.enabled ? "Switch off" : "Switch on" }),
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn small", onClick: () => setEditing(f), "data-testid": "flag-edit", children: "Edit" })
+        ] }) })
+      ] }, f.key)) })
+    ] }) }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+function FlagEditor({ flag, groups, taken, onClose, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const [label, setLabel] = (0, import_react20.useState)(flag?.label ?? "");
+  const [key, setKey] = (0, import_react20.useState)(flag?.key ?? "");
+  const [keyTouched, setKeyTouched] = (0, import_react20.useState)(!!flag);
+  const [desc, setDesc] = (0, import_react20.useState)(flag?.description ?? "");
+  const [audience, setAudience] = (0, import_react20.useState)(flag?.audience ?? "all");
+  const [gids, setGids] = (0, import_react20.useState)(flag?.group_ids ?? []);
+  const [enabled, setEnabled] = (0, import_react20.useState)(flag?.enabled ?? false);
+  const [c, setC] = (0, import_react20.useState)(null);
+  const k = keyTouched ? key : flagKey(label);
+  const keyBad = !FLAG_KEY_RE.test(k) || !flag && taken.includes(k);
+  const ok = label.trim() && !keyBad && (audience === "all" || gids.length > 0);
+  return /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "card boxed stack", "data-testid": "flag-editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("h3", { className: "spacer", children: flag ? "Edit flag" : "New flag" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn small", onClick: onClose, children: "Cancel" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "Feature name" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { value: label, maxLength: 120, onChange: (e) => setLabel(e.target.value), "data-testid": "flag-label" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("span", { children: [
+        "Key the main app uses (small letters, digits, _ . -)",
+        flag ? " \u2014 cannot be changed" : ""
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { className: "mono", value: k, disabled: !!flag, onChange: (e) => {
+        setKeyTouched(true);
+        setKey(e.target.value.toLowerCase());
+      }, "data-testid": "flag-key" })
+    ] }),
+    keyBad && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "error small", children: taken.includes(k) && !flag ? "This key is already used." : "The key must be 2\u201360 small letters, digits, dot, dash or underscore." }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "What it does (optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("textarea", { rows: 2, maxLength: 1e3, value: desc, onChange: (e) => setDesc(e.target.value) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("fieldset", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { children: "For" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "radio", checked: audience === "all", onChange: () => setAudience("all"), "data-testid": "flag-all" }),
+          " Every agent"
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "radio", checked: audience === "groups", onChange: () => setAudience("groups"), "data-testid": "flag-groups" }),
+          " Chosen audience groups"
+        ] })
+      ] })
+    ] }),
+    audience === "groups" && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "checks", children: [
+      sortGroups(groups).filter((g) => g.id !== EVERYONE).map((g) => /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "checkbox", checked: gids.includes(g.id), onChange: (e) => setGids(e.target.checked ? [...gids, g.id] : gids.filter((x) => x !== g.id)), "data-testid": "flag-group" }),
+        " ",
+        g.name,
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("small", { className: "muted", children: [
+          "(",
+          g.agents ?? 0,
+          " agents \xB7 ",
+          describeFilters(g.filters),
+          ")"
+        ] })
+      ] }, g.id)),
+      !groups.some((g) => g.id !== EVERYONE) && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("p", { className: "muted small", children: "No groups yet: make one in News & Announcements \u2192 Audience groups." })
+    ] }),
+    !flag && /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("label", { className: "choice switch", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("input", { type: "checkbox", checked: enabled, onChange: (e) => setEnabled(e.target.checked), "data-testid": "flag-enabled" }),
+      " Switch on now"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("button", { className: "btn gold", disabled: !ok, "data-testid": "flag-save", onClick: () => setC({
+        title: flag ? `Save flag \u201C${label.trim()}\u201D` : `Make flag \u201C${label.trim()}\u201D`,
+        body: /* @__PURE__ */ (0, import_jsx_runtime21.jsxs)("p", { children: [
+          "Key ",
+          /* @__PURE__ */ (0, import_jsx_runtime21.jsx)("span", { className: "mono", children: k }),
+          " \xB7 ",
+          audience === "all" ? "every agent" : `${gids.length} group(s)`,
+          !flag ? ` \xB7 ${enabled ? "ON" : "off"}` : "",
+          "."
+        ] }),
+        label: "Save",
+        run: async (reason) => {
+          await api2.flagSave({ key: k, label: label.trim(), description: desc.trim() || null, audience, group_ids: audience === "groups" ? gids : [], ...flag ? {} : { enabled } }, reason);
+          await onSaved();
+        }
+      }), children: "Save" })
+    ] }),
+    c && /* @__PURE__ */ (0, import_jsx_runtime21.jsx)(ConfirmDialog, { title: c.title, body: c.body, confirmLabel: c.label, danger: c.danger, onConfirm: c.run, onClose: () => setC(null) })
+  ] });
+}
+
+// src/screens/Overview.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react21 = __toESM(require_react(), 1);
+var import_jsx_runtime22 = __toESM(require_jsx_runtime(), 1);
+function masterAlerts(m, today2) {
+  const a = [];
+  if (m.maintenance_on) a.push({ level: "red", text: "Maintenance mode is ON \u2014 agents cannot use the app", open: { k: "ops", tab: "maintenance" } });
+  const dbp = pct(m.db_bytes, m.db_limit_bytes), fp = pct(m.files_bytes, m.files_limit_bytes);
+  if (levelFor(dbp) !== "ok") a.push({ level: levelFor(dbp), text: `Database ${Math.round(dbp)}% full`, open: { k: "health", tab: "storage" } });
+  if (levelFor(fp) !== "ok") a.push({ level: levelFor(fp), text: `Stored files ${Math.round(fp)}% full`, open: { k: "health", tab: "storage" } });
+  const since = daysSince(m.last_restore_pass, today2);
+  if (since === null) a.push({ level: "red", text: "No backup restore test has been recorded", open: { k: "health", tab: "backups" } });
+  else if (since > 37) a.push({ level: "amber", text: `Last passed restore test was ${since} days ago`, open: { k: "health", tab: "backups" } });
+  if (m.aws_backup !== "set_up") a.push({ level: "amber", text: "Second backup (AWS) not set up", open: { k: "health", tab: "backups" } });
+  const fr = m.sync_runs_7d ? m.sync_fails_7d / m.sync_runs_7d * 100 : 0;
+  if (m.sync_fails_7d && fr >= 10) a.push({ level: fr >= 25 ? "red" : "amber", text: `${m.sync_fails_7d} sync failures in 7 days (${Math.round(fr)}%)`, open: { k: "health", tab: "sync" } });
+  if (m.tickets_new) a.push({ level: "amber", text: `${m.tickets_new} new problem report${m.tickets_new === 1 ? "" : "s"}`, open: { k: "tickets" } });
+  if (m.pushes_waiting) a.push({ level: "amber", text: `${m.pushes_waiting} push alert${m.pushes_waiting === 1 ? "" : "s"} waiting to be sent`, open: { k: "news", tab: "push" } });
+  if (m.min_version_mode === "hard" && m.min_version) a.push({ level: "amber", text: `Hard block below version ${m.min_version}`, open: { k: "ops", tab: "release" } });
+  if (m.stale) a.push({ level: "amber", text: `${m.stale} stale listing${m.stale === 1 ? "" : "s"} (60+ days)`, open: { k: "dash", tab: "listings" } });
+  if (m.at_risk) a.push({ level: "amber", text: `${m.at_risk} agent${m.at_risk === 1 ? "" : "s"} at risk of leaving`, open: { k: "dash", tab: "retention" } });
+  if (m.licences_expired) a.push({ level: "red", text: `${m.licences_expired} licence${m.licences_expired === 1 ? "" : "s"} expired`, open: { k: "licences" } });
+  if (m.licences_expiring_30) a.push({ level: "amber", text: `${m.licences_expiring_30} licence${m.licences_expiring_30 === 1 ? "" : "s"} expiring within 30 days`, open: { k: "licences" } });
+  if (m.pdpa_due_soon) a.push({ level: "red", text: `${m.pdpa_due_soon} PDPA request${m.pdpa_due_soon === 1 ? "" : "s"} open 14+ days (21-day rule)`, open: { k: "pdpa" } });
+  else if (m.pdpa_active) a.push({ level: "amber", text: `${m.pdpa_active} PDPA request${m.pdpa_active === 1 ? "" : "s"} open`, open: { k: "pdpa" } });
+  if (m.complaints_active) a.push({ level: "amber", text: `${m.complaints_active} complaint${m.complaints_active === 1 ? "" : "s"} open`, open: { k: "complaints" } });
+  if (m.licences_unverified) a.push({ level: "amber", text: `${m.licences_unverified} licence${m.licences_unverified === 1 ? "" : "s"} not verified`, open: { k: "agents", filter: "licence" } });
+  return a.sort((x, y) => x.level === y.level ? 0 : x.level === "red" ? -1 : 1);
+}
+var NEEDS = { tickets: "viewTickets", pdpa: "pdpa", complaints: "complaints", licences: "licences", agents: "listAgents", top: "viewDashAgents" };
+var openable = (v, role) => {
+  const n = NEEDS[v.k];
+  return !n || can(role, n);
+};
+function Tile({ label, value, sub, open, testid }) {
+  const { go } = useAdmin();
+  const body = /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(import_jsx_runtime22.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("span", { className: "l", children: label }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("b", { className: "v", children: value }),
+    sub && /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("small", { className: "muted", children: sub })
+  ] });
+  return open ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { className: "stat pick", onClick: () => go(open), "data-testid": testid, children: body }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "stat", "data-testid": testid, children: body });
+}
+function MasterScreen() {
+  const { api: api2, go, me } = useAdmin();
+  const [m, setM] = (0, import_react21.useState)(null);
+  const [err, setErr] = (0, import_react21.useState)(null);
+  const load = (0, import_react21.useCallback)(async () => {
+    setErr(null);
+    try {
+      setM(await api2.master());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react21.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!m) return /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Loading, {});
+  const today2 = todayKL();
+  const alerts = masterAlerts(m, today2);
+  const staff = can(me.role, "viewTickets");
+  return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stack", "data-testid": "master", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h1", { className: "spacer", children: "Master Dashboard" }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("small", { className: "muted", children: [
+        "Checked ",
+        fmtTime(m.checked_at)
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { className: "btn small", onClick: () => void load(), children: "Refresh" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "card boxed stack", "data-testid": "alerts", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h2", { children: alerts.length ? `Needs attention (${alerts.length})` : "All clear" }),
+      alerts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "muted", style: { margin: 0 }, children: "Nothing needs attention right now." }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("ul", { className: "alerts", children: alerts.map((a) => /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("li", { className: a.level, children: a.open && openable(a.open, me.role) ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { className: "linkbtn", onClick: () => go(a.open), children: a.text }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("span", { children: a.text }) }, a.text)) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h2", { children: "Agents" }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Agents", value: fmtNum(m.agents), sub: `${m.new_7d} new in 7 days`, open: { k: "dash", tab: "growth" }, testid: "m-agents" }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Using the app now", value: fmtNum(m.live_now), sub: "last 5 minutes", open: { k: "live" }, testid: "m-live" }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Active today", value: fmtNum(m.active_today), sub: `${m.active_7d} in 7 days \xB7 ${m.active_30d} in 30`, open: { k: "dash", tab: "active" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "At risk", value: fmtNum(m.at_risk), open: { k: "dash", tab: "retention" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Holds / complaints", value: `${fmtNum(m.holds_active ?? 0)} / ${fmtNum(m.complaints_active ?? 0)}`, sub: "legal holds / open complaints", open: can(me.role, "complaints") ? { k: "complaints" } : void 0 }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Accounts not active", value: fmtNum(m.accounts_not_active), sub: "suspended / banned / closed", open: can(me.role, "listAgents") ? { k: "agents", filter: "not_active" } : void 0 })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "card", children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Bars, { label: "Agents who used the app, last 14 days", items: m.active_by_day.map((d) => ({ label: d.day, value: d.agents })) }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h2", { children: "Business" }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Listings", value: fmtNum(m.listings), sub: `${m.stale} stale`, open: { k: "dash", tab: "listings" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Sold or rented, 30 days", value: fmtNum(m.closed_30d), open: can(me.role, "viewDashAgents") ? { k: "top" } : { k: "dash", tab: "pipeline" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Posts live", value: fmtNum(m.posts_live), sub: `${m.pushes_waiting} push alert(s) waiting`, open: { k: "news", tab: "news" } })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h2", { children: "System" }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Database", value: fmtBytes(m.db_bytes), sub: `of ${fmtBytes(m.db_limit_bytes)}`, open: { k: "health", tab: "storage" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Stored files", value: fmtBytes(m.files_bytes), sub: `of ${fmtBytes(m.files_limit_bytes)}`, open: { k: "health", tab: "storage" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Last restore test passed", value: m.last_restore_pass ?? "never", open: { k: "health", tab: "backups" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Sync, 7 days", value: `${fmtNum(m.sync_fails_7d)} failed`, sub: `of ${fmtNum(m.sync_runs_7d)} runs`, open: can(me.role, "viewHealthAgents") ? { k: "health", tab: "sync" } : void 0 }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Problem reports open", value: fmtNum(m.tickets_open), sub: `${m.tickets_new} new`, open: staff ? { k: "tickets" } : void 0, testid: "m-tickets" }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Maintenance", value: m.maintenance_on ? "ON" : "off", open: { k: "ops", tab: "maintenance" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Minimum version", value: m.min_version ?? "none", sub: m.min_version ? m.min_version_mode === "hard" ? "hard block" : "soft warning" : void 0, open: { k: "ops", tab: "release" } }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Tile, { label: "Feature flags on", value: fmtNum(m.flags_on), open: { k: "ops", tab: "flags" } })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("small", { className: "muted", children: [
+      "Storage limits are the ones set in System Health (MB ",
+      Math.round(m.db_limit_bytes / MB),
+      " / ",
+      Math.round(m.files_limit_bytes / MB),
+      ")."
+    ] })
+  ] });
+}
+function TopAgentsScreen() {
+  const { api: api2, go } = useAdmin();
+  const [key, setKey] = (0, import_react21.useState)("30");
+  const [data, setData] = (0, import_react21.useState)(null);
+  const [err, setErr] = (0, import_react21.useState)(null);
+  (0, import_react21.useEffect)(() => {
+    let on = true;
+    setData(null);
+    setErr(null);
+    const r = presetRange(key, todayKL());
+    api2.topAgents(r.from, r.to, 50).then((x) => on && setData(x.agents)).catch((e) => on && setErr(errText(e)));
+    return () => {
+      on = false;
+    };
+  }, [api2, key]);
+  return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stack", "data-testid": "top", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h1", { children: "Top agents" }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "tabs", role: "group", "aria-label": "Period", style: { margin: 0 }, children: ["7", "30", "90", "365"].map((k) => /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { "aria-pressed": key === k, onClick: () => setKey(k), "data-testid": `top-${k}`, children: RANGE_LABEL[k] }, k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Ranked by listings sold or rented in the period, then new listings, then days they used the app. Opening this list is recorded." }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(ErrorBox, { text: err }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Loading, {}) : data.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "muted", children: "No activity in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("table", { "data-testid": "top-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "#" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Sold" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Rented" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "New listings" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Listings now" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Days used" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Actions" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("tbody", { children: data.map((t, i) => /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: i + 1 }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: t.user_id }), children: t.name ?? t.email }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("small", { className: "muted", children: t.email })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: t.sold }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: t.rented }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: t.new_listings }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: t.listings }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: t.active_days }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: fmtNum(t.actions) })
+      ] }, t.user_id)) })
+    ] }) })
+  ] });
+}
+function LiveScreen() {
+  const { api: api2, me, go } = useAdmin();
+  const [mins, setMins] = (0, import_react21.useState)(5);
+  const [d, setD] = (0, import_react21.useState)(null);
+  const [err, setErr] = (0, import_react21.useState)(null);
+  const load = (0, import_react21.useCallback)(async () => {
+    setErr(null);
+    try {
+      setD(await api2.liveUsers(mins));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, mins]);
+  (0, import_react21.useEffect)(() => {
+    void load();
+    const t = window.setInterval(() => void load(), 6e4);
+    return () => window.clearInterval(t);
+  }, [load]);
+  return /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stack", "data-testid": "live", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h1", { className: "spacer", children: "Live users now" }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { className: "btn small", onClick: () => void load(), children: "Refresh" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "tabs", role: "group", "aria-label": "Within", style: { margin: 0 }, children: [5, 15, 60].map((m) => /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("button", { "aria-pressed": mins === m, onClick: () => setMins(m), "data-testid": `live-${m}`, children: [
+      "Last ",
+      m,
+      " min"
+    ] }, m)) }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !d ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(Loading, {}) : /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)(import_jsx_runtime22.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "stats", children: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "stat", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("span", { className: "l", children: "Agents using the app" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("b", { className: "v", "data-testid": "live-count", children: d.count }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("small", { className: "muted", children: [
+          "in the last ",
+          d.minutes,
+          " minutes \xB7 updates every minute"
+        ] })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("h3", { children: "On which screen" }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)(HBars, { label: "Agents per screen", items: d.by_screen.map((s) => ({ key: s.screen, label: s.screen === "unknown" ? "No screen yet" : nameLabel(s.screen), value: s.agents })) })
+      ] }),
+      d.agents === null || !can(me.role, "viewDashAgents") ? /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("p", { className: "muted small", children: "Names are shown to the Owner, Admin and Compliance only." }) : d.agents.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("table", { "data-testid": "live-list", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Agent" }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Screen" }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "Last action" }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("th", { children: "App" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("tbody", { children: d.agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: a.user_id }), children: a.name ?? a.email }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { children: a.screen ? nameLabel(a.screen) : "\u2014" }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsx)("td", { className: "small", children: fmtTime(a.last_at) }),
+          /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("td", { className: "small", children: [
+            a.app_version ?? "\u2014",
+            " \xB7 ",
+            platformLabel(a.platform),
+            a.device ? ` \xB7 ${a.device}` : ""
+          ] })
+        ] }, a.user_id)) })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime22.jsxs)("small", { className: "muted", children: [
+        "\u201CUsing now\u201D = the app sent something (a screen, a sync, a heartbeat) in the last ",
+        d.minutes,
+        " minutes."
+      ] })
+    ] })
+  ] });
+}
+
+// src/screens/Reports.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react22 = __toESM(require_react(), 1);
+
+// src/admin/reports.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var MAX_ROWS = 5e3;
+var MAX_FILTERS = 10;
+var MAX_GROUPS = 2;
+var OP_LABEL = {
+  contains: "contains",
+  eq: "is exactly",
+  in: "is one of",
+  min: "at least",
+  max: "at most",
+  after: "on or after",
+  before: "on or before",
+  is: "is"
+};
+function opsFor(t) {
+  return t === "text" ? ["contains", "eq", "in", "is"] : t === "num" ? ["min", "max", "eq", "is"] : t === "date" ? ["after", "before", "is"] : ["is"];
+}
+var IS_VALUES = { true: "Yes", false: "No", empty: "empty", not_empty: "not empty" };
+var isValuesFor = (t) => t === "bool" ? ["true", "false", "empty", "not_empty"] : ["empty", "not_empty"];
+function newDraft(source, src, canNames) {
+  const cols = Object.entries(src?.columns ?? {}).filter(([, c]) => canNames || !c.p).map(([k]) => k);
+  return {
+    source,
+    mode: canNames ? "rows" : "totals",
+    columns: cols.slice(0, 4),
+    group_by: canNames ? [] : cols.slice(0, 1),
+    measure: "count",
+    from: "",
+    to: "",
+    filters: [],
+    sortBy: "",
+    sortDir: "desc",
+    limit: 1e3
+  };
+}
+var isDay2 = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`));
+var filterValue = (f, t) => f.op === "in" ? f.value.split(",").map((v) => v.trim()).filter(Boolean) : (f.op === "min" || f.op === "max") && t === "num" ? Number(f.value) : f.value.trim();
+function draftToSpec(d, src) {
+  const spec = { source: d.source, limit: Math.min(Math.max(Math.round(d.limit) || 1e3, 1), MAX_ROWS) };
+  if (d.mode === "rows") spec.columns = [...d.columns];
+  else {
+    spec.group_by = [...d.group_by];
+    spec.measure = d.measure || "count";
+  }
+  if (d.from) spec.from = d.from;
+  if (d.to) spec.to = d.to;
+  const filters = d.filters.filter((f) => f.col && (f.op === "is" ? !!f.value : f.value.trim() !== "")).map((f) => ({ col: f.col, op: f.op, value: filterValue(f, src?.columns[f.col]?.t) }));
+  if (filters.length) spec.filters = filters;
+  if (d.sortBy) spec.sort = { by: d.sortBy, dir: d.sortDir };
+  return spec;
+}
+function specToDraft(s) {
+  const grouped = (s.group_by?.length ?? 0) > 0;
+  return {
+    source: s.source,
+    mode: grouped ? "totals" : "rows",
+    columns: s.columns ?? [],
+    group_by: s.group_by ?? [],
+    measure: s.measure ?? "count",
+    from: s.from ?? "",
+    to: s.to ?? "",
+    sortBy: s.sort?.by ?? "",
+    sortDir: s.sort?.dir ?? "desc",
+    limit: s.limit ?? 1e3,
+    filters: (s.filters ?? []).map((f) => ({ col: f.col, op: f.op, value: Array.isArray(f.value) ? f.value.join(", ") : String(f.value) }))
+  };
+}
+function draftProblems2(d, src, canNames) {
+  const out = [];
+  if (!src) return ["Choose what the report is about."];
+  const col = (k) => src.columns[k];
+  const personal = (k) => !!col(k)?.p;
+  if (d.mode === "rows") {
+    if (!canNames) out.push("Your role can only build totals (grouped counts).");
+    if (!d.columns.length) out.push("Tick at least one column.");
+  } else {
+    if (!d.group_by.length) out.push("Choose what to group by.");
+    if (d.group_by.length > MAX_GROUPS) out.push(`Group by at most ${MAX_GROUPS} columns.`);
+    if (d.measure !== "count") {
+      const m = d.measure.split(":")[1] ?? "";
+      if (col(m)?.t !== "num") out.push("A total or average needs a number column.");
+    }
+  }
+  const used = [...d.mode === "rows" ? d.columns : d.group_by, ...d.filters.map((f) => f.col)];
+  if (used.some((k) => k && !col(k))) out.push("A column is not in this report source.");
+  if (!canNames && used.some(personal)) out.push("Names and emails are not shown to your role.");
+  if (d.filters.length > MAX_FILTERS) out.push(`At most ${MAX_FILTERS} filters.`);
+  for (const f of d.filters) {
+    const c = col(f.col);
+    if (!c) continue;
+    if (!opsFor(c.t).includes(f.op)) out.push(`"${c.l}" cannot be filtered with "${OP_LABEL[f.op]}".`);
+    else if ((f.op === "min" || f.op === "max" || f.op === "eq" && c.t === "num") && f.value.trim() !== "" && !Number.isFinite(Number(f.value))) out.push(`"${c.l}" needs a number.`);
+    else if ((f.op === "after" || f.op === "before") && f.value && !isDay2(f.value)) out.push(`"${c.l}" needs a date.`);
+  }
+  if (d.from && !isDay2(d.from)) out.push('The "from" date is not a date.');
+  if (d.to && !isDay2(d.to)) out.push('The "to" date is not a date.');
+  if (d.from && d.to && isDay2(d.from) && isDay2(d.to) && d.from > d.to) out.push('"From" must be before "to".');
+  if (d.sortBy && d.sortBy !== "value" && !(d.mode === "rows" ? d.columns : d.group_by).includes(d.sortBy)) out.push("Sort by one of the chosen columns.");
+  if (!(d.limit >= 1 && d.limit <= MAX_ROWS)) out.push(`Show between 1 and ${MAX_ROWS.toLocaleString("en-MY")} rows.`);
+  return [...new Set(out)];
+}
+function measureLabel(measure, src) {
+  if (!measure || measure === "count") return "How many";
+  const [fn, c] = measure.split(":");
+  const l = src?.columns[c]?.l ?? c;
+  return fn === "sum" ? `Total ${l}` : `Average ${l}`;
+}
+function resultHeaders(spec, src) {
+  const h = (k) => ({ key: k, label: src?.columns[k]?.l ?? k, t: src?.columns[k]?.t ?? "text" });
+  return spec.group_by?.length ? [...spec.group_by.map(h), { key: "value", label: measureLabel(spec.measure, src), t: "num" }] : (spec.columns ?? []).map(h);
+}
+function cellText(v, t, key = "") {
+  if (v === null || v === void 0 || v === "") return "\u2014";
+  if (t === "bool") return v === true || v === "true" ? "Yes" : "No";
+  if (t === "num") return typeof v === "number" || Number.isFinite(Number(v)) ? Number(v).toLocaleString("en-MY", { maximumFractionDigits: 2 }) : String(v);
+  if (key === "status" && typeof v === "string") return statusLabel(v);
+  if (key === "category" && typeof v === "string") return COMPLAINT_CATEGORY[v] ?? v;
+  return String(v);
+}
+var cellValue = (v, t, key = "") => t === "num" && v !== null && v !== void 0 && v !== "" && Number.isFinite(Number(v)) ? Number(v) : cellText(v, t, key);
+function chartItems(spec, res, src) {
+  const g = spec.group_by ?? [];
+  if (!g.length) return [];
+  return res.rows.slice(0, 30).map((r, i) => ({
+    key: String(i),
+    label: g.map((k) => cellText(r[k], src?.columns[k]?.t ?? "text", k)).join(" \xB7 "),
+    value: Number(r.value) || 0
+  }));
+}
+function changeText(cur, prev) {
+  if (prev === null) return "";
+  const d = cur - prev;
+  if (d === 0) return "same";
+  if (prev === 0) return "new";
+  const pct2 = Math.round(d / prev * 100);
+  return `${d > 0 ? "+" : "\u2212"}${Math.abs(d).toLocaleString("en-MY")} (${pct2 > 0 ? "+" : pct2 < 0 ? "\u2212" : ""}${Math.abs(pct2)}%)`;
+}
+var pctText = (part, whole) => whole > 0 ? `${Math.round(part / whole * 100)}%` : "\u2014";
+var REQUESTER = { jpph: "JPPH", police: "Police", court: "Court", board: "Board (LPPEH)", pdpa: "PDPA (agent)", other: "Other" };
+var keysOf = (a, b) => [.../* @__PURE__ */ new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])].sort();
+function boardSections(r) {
+  const c = r.current, p = r.previous;
+  const L = (label, f, extra = {}) => ({ label, cur: f(c) ?? 0, prev: f(p) ?? 0, ...extra });
+  const now = (label, f, extra = {}) => ({ label, cur: f(c) ?? 0, prev: null, ...extra });
+  const pdpaPct = (n) => pctText(n.pdpa.answered_in_21, n.pdpa.with_deadline);
+  return [
+    { title: "Agents", lines: [
+      L("Agents at the end of the period", (n) => n.agents.total),
+      L("New agents", (n) => n.agents.new),
+      L("Agents who used the app", (n) => n.agents.active),
+      L("Account status changes (suspend / ban / close / re-activate)", (n) => n.agents.status_changes),
+      now("Accounts not active today", (n) => n.agents.not_active_now)
+    ] },
+    { title: "Licences", lines: [
+      now("Licences recorded", (n) => n.licences.total),
+      now("Verified", (n) => n.licences.verified),
+      L("Expired by the end of the period", (n) => n.licences.expired_at_end, { warn: c.licences.expired_at_end > 0 }),
+      L("Expiring in the 60 days after", (n) => n.licences.expiring_60_after),
+      now("No expiry date entered", (n) => n.licences.no_expiry_date)
+    ] },
+    { title: "Listings", lines: [
+      L("New listings", (n) => n.listings.new),
+      L("Sold", (n) => n.listings.sold),
+      L("Rented", (n) => n.listings.rented),
+      now("Listings today (not deleted)", (n) => n.listings.live_now),
+      ...Object.entries(c.listings.by_status_now ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ label: statusLabel(k), cur: v, prev: null, sub: true }))
+    ] },
+    { title: "Complaints", lines: [
+      L("Received", (n) => n.complaints.received),
+      ...keysOf(c.complaints.by_category, p.complaints.by_category).map((k) => L(COMPLAINT_CATEGORY[k] ?? k, (n) => n.complaints.by_category?.[k] ?? 0, { sub: true })),
+      L("Resolved, dismissed or referred", (n) => n.complaints.resolved),
+      L("Still open at the end", (n) => n.complaints.open_at_end, { warn: c.complaints.open_at_end > 0 })
+    ] },
+    { title: "PDPA requests", lines: [
+      L("Received", (n) => n.pdpa.received),
+      ...keysOf(c.pdpa.by_kind, p.pdpa.by_kind).map((k) => L(PDPA_KIND[k] ?? k, (n) => n.pdpa.by_kind?.[k] ?? 0, { sub: true })),
+      L("Access / correction (21-day rule)", (n) => n.pdpa.with_deadline),
+      L("Answered within 21 days", (n) => n.pdpa.answered_in_21, { text: `${pdpaPct(c)} (last: ${pdpaPct(p)})` }),
+      L("Late (over 21 days)", (n) => n.pdpa.late, { warn: c.pdpa.late > 0 })
+    ] },
+    { title: "Problem reports", lines: [
+      L("Received from agents", (n) => n.tickets.received),
+      L("Marked fixed or closed", (n) => n.tickets.fixed_or_closed)
+    ] },
+    { title: "Regulator cases", lines: [
+      L("Cases opened", (n) => n.cases.opened),
+      ...keysOf(c.cases.by_requester, p.cases.by_requester).map((k) => L(REQUESTER[k] ?? k, (n) => n.cases.by_requester?.[k] ?? 0, { sub: true })),
+      L("Cases closed", (n) => n.cases.closed),
+      L("Packs and files kept in the vault", (n) => n.cases.packs)
+    ] },
+    { title: "Admin actions", lines: [
+      L("Changes made by admins (Master Audit Log)", (n) => n.admin.actions),
+      L("Exports made", (n) => n.admin.exports),
+      ...(c.admin.top_actions ?? []).map((t) => ({ label: actionLabel(t.action), cur: t.n, prev: (p.admin.top_actions ?? []).find((x) => x.action === t.action)?.n ?? 0, sub: true }))
+    ] }
+  ];
+}
+var actionLabel = (a) => a.replace(/_/g, " ").replace(/^./, (ch) => ch.toUpperCase());
+var MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+var monthName = (m) => `${MONTHS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+var monthStart = (d) => `${d.slice(0, 7)}-01`;
+function prevMonth(m) {
+  const y = Number(m.slice(0, 4)), mo = Number(m.slice(5, 7));
+  return mo === 1 ? `${y - 1}-12-01` : `${y}-${String(mo - 1).padStart(2, "0")}-01`;
+}
+function monthOptions(today2, n = 24) {
+  const out = [];
+  let m = monthStart(today2);
+  for (let i = 0; i < n && m >= "2026-01-01"; i++) {
+    out.push(m);
+    m = prevMonth(m);
+  }
+  return out;
+}
+function yearOptions(today2) {
+  const out = [];
+  for (let y = Number(today2.slice(0, 4)); y >= 2026; y--) out.push(y);
+  return out;
+}
+
+// src/export/board.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var blobOf = async (doc, sheets, format, title, author) => format === "pdf" ? renderPagesToPdf(layoutDocument(doc(), canvasMeasure()), title) : new Blob([buildXlsx(sheets(), { title, author })], { type: XLSX_MIME });
+var periodText = (r) => `${monthName(r.month)}${r.complete ? "" : ` (so far, to ${r.current.to})`}`;
+function buildBoardDoc(x) {
+  const r = x.report;
+  const b = [
+    { t: "title", text: "Monthly Board report", sub: `${x.companyName ? `${x.companyName} \xB7 ` : ""}${periodText(r)}` },
+    { t: "rows", rows: [
+      { k: "Reference", v: x.reference, strong: true },
+      { k: "Month", v: periodText(r) },
+      { k: "Compared with", v: monthName(r.previous.from) },
+      { k: "Made", v: `${fmtTime(x.createdAt)} by ${x.adminEmail}` },
+      { k: "Content fingerprint (SHA-256)", v: x.contentSha }
+    ] },
+    { t: "text", small: true, muted: true, text: 'Each line: this month, then last month and the change. Lines marked "today" are a count on the day the report was made. Totals only: no agent is named.' }
+  ];
+  for (const s of boardSections(r)) {
+    b.push({ t: "heading", text: s.title });
+    b.push({ t: "rows", rows: s.lines.map((l) => ({
+      k: l.sub ? `  ${l.label}` : l.label,
+      sub: l.sub,
+      warn: l.warn,
+      v: l.prev === null ? `${l.cur.toLocaleString("en-MY")} today` : `${l.cur.toLocaleString("en-MY")}   \xB7   last month ${l.prev.toLocaleString("en-MY")}   \xB7   ${changeText(l.cur, l.prev)}${l.text ? `   \xB7   ${l.text}` : ""}`
+    })) });
+  }
+  const states = r.current.listings.by_state_now ?? [];
+  if (states.length) {
+    b.push({ t: "heading", text: "Listings by state today (top 10)" });
+    b.push({ t: "rows", rows: states.map((s) => ({ k: s.state, v: s.listings.toLocaleString("en-MY") })) });
+  }
+  b.push({ t: "text", small: true, muted: true, text: "Generated by Admin EAB from the live database (Malaysia dates). This file is kept in the Document Vault under the reference above; its file fingerprint proves any copy is unchanged." });
+  return { blocks: b, footer: `${x.reference} \xB7 Board report ${r.month.slice(0, 7)} \xB7 content ${shortFp(x.contentSha)}` };
+}
+function buildBoardSheets(x) {
+  const r = x.report;
+  const rows = [["Section", "Line", monthName(r.month), monthName(r.previous.from), "Change", "Note"]];
+  for (const s of boardSections(r)) for (const l of s.lines)
+    rows.push([s.title, l.label, l.cur, l.prev ?? "", l.prev === null ? "count today" : changeText(l.cur, l.prev), l.text ?? ""]);
+  return [
+    { name: "Board report", widths: [22, 52, 16, 16, 16, 30], rows },
+    { name: "About", widths: [30, 70], rows: [
+      ["Monthly Board report", x.reference],
+      ["Month", periodText(r)],
+      ["Compared with", monthName(r.previous.from)],
+      ["Company", x.companyName ?? ""],
+      ["Made", `${fmtTime(x.createdAt)} by ${x.adminEmail}`],
+      ["Content fingerprint (SHA-256)", x.contentSha]
+    ] },
+    { name: "Listings by state", widths: [30, 12], rows: [["State", "Listings today"], ...(r.current.listings.by_state_now ?? []).map((s) => [s.state, s.listings])] }
+  ];
+}
+var boardFileName = (month, reference, ext) => `Board-report-${month.slice(0, 7)}-${reference}.${ext}`;
+async function exportBoardReport(api2, adminEmail, month, format, onStep = () => {
+}) {
+  onStep("Counting\u2026");
+  const [report, companyName] = await Promise.all([api2.boardReport(month), api2.settings().then((s) => s.company_name).catch(() => void 0)]);
+  const contentSha = await contentFingerprint(report);
+  onStep("Registering the export\u2026");
+  const reg = await api2.startExport("board_report", format, null, { month: report.month, content_sha256: contentSha });
+  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, companyName, contentSha, report };
+  onStep(format === "pdf" ? "Making the PDF\u2026" : "Making the Excel file\u2026");
+  const blob = await blobOf(() => buildBoardDoc(input), () => buildBoardSheets(input), format, `Board report ${report.month.slice(0, 7)} ${reg.reference}`, adminEmail);
+  const name = boardFileName(report.month, reg.reference, format);
+  onStep("Storing in the Document Vault\u2026");
+  const pack = await storeInVault(api2, { blob, reference: reg.reference, kind: "board_report", format, fileName: name, caseId: null, agentUser: null, contentSha });
+  onStep("Saving a copy\u2026");
+  return { pack, how: await saveLocally(blob, name) };
+}
+var yn = (b) => b ? "Yes" : "No";
+var answerDays = (p) => {
+  const end = p.supplied_on ?? p.decided_on;
+  return end ? daysSince(p.received_on, end) : null;
+};
+var late = (p, today2) => hasDeadline(p.kind) && (daysSince(p.received_on, p.supplied_on ?? p.decided_on ?? today2) ?? 0) > 21;
+function auditCounts(b, today2) {
+  return {
+    actions: b.counts.actions,
+    access: b.counts.access,
+    actionsCut: b.counts.actions > b.actions.length,
+    accessCut: b.counts.access > b.access.length,
+    restoreTests: b.backup_tests.filter((t) => t.kind === "restore_test").length,
+    failedTests: b.backup_tests.filter((t) => t.result !== "pass").length,
+    cases: b.cases.length,
+    packs: b.vault.length,
+    pdpa: b.pdpa.length,
+    pdpaLate: b.pdpa.filter((p) => late(p, today2)).length,
+    complaints: b.complaints.length,
+    holds: b.holds.length,
+    holdsActive: b.holds.filter((h) => !h.released_at).length,
+    reviews: b.retention_reviews.length,
+    chainOk: !!(b.chain.actions?.ok && b.chain.access?.ok)
+  };
+}
+function buildAuditSheets(x) {
+  const b = x.bundle;
+  const today2 = todayKL();
+  const c = auditCounts(b, today2);
+  const cut = (n, shown) => n > shown ? `${n} (first ${shown.toLocaleString("en-MY")} in this workbook)` : n;
+  return [
+    { name: "Summary", widths: [42, 70], rows: [
+      ["Annual audit bundle", x.reference],
+      ["Year", b.year],
+      ["Period", `${b.from} to ${b.to} (Malaysia dates)`],
+      ["Company", x.companyName ?? ""],
+      ["Made", `${fmtTime(x.createdAt)} by ${x.adminEmail}`],
+      ["Content fingerprint (SHA-256)", x.contentSha],
+      [],
+      ["Tamper check \u2014 Master Audit Log", b.chain.actions?.ok ? `OK (${b.chain.actions.checked} rows checked)` : `BROKEN at row ${b.chain.actions?.first_bad_seq}`],
+      ["Tamper check \u2014 access log", b.chain.access?.ok ? `OK (${b.chain.access.checked} rows checked)` : `BROKEN at row ${b.chain.access?.first_bad_seq}`],
+      ["Admin actions in the year", cut(c.actions, b.actions.length)],
+      ["Access log rows in the year", cut(c.access, b.access.length)],
+      ["Backup checks and restore tests", b.backup_tests.length],
+      ["  of which restore tests", c.restoreTests],
+      ["  not passed", c.failedTests],
+      ["Regulator cases (open during the year)", c.cases],
+      ["Files kept in the vault in the year", c.packs],
+      ["PDPA requests received", c.pdpa],
+      ["  over 21 days (access / correction)", c.pdpaLate],
+      ["Complaints received", c.complaints],
+      ["Legal holds (in force during the year)", c.holds],
+      ["  still in force", c.holdsActive],
+      ["Retention reviews", c.reviews]
+    ] },
+    { name: "Admin actions", widths: [8, 20, 30, 12, 24, 38, 40, 40, 20, 18], rows: [
+      ["No.", "When (MYT)", "Admin", "Role", "Action", "Agent (user id)", "About", "Reason", "Device", "Row fingerprint"],
+      ...b.actions.map((a) => [a.seq, fmtTime(a.at), a.admin_email ?? a.admin_user, a.admin_role ?? "", actionLabel(a.action), a.target_user ?? "", a.target_ref ?? "", a.reason ?? "", a.device ?? "", a.hash])
+    ] },
+    { name: "Access log", widths: [8, 20, 30, 12, 18, 38, 40, 20, 18], rows: [
+      ["No.", "When (MYT)", "Admin", "Role", "What", "Agent (user id)", "About", "Device", "Row fingerprint"],
+      ...b.access.map((a) => [a.seq, fmtTime(a.at), a.admin_email ?? a.admin_user, a.admin_role ?? "", a.kind, a.target_user ?? "", a.target_ref ?? "", a.device ?? "", a.hash])
+    ] },
+    { name: "Tamper check", widths: [24, 10, 14, 24], rows: [
+      ["Log", "OK", "Rows checked", "First broken row"],
+      ["Master Audit Log", yn(b.chain.actions?.ok), b.chain.actions?.checked ?? "", b.chain.actions?.first_bad_seq ?? ""],
+      ["Access log", yn(b.chain.access?.ok), b.chain.access?.checked ?? "", b.chain.access?.first_bad_seq ?? ""],
+      [],
+      ["Checked when this bundle was made, over every row ever written (not only this year)."]
+    ] },
+    { name: "Backup tests", widths: [16, 12, 18, 16, 12, 40, 10, 40, 30], rows: [
+      ["Ref", "Date", "Box", "Kind", "Result", "What was done", "Minutes", "Notes", "Recorded by"],
+      ...b.backup_tests.map((t) => [t.ref, t.tested_on, TARGET_LABEL[t.target] ?? t.target, KIND_LABEL3[t.kind] ?? t.kind, RESULT_LABEL[t.result] ?? t.result, t.what, t.duration_minutes ?? "", t.notes ?? "", t.recorded_by_email ?? ""])
+    ] },
+    { name: "Cases & packs", widths: [18, 14, 26, 12, 12, 10, 8, 22, 12, 8, 66], rows: [
+      ["Case", "Requested by", "Officer / office", "Received", "Deadline", "Status", "Agents", "Pack reference", "Format", "Stored", "File fingerprint (SHA-256)"],
+      ...b.cases.flatMap((k) => {
+        const head = [k.case_no, k.requester_type, k.requester_name, k.received_on, k.deadline ?? "", k.status, k.agents];
+        return k.packs.length ? k.packs.map((p, i) => [...i === 0 ? head : ["", "", "", "", "", "", ""], p.reference, p.format, yn(p.stored), p.sha256]) : [[...head, "(no pack yet)"]];
+      })
+    ] },
+    { name: "Vault files", widths: [22, 22, 8, 8, 20, 66], rows: [
+      ["Reference", "Kind", "Format", "Stored", "Made (MYT)", "File fingerprint (SHA-256)"],
+      ...b.vault.map((p) => [p.reference, p.kind, p.format, yn(p.stored), fmtTime(p.created_at), p.sha256])
+    ] },
+    { name: "PDPA", widths: [16, 12, 26, 12, 26, 12, 12, 10, 10, 40], rows: [
+      ["Ref", "Received", "Kind", "Status", "Requester", "Decided", "Supplied", "Days", "Over 21 days", "Outcome"],
+      ...b.pdpa.map((p) => [
+        p.ref,
+        p.received_on,
+        PDPA_KIND[p.kind] ?? p.kind,
+        PDPA_STATUS[p.status] ?? p.status,
+        p.requester_name,
+        p.decided_on ?? "",
+        p.supplied_on ?? "",
+        answerDays(p) ?? "",
+        hasDeadline(p.kind) ? yn(late(p, today2)) : "no rule",
+        p.outcome ?? ""
+      ])
+    ] },
+    { name: "Complaints", widths: [16, 12, 26, 14, 24, 16, 20, 40], rows: [
+      ["Ref", "Received", "Complainant", "Came in by", "About", "Status", "Listing", "Outcome"],
+      ...b.complaints.map((k) => [
+        k.ref,
+        k.received_on,
+        k.complainant_name,
+        COMPLAINT_CHANNEL[k.channel] ?? k.channel,
+        COMPLAINT_CATEGORY[k.category] ?? k.category,
+        COMPLAINT_STATUS[k.status] ?? k.status,
+        k.listing_ref ?? "",
+        k.outcome ?? ""
+      ])
+    ] },
+    { name: "Legal holds", widths: [38, 40, 20, 28, 20, 28, 40], rows: [
+      ["Agent (user id)", "Reason", "Placed (MYT)", "Placed by", "Released (MYT)", "Released by", "Release reason"],
+      ...b.holds.map((h) => [h.agent_user, h.reason, fmtTime(h.placed_at), h.placed_by_email ?? "", h.released_at ? fmtTime(h.released_at) : "still in force", h.released_by_email ?? "", h.release_reason ?? ""])
+    ] },
+    { name: "Retention reviews", widths: [20, 12, 16, 10, 10, 10, 40, 28], rows: [
+      ["When (MYT)", "Older than", "Decision", "Records", "On hold", "Versions", "Note", "By"],
+      ...b.retention_reviews.map((r) => [fmtTime(r.at), r.cutoff, r.decision === "keep" ? "Keep everything" : "Approve later", r.counts?.records ?? "", r.counts?.records_on_hold ?? "", r.counts?.versions ?? "", r.note, r.by_email ?? ""])
+    ] }
+  ];
+}
+function buildAuditDoc(x, workbook) {
+  const b = x.bundle;
+  const c = auditCounts(b, todayKL());
+  const blocks = [
+    { t: "title", text: `Annual audit bundle ${b.year}`, sub: `${x.companyName ? `${x.companyName} \xB7 ` : ""}Estate Agent AI Buddy \xB7 summary` },
+    { t: "rows", rows: [
+      { k: "Reference", v: x.reference, strong: true },
+      { k: "Period", v: `${b.from} to ${b.to} (Malaysia dates)` },
+      { k: "Made", v: `${fmtTime(x.createdAt)} by ${x.adminEmail}` },
+      { k: "Content fingerprint (SHA-256)", v: x.contentSha },
+      ...workbook ? [{ k: "Full lists: Excel workbook", v: workbook.reference, strong: true }, { k: "Workbook file fingerprint (SHA-256)", v: workbook.sha256 }] : []
+    ] },
+    { t: "heading", text: "Tamper check" },
+    { t: "rows", rows: [
+      { k: "Master Audit Log", v: b.chain.actions?.ok ? `OK \u2014 ${b.chain.actions.checked} rows, chain unbroken` : `BROKEN at row ${b.chain.actions?.first_bad_seq}`, warn: !b.chain.actions?.ok },
+      { k: "Access log (who viewed what)", v: b.chain.access?.ok ? `OK \u2014 ${b.chain.access.checked} rows, chain unbroken` : `BROKEN at row ${b.chain.access?.first_bad_seq}`, warn: !b.chain.access?.ok }
+    ] },
+    { t: "heading", text: "Logs in the year" },
+    { t: "rows", rows: [
+      { k: "Admin actions (Master Audit Log)", v: `${c.actions.toLocaleString("en-MY")}${c.actionsCut ? ` \u2014 workbook holds the first ${b.actions.length.toLocaleString("en-MY")}` : ""}`, warn: c.actionsCut },
+      { k: "Access log rows", v: `${c.access.toLocaleString("en-MY")}${c.accessCut ? ` \u2014 workbook holds the first ${b.access.length.toLocaleString("en-MY")}` : ""}`, warn: c.accessCut }
+    ] },
+    { t: "heading", text: "Backups" },
+    { t: "rows", rows: [
+      { k: "Backup checks and restore tests", v: String(b.backup_tests.length) },
+      { k: "Restore tests", v: String(c.restoreTests), warn: c.restoreTests === 0 },
+      { k: "Not passed", v: String(c.failedTests), warn: c.failedTests > 0 },
+      ...b.backup_tests.map((t) => ({ k: `  ${t.ref} \xB7 ${t.tested_on}`, v: `${TARGET_LABEL[t.target] ?? t.target} \xB7 ${KIND_LABEL3[t.kind] ?? t.kind} \xB7 ${RESULT_LABEL[t.result] ?? t.result}`, sub: true }))
+    ] },
+    { t: "heading", text: "Regulator cases and the Document Vault" },
+    { t: "rows", rows: [
+      { k: "Cases open during the year", v: String(c.cases) },
+      ...b.cases.map((k) => ({ k: `  ${k.case_no}`, v: `${k.requester_type} \xB7 received ${k.received_on} \xB7 ${k.status} \xB7 ${k.agents} agent(s) \xB7 ${k.packs.length} pack(s)`, sub: true })),
+      { k: "Files kept in the vault in the year", v: String(c.packs) }
+    ] },
+    { t: "heading", text: "PDPA, complaints, holds, retention" },
+    { t: "rows", rows: [
+      { k: "PDPA requests received", v: String(c.pdpa) },
+      { k: "Access / correction over 21 days", v: String(c.pdpaLate), warn: c.pdpaLate > 0 },
+      { k: "Complaints received", v: String(c.complaints) },
+      { k: "Legal holds in force during the year", v: `${c.holds} (${c.holdsActive} still in force)` },
+      { k: "Retention reviews recorded", v: String(c.reviews) }
+    ] },
+    { t: "text", small: true, muted: true, text: 'Every list (each admin action and access row with its fingerprint, backup tests, cases with their pack fingerprints, vault files, PDPA requests, complaints, legal holds and retention reviews) is in the Excel workbook named above. Both files are kept in the Admin EAB Document Vault; "Check a file" there proves any copy is unchanged.' }
+  ];
+  return { blocks, footer: `${x.reference} \xB7 Audit bundle ${b.year} \xB7 content ${shortFp(x.contentSha)}` };
+}
+var auditFileName = (year, reference, ext) => `Audit-bundle-${year}-${ext === "xlsx" ? "workbook" : "summary"}-${reference}.${ext}`;
+async function exportAuditBundle(api2, adminEmail, year, onStep = () => {
+}) {
+  onStep("Collecting the year\u2026");
+  const [bundle, companyName] = await Promise.all([api2.auditBundle(year), api2.settings().then((s) => s.company_name).catch(() => void 0)]);
+  const contentSha = await contentFingerprint(bundle);
+  onStep("Registering the workbook\u2026");
+  const regX = await api2.startExport("audit_bundle", "xlsx", null, { year, content_sha256: contentSha });
+  const inX = { reference: regX.reference, createdAt: regX.at, adminEmail, companyName, contentSha, bundle };
+  onStep("Making the Excel workbook\u2026");
+  const xBlob = new Blob([buildXlsx(buildAuditSheets(inX), { title: `Audit bundle ${year} ${regX.reference}`, author: adminEmail })], { type: XLSX_MIME });
+  const xName = auditFileName(year, regX.reference, "xlsx");
+  onStep("Storing the workbook in the Document Vault\u2026");
+  const workbook = await storeInVault(api2, { blob: xBlob, reference: regX.reference, kind: "audit_bundle", format: "xlsx", fileName: xName, caseId: null, agentUser: null, contentSha });
+  const how = [await saveLocally(xBlob, xName)];
+  onStep("Registering the summary\u2026");
+  const regP = await api2.startExport("audit_bundle", "pdf", null, { year, content_sha256: contentSha, workbook: regX.reference });
+  const inP = { ...inX, reference: regP.reference, createdAt: regP.at };
+  onStep("Making the PDF summary\u2026");
+  const pBlob = await renderPagesToPdf(layoutDocument(buildAuditDoc(inP, { reference: regX.reference, sha256: workbook.sha256 }), canvasMeasure()), `Audit bundle ${year} ${regP.reference}`);
+  const pName = auditFileName(year, regP.reference, "pdf");
+  onStep("Storing the summary in the Document Vault\u2026");
+  const summary = await storeInVault(api2, { blob: pBlob, reference: regP.reference, kind: "audit_bundle", format: "pdf", fileName: pName, caseId: null, agentUser: null, contentSha });
+  how.push(await saveLocally(pBlob, pName));
+  return { workbook, summary, how };
+}
+var PDF_ROW_CAP = 1e3;
+function specText(spec, src) {
+  const l = (k) => src.columns[k]?.l ?? k;
+  const out = [src.label];
+  if (spec.group_by?.length) out.push(`grouped by ${spec.group_by.map(l).join(" and ")} \xB7 ${measureLabel(spec.measure, src)}`);
+  else out.push(`columns: ${(spec.columns ?? []).map(l).join(", ")}`);
+  if (spec.from || spec.to) out.push(`${l(src.date)} ${spec.from ? `from ${spec.from}` : ""}${spec.from && spec.to ? " " : ""}${spec.to ? `to ${spec.to}` : ""}`);
+  for (const f of spec.filters ?? []) out.push(`${l(f.col)} ${OP_LABEL[f.op]} ${f.op === "is" ? IS_VALUES[String(f.value)] ?? f.value : Array.isArray(f.value) ? f.value.join(", ") : `"${f.value}"`}`);
+  if (spec.sort) out.push(`sorted by ${spec.sort.by === "value" ? measureLabel(spec.measure, src) : l(spec.sort.by)} (${spec.sort.dir === "asc" ? "lowest first" : "highest first"})`);
+  return out;
+}
+function buildCustomDoc(x) {
+  const h = resultHeaders(x.spec, x.src);
+  const rows = x.result.rows.slice(0, PDF_ROW_CAP);
+  const grouped = !!x.spec.group_by?.length;
+  const b = [
+    { t: "title", text: x.name || "Custom report", sub: `${x.companyName ? `${x.companyName} \xB7 ` : ""}Custom report \xB7 ${x.src.label}` },
+    { t: "rows", rows: [
+      { k: "Reference", v: x.reference, strong: true },
+      { k: "Made", v: `${fmtTime(x.createdAt)} by ${x.adminEmail}` },
+      { k: "Report", v: specText(x.spec, x.src).join(" \xB7 ") },
+      { k: "Rows", v: `${x.result.count.toLocaleString("en-MY")}${x.result.truncated ? " (more exist: raise the row limit or add filters)" : ""}${x.result.rows.length > PDF_ROW_CAP ? ` \u2014 this PDF shows the first ${PDF_ROW_CAP}; the Excel file has them all` : ""}`, warn: x.result.truncated }
+    ] },
+    { t: "heading", text: grouped ? `${h.slice(0, -1).map((c) => c.label).join(" \xB7 ")} \u2192 ${h[h.length - 1].label}` : "Rows" },
+    { t: "rows", rows: rows.map((r) => grouped ? { k: h.slice(0, -1).map((c) => cellText(r[c.key], c.t, c.key)).join(" \xB7 "), v: cellText(r.value, "num") } : { k: cellText(r[h[0].key], h[0].t, h[0].key), v: h.slice(1).map((c) => `${c.label}: ${cellText(r[c.key], c.t, c.key)}`).join("  \xB7  ") }) },
+    { t: "text", small: true, muted: true, text: "Made with the Admin EAB report builder from the live database. The export is recorded in the tamper-proof access log under the reference above." }
+  ];
+  return { blocks: b, footer: `${x.reference} \xB7 ${x.name || "Custom report"} \xB7 ${fmtTime(x.createdAt)}` };
+}
+function buildCustomSheets(x) {
+  const h = resultHeaders(x.spec, x.src);
+  return [
+    { name: "Report", widths: h.map((c) => c.t === "text" ? 28 : 14), rows: [h.map((c) => c.label), ...x.result.rows.map((r) => h.map((c) => cellValue(r[c.key], c.t, c.key)))] },
+    { name: "About", widths: [20, 90], rows: [
+      ["Custom report", x.name || ""],
+      ["Reference", x.reference],
+      ["Made", `${fmtTime(x.createdAt)} by ${x.adminEmail}`],
+      ["Company", x.companyName ?? ""],
+      ["Rows", x.result.truncated ? `${x.result.count} (more exist)` : x.result.count],
+      [],
+      ["Settings"],
+      ...specText(x.spec, x.src).map((t) => ["", t])
+    ] }
+  ];
+}
+var slug = (s) => s.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "report";
+var customFileName = (name, reference, ext) => `Report-${slug(name)}-${reference}.${ext}`;
+async function exportCustomReport(api2, adminEmail, format, name, spec, src, result) {
+  const companyName = await api2.settings().then((s) => s.company_name).catch(() => void 0);
+  const reg = await api2.startExport("custom_report", format, null, { source: spec.source, name, rows: result.count, spec });
+  const input = { reference: reg.reference, createdAt: reg.at, adminEmail, companyName, name, spec, src, result };
+  const blob = await blobOf(() => buildCustomDoc(input), () => buildCustomSheets(input), format, `${name || "Custom report"} ${reg.reference}`, adminEmail);
+  return { reference: reg.reference, how: await saveLocally(blob, customFileName(name, reg.reference, format)) };
+}
+
+// src/screens/Reports.tsx
+var import_jsx_runtime23 = __toESM(require_jsx_runtime(), 1);
+var TABS6 = [
+  { k: "board", label: "Board report", needs: "boardReport" },
+  { k: "audit", label: "Audit bundle", needs: "auditBundle" },
+  { k: "builder", label: "Report builder", needs: "reportBuilder" }
+];
+function ReportsScreen({ tab: first }) {
+  const { me } = useAdmin();
+  const tabs = TABS6.filter((t) => can(me.role, t.needs));
+  const [tab, setTab] = (0, import_react22.useState)(tabs.some((t) => t.k === first) ? first : tabs[0]?.k ?? "builder");
+  if (!tabs.length) return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "notice", children: "Your admin role does not use reports." });
+  return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "stack", "data-testid": "reports", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("h1", { children: "Reports" }),
+    tabs.length > 1 && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "tabs", role: "group", "aria-label": "Reports", children: tabs.map((t) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { "aria-pressed": tab === t.k, onClick: () => setTab(t.k), "data-testid": `rtab-${t.k}`, children: t.label }, t.k)) }),
+    tab === "board" && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(BoardTab, {}),
+    tab === "audit" && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(AuditTab, {}),
+    tab === "builder" && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(BuilderTab, {})
+  ] });
+}
+function Msg({ m, testid }) {
+  return m ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: `notice small ${m.ok ? "" : "error"}`, role: "status", "data-testid": testid, children: m.text }) : null;
+}
+function BoardTab() {
+  const { api: api2, me } = useAdmin();
+  const today2 = todayKL();
+  const months = monthOptions(today2);
+  const [month, setMonth] = (0, import_react22.useState)(() => months.includes(prevMonth(months[0])) ? prevMonth(months[0]) : months[0]);
+  const [data, setData] = (0, import_react22.useState)(null);
+  const [err, setErr] = (0, import_react22.useState)(null);
+  const [busy, setBusy] = (0, import_react22.useState)(null);
+  const [msg, setMsg] = (0, import_react22.useState)(null);
+  const load = (0, import_react22.useCallback)(async () => {
+    setErr(null);
+    setData(null);
+    try {
+      setData(await api2.boardReport(month));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, month]);
+  (0, import_react22.useEffect)(() => {
+    void load();
+  }, [load]);
+  const make = async (format) => {
+    setMsg(null);
+    setBusy("Starting\u2026");
+    try {
+      const r = await exportBoardReport(api2, me.email, month, format, setBusy);
+      setMsg({ ok: true, text: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { children: r.pack.reference }),
+        " kept in the Document Vault \xB7 ",
+        r.how
+      ] }) });
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Month" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("select", { value: month, onChange: (e) => setMonth(e.target.value), "data-testid": "board-month", children: months.map((m) => /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("option", { value: m, children: [
+          monthName(m),
+          m === months[0] ? " (so far)" : ""
+        ] }, m)) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn gold", disabled: !!busy || !data, onClick: () => void make("pdf"), "data-testid": "board-pdf", children: "PDF" }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn gold", disabled: !!busy || !data, onClick: () => void make("xlsx"), "data-testid": "board-xlsx", children: "Excel" })
+    ] }),
+    busy && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "muted small", role: "status", children: busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Msg, { m: msg, testid: "board-msg" }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(ErrorBox, { text: err, onRetry: () => void load() }),
+    !err && !data && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Loading, {}),
+    data && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+        monthName(data.month),
+        data.complete ? "" : ` so far (to ${data.current.to})`,
+        " compared with ",
+        monthName(data.previous.from),
+        ". Totals only \u2014 no agent is named. Each file gets a reference number and is kept in the Document Vault."
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("table", { "data-testid": "board-table", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("th", { children: "Line" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("th", { children: monthName(data.month) }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("th", { children: monthName(data.previous.from) }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("th", { children: "Change" })
+        ] }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("tbody", { children: boardSections(data).flatMap((s) => [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("tr", { className: "sect", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("th", { colSpan: 4, children: s.title }) }, s.title),
+          ...s.lines.map((l, i) => /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { className: l.warn ? "alert-red" : "", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+              l.sub ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("small", { className: "muted", children: [
+                "\xB7 ",
+                l.label
+              ] }) : l.label,
+              l.text && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("br", {}),
+                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("small", { className: "muted", children: l.text })
+              ] })
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: l.cur.toLocaleString("en-MY") }),
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: l.prev === null ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("small", { className: "muted", children: "today" }) : l.prev.toLocaleString("en-MY") }),
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { className: "small", children: l.prev === null ? "" : changeText(l.cur, l.prev) })
+          ] }, `${s.title}-${i}`))
+        ]) })
+      ] }) })
+    ] })
+  ] });
+}
+function AuditTab() {
+  const { api: api2, me } = useAdmin();
+  const today2 = todayKL();
+  const years = yearOptions(today2);
+  const [year, setYear] = (0, import_react22.useState)(years[0]);
+  const [data, setData] = (0, import_react22.useState)(null);
+  const [checking, setChecking] = (0, import_react22.useState)(false);
+  const [err, setErr] = (0, import_react22.useState)(null);
+  const [busy, setBusy] = (0, import_react22.useState)(null);
+  const [msg, setMsg] = (0, import_react22.useState)(null);
+  const check = async () => {
+    setErr(null);
+    setChecking(true);
+    try {
+      setData(await api2.auditBundle(year));
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setChecking(false);
+    }
+  };
+  const make = async () => {
+    setMsg(null);
+    setBusy("Starting\u2026");
+    try {
+      const r = await exportAuditBundle(api2, me.email, year, setBusy);
+      setMsg({ ok: true, text: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+        "Workbook ",
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { children: r.workbook.reference }),
+        " and summary ",
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { children: r.summary.reference }),
+        " kept in the Document Vault \xB7 ",
+        r.how.join(" \xB7 ")
+      ] }) });
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  const c = data ? auditCounts(data, today2) : null;
+  return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      "Everything an auditor asks for one year: the Master Audit Log and the access log (each row with its fingerprint), the tamper check, backup restore tests, case files with their packs, PDPA requests, complaints, legal holds and retention reviews. Makes an ",
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { children: "Excel workbook" }),
+      " with every list and a ",
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("b", { children: "PDF summary" }),
+      "that names the workbook and its fingerprint. Both are kept in the Document Vault."
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Year" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("select", { value: year, onChange: (e) => {
+          setYear(Number(e.target.value));
+          setData(null);
+        }, "data-testid": "audit-year", children: years.map((y) => /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("option", { value: y, children: [
+          y,
+          y === years[0] ? " (so far)" : ""
+        ] }, y)) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn", disabled: checking || !!busy, onClick: () => void check(), "data-testid": "audit-check", children: checking ? "Checking\u2026" : "Check the year" }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn gold", disabled: !!busy, onClick: () => void make(), "data-testid": "audit-make", children: "Make the audit bundle" })
+    ] }),
+    busy && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "muted small", role: "status", children: busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Msg, { m: msg, testid: "audit-msg" }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(ErrorBox, { text: err, onRetry: () => void check() }),
+    data && c && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("table", { "data-testid": "audit-summary", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tbody", { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { className: c.chainOk ? "" : "alert-red", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Tamper check" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: c.chainOk ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "tag ok", children: "Both logs unbroken" }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "tag red", children: "BROKEN \u2014 tell the Owner" }) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+          "Admin actions in ",
+          data.year
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+          c.actions.toLocaleString("en-MY"),
+          c.actionsCut && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("small", { className: "muted", children: [
+            " (workbook holds the first ",
+            data.actions.length.toLocaleString("en-MY"),
+            ")"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Access log rows" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+          c.access.toLocaleString("en-MY"),
+          c.accessCut && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("small", { className: "muted", children: [
+            " (workbook holds the first ",
+            data.access.length.toLocaleString("en-MY"),
+            ")"
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { className: c.restoreTests ? "" : "alert-red", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Restore tests" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+          c.restoreTests,
+          " (",
+          c.failedTests,
+          " not passed)"
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Regulator cases" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: c.cases })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Files kept in the vault" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: c.packs })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { className: c.pdpaLate ? "alert-red" : "", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "PDPA requests" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+          c.pdpa,
+          " (",
+          c.pdpaLate,
+          " over 21 days)"
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Complaints" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: c.complaints })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Legal holds" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("td", { children: [
+          c.holds,
+          " (",
+          c.holdsActive,
+          " still in force)"
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: "Retention reviews" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: c.reviews })
+      ] })
+    ] }) }) })
+  ] });
+}
+function BuilderTab() {
+  const { api: api2, me } = useAdmin();
+  const names = can(me.role, "reportNames");
+  const [cat2, setCat] = (0, import_react22.useState)(null);
+  const [saved, setSaved] = (0, import_react22.useState)(null);
+  const [err, setErr] = (0, import_react22.useState)(null);
+  const [d, setD] = (0, import_react22.useState)(null);
+  const [openId, setOpenId] = (0, import_react22.useState)(null);
+  const [name, setName] = (0, import_react22.useState)("");
+  const [res, setRes] = (0, import_react22.useState)(null);
+  const [runErr, setRunErr] = (0, import_react22.useState)(null);
+  const [busy, setBusy] = (0, import_react22.useState)(false);
+  const [msg, setMsg] = (0, import_react22.useState)(null);
+  const [del, setDel] = (0, import_react22.useState)(null);
+  const loadSaved = (0, import_react22.useCallback)(async () => {
+    try {
+      setSaved(await api2.savedReports());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react22.useEffect)(() => {
+    api2.reportCatalog().then((c) => {
+      setCat(c);
+      const first = Object.keys(c)[0];
+      if (first) setD(newDraft(first, c[first], names));
+    }).catch((e) => setErr(errText(e)));
+    void loadSaved();
+  }, [api2, names, loadSaved]);
+  const src = d && cat2 ? cat2[d.source] : void 0;
+  const problems = (0, import_react22.useMemo)(() => d ? draftProblems2(d, src, names) : [], [d, src, names]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(ErrorBox, { text: err });
+  if (!cat2 || !d || !saved) return /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Loading, {});
+  const cols = Object.entries(src?.columns ?? {}).filter(([, c]) => names || !c.p);
+  const numCols = cols.filter(([, c]) => c.t === "num");
+  const set = (p) => {
+    setD({ ...d, ...p });
+    setMsg(null);
+  };
+  const pickSource = (s) => {
+    setD(newDraft(s, cat2[s], names));
+    setRes(null);
+    setOpenId(null);
+    setName("");
+    setMsg(null);
+  };
+  const run = async () => {
+    setBusy(true);
+    setRunErr(null);
+    const spec = draftToSpec(d, src);
+    try {
+      setRes({ spec, result: await api2.reportRun(spec) });
+    } catch (e) {
+      setRunErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const open = (r) => {
+    if (!cat2[r.source]) return;
+    setD(specToDraft(r.spec));
+    setOpenId(r);
+    setName(r.name);
+    setRes(null);
+    setMsg(null);
+  };
+  const save = async (asNew) => {
+    setMsg(null);
+    try {
+      const r = await api2.savedReportSave({ ...openId && !asNew ? { id: openId.id } : {}, name: name.trim(), source: d.source, spec: draftToSpec(d, src) });
+      setOpenId(r);
+      setMsg({ ok: true, text: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+        "Saved \u201C",
+        r.name,
+        "\u201D. Every admin who may run ",
+        src?.label,
+        " reports can open it."
+      ] }) });
+      await loadSaved();
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    }
+  };
+  const exportIt = async (format) => {
+    if (!res || !src) return;
+    setMsg(null);
+    try {
+      const r = await exportCustomReport(api2, me.email, format, name.trim() || `${src.label} report`, res.spec, cat2[res.spec.source], res.result);
+      setMsg({ ok: true, text: `${r.reference}: ${r.how}` });
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    }
+  };
+  const remove = async (r) => {
+    try {
+      await api2.savedReportDelete(r.id);
+      setDel(null);
+      if (openId?.id === r.id) setOpenId(null);
+      setMsg({ ok: true, text: `Removed \u201C${r.name}\u201D (recorded in the Master Audit Log).` });
+      await loadSaved();
+    } catch (e) {
+      setDel(null);
+      setMsg({ ok: false, text: errText(e) });
+    }
+  };
+  const fset = (i, p) => set({ filters: d.filters.map((f, j) => j === i ? { ...f, ...p } : f) });
+  const sortChoices = d.mode === "rows" ? d.columns : [...d.group_by, "value"];
+  const headers2 = res ? resultHeaders(res.spec, cat2[res.spec.source]) : [];
+  return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "stack", children: [
+    !names && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "notice small", "data-testid": "rb-totals-only", children: "Your role builds totals (grouped counts) only. Names and emails are never shown." }),
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "card boxed stack", "data-testid": "rb-saved", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("h3", { style: { margin: 0 }, children: [
+        "Saved reports ",
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("small", { className: "muted", children: "shared with every admin" })
+      ] }),
+      saved.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "None yet. Build a report below and save it." }) : saved.map((r) => /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", "data-testid": "rb-saved-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "linkbtn spacer", style: { textAlign: "left" }, onClick: () => open(r), "data-testid": "rb-open", children: r.name }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("small", { className: "muted", children: [
+          cat2[r.source]?.label ?? r.source,
+          " \xB7 ",
+          r.created_by_email ?? "",
+          " \xB7 ",
+          fmtTime(r.updated_at)
+        ] }),
+        (r.created_by === me.user_id || me.role === "owner") && (del?.id === r.id ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("small", { children: "Remove for every admin?" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn small danger", onClick: () => void remove(r), "data-testid": "rb-remove-yes", children: "Yes, remove" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn small", onClick: () => setDel(null), children: "Cancel" })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn small", onClick: () => setDel(r), "data-testid": "rb-remove", children: "Remove" }))
+      ] }, r.id))
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "card boxed stack", "data-testid": "rb-form", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "grid2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Report about" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("select", { value: d.source, onChange: (e) => pickSource(e.target.value), "data-testid": "rb-source", children: Object.entries(cat2).map(([k, s]) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: k, children: s.label }, k)) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("fieldset", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Show" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "choice", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { type: "radio", name: "rb-mode", checked: d.mode === "rows", disabled: !names, onChange: () => set({ mode: "rows", sortBy: "" }), "data-testid": "rb-mode-rows" }),
+              " Rows (a list)"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "choice", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { type: "radio", name: "rb-mode", checked: d.mode === "totals", onChange: () => set({ mode: "totals", sortBy: "", group_by: d.group_by.length ? d.group_by : [cols.find(([, c]) => c.t !== "num")?.[0] ?? cols[0]?.[0]].filter(Boolean) }), "data-testid": "rb-mode-totals" }),
+              " Totals (grouped counts)"
+            ] })
+          ] })
+        ] })
+      ] }),
+      d.mode === "rows" ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("fieldset", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Columns" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "row", style: { flexWrap: "wrap" }, children: cols.map(([k, c]) => /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "choice", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+            "input",
+            {
+              type: "checkbox",
+              checked: d.columns.includes(k),
+              "data-testid": `rb-col-${k}`,
+              onChange: (e) => set({ columns: e.target.checked ? [...d.columns, k] : d.columns.filter((x) => x !== k), sortBy: d.sortBy === k && !e.target.checked ? "" : d.sortBy })
+            }
+          ),
+          " ",
+          c.l
+        ] }, k)) })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "grid2", children: [
+        [0, 1].map((i) => /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: i === 0 ? "Group by" : "Then by (optional)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(
+            "select",
+            {
+              value: d.group_by[i] ?? "",
+              "data-testid": `rb-group-${i}`,
+              onChange: (e) => {
+                const g = [...d.group_by];
+                if (e.target.value) g[i] = e.target.value;
+                else g.splice(i, 1);
+                set({ group_by: g.filter(Boolean).slice(0, 2), sortBy: "" });
+              },
+              children: [
+                i === 1 && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: "", children: "\u2014 none \u2014" }),
+                cols.map(([k, c]) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: k, children: c.l }, k))
+              ]
+            }
+          )
+        ] }, i)),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Number to show" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("select", { value: d.measure, onChange: (e) => set({ measure: e.target.value }), "data-testid": "rb-measure", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: "count", children: "How many" }),
+            numCols.flatMap(([k, c]) => [/* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("option", { value: `sum:${k}`, children: [
+              "Total ",
+              c.l
+            ] }, `s${k}`), /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("option", { value: `avg:${k}`, children: [
+              "Average ",
+              c.l
+            ] }, `a${k}`)])
+          ] })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "grid2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("span", { children: [
+            src?.columns[src.date]?.l ?? "Date",
+            " from"
+          ] }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { type: "date", value: d.from, onChange: (e) => set({ from: e.target.value }), "data-testid": "rb-from" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "to" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { type: "date", value: d.to, onChange: (e) => set({ to: e.target.value }), "data-testid": "rb-to" })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("fieldset", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Filters" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "stack", style: { gap: 6 }, children: [
+          d.filters.map((f, i) => {
+            const c = src?.columns[f.col];
+            const ops2 = c ? opsFor(c.t) : [];
+            return /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", "data-testid": "rb-filter", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("select", { value: f.col, "data-testid": `rb-f-col-${i}`, onChange: (e) => {
+                const t = src?.columns[e.target.value]?.t ?? "text";
+                fset(i, { col: e.target.value, op: opsFor(t)[0], value: "" });
+              }, children: cols.map(([k, cc]) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: k, children: cc.l }, k)) }),
+              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("select", { value: f.op, "data-testid": `rb-f-op-${i}`, onChange: (e) => fset(i, { op: e.target.value, value: "" }), children: ops2.map((o) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: o, children: OP_LABEL[o] }, o)) }),
+              f.op === "is" ? /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("select", { value: f.value, "data-testid": `rb-f-val-${i}`, onChange: (e) => fset(i, { value: e.target.value }), children: [
+                /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: "", children: "\u2014 choose \u2014" }),
+                isValuesFor(c?.t ?? "text").map((v) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: v, children: IS_VALUES[v] }, v))
+              ] }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+                "input",
+                {
+                  className: "spacer",
+                  type: f.op === "after" || f.op === "before" ? "date" : "text",
+                  inputMode: c?.t === "num" ? "decimal" : void 0,
+                  placeholder: f.op === "in" ? "values, separated by commas" : "",
+                  value: f.value,
+                  onChange: (e) => fset(i, { value: e.target.value }),
+                  "data-testid": `rb-f-val-${i}`
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn small", onClick: () => set({ filters: d.filters.filter((_, j) => j !== i) }), "aria-label": "Remove filter", children: "\u2715" })
+            ] }, i);
+          }),
+          d.filters.length < MAX_FILTERS && cols.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(
+            "button",
+            {
+              className: "btn small",
+              style: { alignSelf: "flex-start" },
+              "data-testid": "rb-add-filter",
+              onClick: () => set({ filters: [...d.filters, { col: cols[0][0], op: opsFor(cols[0][1].t)[0], value: "" }] }),
+              children: "+ Add filter"
+            }
+          )
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "grid2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Sort by" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("select", { value: d.sortBy, onChange: (e) => set({ sortBy: e.target.value }), "data-testid": "rb-sort", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: "", children: d.mode === "totals" ? "Biggest number first" : "First column" }),
+            sortChoices.map((k) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: k, children: k === "value" ? measureLabel(d.measure, src) : src?.columns[k]?.l ?? k }, k))
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Order" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("select", { value: d.sortDir, onChange: (e) => set({ sortDir: e.target.value }), "data-testid": "rb-dir", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: "desc", children: "Highest / newest first" }),
+            /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("option", { value: "asc", children: "Lowest / oldest first" })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { children: "Most rows to show" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { type: "number", min: 1, max: 5e3, value: d.limit, onChange: (e) => set({ limit: Number(e.target.value) }), "data-testid": "rb-limit" })
+        ] })
+      ] }),
+      problems.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("ul", { className: "error small", "data-testid": "rb-problems", children: problems.map((p) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("li", { children: p }, p)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn gold", disabled: busy || problems.length > 0, onClick: () => void run(), "data-testid": "rb-run", children: busy ? "Running\u2026" : "Run report" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("input", { value: name, onChange: (e) => setName(e.target.value), placeholder: "Name to save it under", maxLength: 120, "data-testid": "rb-name" }),
+        openId && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn", disabled: !name.trim() || problems.length > 0, onClick: () => void save(false), "data-testid": "rb-save-changes", children: "Save changes" }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn", disabled: !name.trim() || problems.length > 0, onClick: () => void save(true), "data-testid": "rb-save", children: openId ? "Save as new" : "Save" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(Msg, { m: msg, testid: "rb-msg" }),
+    runErr && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(ErrorBox, { text: runErr }),
+    res && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "stack", "data-testid": "rb-result", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("p", { className: "muted small spacer", style: { margin: 0 }, "data-testid": "rb-count", children: [
+          res.result.count.toLocaleString("en-MY"),
+          " row",
+          res.result.count === 1 ? "" : "s",
+          res.result.truncated ? " \u2014 more exist; raise the row limit or add filters" : "",
+          " \xB7 ",
+          specText(res.spec, cat2[res.spec.source]).join(" \xB7 ")
+        ] }),
+        can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)(import_jsx_runtime23.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn small gold", onClick: () => void exportIt("pdf"), "data-testid": "rb-pdf", children: "PDF" }),
+          /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("button", { className: "btn small gold", onClick: () => void exportIt("xlsx"), "data-testid": "rb-xlsx", children: "Excel" })
+        ] })
+      ] }),
+      !!res.spec.group_by?.length && /* @__PURE__ */ (0, import_jsx_runtime23.jsx)(HBars, { items: chartItems(res.spec, res.result, cat2[res.spec.source]), label: measureLabel(res.spec.measure, cat2[res.spec.source]), testid: "rb-chart" }),
+      res.result.rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("p", { className: "muted", children: "Nothing matches." }) : /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("div", { className: "tablewrap dash-table", children: /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("table", { "data-testid": "rb-table", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("tr", { children: headers2.map((h) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("th", { children: h.label }, h.key)) }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("tbody", { children: res.result.rows.slice(0, 500).map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("tr", { children: headers2.map((h) => /* @__PURE__ */ (0, import_jsx_runtime23.jsx)("td", { children: cellText(r[h.key], h.t, h.key) }, h.key)) }, i)) })
+      ] }) }),
+      res.result.rows.length > 500 && /* @__PURE__ */ (0, import_jsx_runtime23.jsxs)("p", { className: "muted small", children: [
+        "The screen shows the first 500 rows; the Excel file has all ",
+        res.result.rows.length.toLocaleString("en-MY"),
+        "."
+      ] })
+    ] })
+  ] });
+}
+
+// src/screens/Broadcasts.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react23 = __toESM(require_react(), 1);
+
+// src/admin/comms.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var LANG_LABEL = { en: "English", bm: "Bahasa Melayu", zh: "\u4E2D\u6587" };
+function textFor(b, lang) {
+  const pick = (en, bm, zh) => ((lang === "bm" ? bm : lang === "zh" ? zh : en) || en || "").trim();
+  return { subject: pick(b.subject_en, b.subject_bm, b.subject_zh), body: pick(b.body_en, b.body_bm, b.body_zh) };
+}
+var waLink = (number, text) => `https://wa.me/${number.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+function showPhone(digits) {
+  if (!digits) return "";
+  const d = digits.replace(/\D/g, "");
+  return d.startsWith("60") && d.length >= 10 ? `+60 ${d.slice(2, 4)}-${d.slice(4, d.length - 4)} ${d.slice(-4)}` : `+${d}`;
+}
+var BC_STATUS = { draft: "Draft", queued: "Ready to send", sending: "Sending", done: "Done", cancelled: "Cancelled" };
+var RCP_STATUS = {
+  pending: "Waiting",
+  sent: "Sent",
+  failed: "Failed",
+  opened_wa: "Opened in WhatsApp",
+  cancelled: "Cancelled",
+  skipped_no_consent: "Skipped: said no to news & offers",
+  skipped_no_address: "Skipped: no email / phone",
+  skipped_not_active: "Skipped: account not active"
+};
+function countsLine(c) {
+  const skipped = (c.skipped_no_consent ?? 0) + (c.skipped_no_address ?? 0) + (c.skipped_not_active ?? 0);
+  const parts = [];
+  if (c.sent) parts.push(`${c.sent} sent`);
+  if (c.opened_wa) parts.push(`${c.opened_wa} opened in WhatsApp`);
+  if (c.failed) parts.push(`${c.failed} failed`);
+  if (skipped) parts.push(`${skipped} skipped`);
+  if (c.pending) parts.push(`${c.pending} waiting`);
+  if (c.cancelled) parts.push(`${c.cancelled} not sent (cancelled)`);
+  return parts.join(" \xB7 ") || "Nobody yet";
+}
+function draftProblem(d) {
+  if (!d.body_en.trim()) return "Write the English text (the other languages are optional).";
+  if (d.channel === "email" && !(d.subject_en ?? "").trim()) return "Write the English subject.";
+  if (d.audience === "groups" && d.group_ids.length === 0) return "Choose at least one group, or everyone.";
+  if (d.audience === "agents" && !d.user_ids?.length) return "No agents chosen. Tick agents in the Agents list, then Message.";
+  return null;
+}
+var WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+var REPORT_STATUS = { making: "Being made", stored: "Kept in the vault", emailed: "Kept and emailed", failed: "Failed" };
+function monthGrid(year, month0) {
+  const first = new Date(Date.UTC(year, month0, 1));
+  const shift = (first.getUTCDay() + 6) % 7;
+  return Array.from({ length: 42 }, (_, i) => new Date(Date.UTC(year, month0, 1 - shift + i)).toISOString().slice(0, 10));
+}
+var myDay = (iso) => new Date(new Date(iso).getTime() + 8 * 36e5).toISOString().slice(0, 10);
+var myTime = (iso) => new Date(new Date(iso).getTime() + 8 * 36e5).toISOString().slice(11, 16);
+var myToday = (now = Date.now()) => new Date(now + 8 * 36e5).toISOString().slice(0, 10);
+function sortTasks(ts) {
+  return [...ts].sort((a, b) => Number(a.done) - Number(b.done) || (a.due_on ?? "9999").localeCompare(b.due_on ?? "9999") || b.created_at.localeCompare(a.created_at));
+}
+var overdue = (t, today2) => !t.done && !!t.due_on && t.due_on < today2;
+
+// src/screens/Broadcasts.tsx
+var import_jsx_runtime24 = __toESM(require_jsx_runtime(), 1);
+var statusTag = (s) => s === "done" ? "ok" : s === "cancelled" ? "" : s === "draft" ? "" : "amber";
+var KIND_HELP = {
+  service: "Service notice \u2014 about the agent\u2019s account, the rules or the app. Goes to everyone you choose.",
+  news: "News & offers \u2014 only agents who said yes to news & offers get it. Every email has a link to stop them."
+};
+function BroadcastsScreen({ to }) {
+  const { api: api2, me, go } = useAdmin();
+  const edit = can(me.role, "editBroadcasts");
+  const names = can(me.role, "broadcastNames");
+  const [rows, setRows] = (0, import_react23.useState)(null);
+  const [err, setErr] = (0, import_react23.useState)(null);
+  const [writing, setWriting] = (0, import_react23.useState)(!!to?.length);
+  const load = (0, import_react23.useCallback)(async () => {
+    setErr(null);
+    try {
+      setRows(await api2.broadcasts());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react23.useEffect)(() => {
+    void load();
+  }, [load]);
+  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "stack", "data-testid": "broadcasts", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h1", { className: "spacer", children: "Email & WhatsApp broadcast" }),
+      edit && !writing && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn gold", onClick: () => setWriting(true), "data-testid": "bc-new", children: "New broadcast" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      KIND_HELP.service,
+      " ",
+      KIND_HELP.news
+    ] }),
+    writing && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(BroadcastEditor, { draft: null, to, onClose: () => setWriting(false), onSaved: (b) => go({ k: "broadcast", id: b.id }) }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !rows ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Loading, {}) : rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "muted", children: "No broadcasts yet." }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "stack", "data-testid": "bc-list", children: rows.map((b) => {
+      const body = /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: `tag ${statusTag(b.status)}`, children: BC_STATUS[b.status] }),
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "tag", children: b.channel === "email" ? "Email" : "WhatsApp" }),
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "tag", children: b.kind === "news" ? "News & offers" : "Service notice" }),
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { className: "spacer", children: b.channel === "email" ? b.subject_en : b.body_en.slice(0, 60) }),
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("small", { className: "muted", children: [
+            b.ref,
+            " \xB7 ",
+            fmtTime(b.created_at)
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "muted", children: countsLine(b.counts) })
+      ] });
+      return names ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "item", onClick: () => go({ k: "broadcast", id: b.id }), "data-testid": "bc-row", children: body }, b.id) : /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "item", "data-testid": "bc-row", children: body }, b.id);
+    }) })
+  ] });
+}
+function BroadcastEditor({ draft, to, onClose, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const [groups, setGroups] = (0, import_react23.useState)([]);
+  const [d, setD] = (0, import_react23.useState)(() => draft ? {
+    id: draft.id,
+    channel: draft.channel,
+    kind: draft.kind,
+    subject_en: draft.subject_en,
+    subject_bm: draft.subject_bm,
+    subject_zh: draft.subject_zh,
+    body_en: draft.body_en,
+    body_bm: draft.body_bm,
+    body_zh: draft.body_zh,
+    audience: draft.audience,
+    group_ids: draft.group_ids,
+    user_ids: draft.user_ids ?? []
+  } : to?.length ? { channel: "email", kind: "service", subject_en: "", body_en: "", audience: "agents", group_ids: [], user_ids: to.map((a) => a.id) } : { channel: "email", kind: "service", subject_en: "", body_en: "", audience: "all", group_ids: [] });
+  const chosen = d.user_ids?.length ?? 0;
+  const [busy, setBusy] = (0, import_react23.useState)(false);
+  const [err, setErr] = (0, import_react23.useState)(null);
+  (0, import_react23.useEffect)(() => {
+    api2.groups().then((g) => setGroups(g.filter((x) => x.active && x.id !== "00000000-0000-0000-0000-000000000000"))).catch(() => setGroups([]));
+  }, [api2]);
+  const set = (p) => setD((x) => ({ ...x, ...p }));
+  const problem = draftProblem({ ...d, subject_en: d.subject_en ?? "" });
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      onSaved(await api2.broadcastSave(d));
+    } catch (e) {
+      setErr(errText(e));
+      setBusy(false);
+    }
+  };
+  const langs = ["en", "bm", "zh"];
+  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "card boxed stack", "data-testid": "bc-editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h3", { className: "spacer", children: draft ? `Change draft ${draft.ref}` : "New broadcast" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn small", onClick: onClose, children: "Cancel" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("fieldset", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("legend", { children: "Send by" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.channel === "email", onChange: () => set({ channel: "email" }), "data-testid": "bc-email" }),
+        " Email"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.channel === "whatsapp", onChange: () => set({ channel: "whatsapp" }), "data-testid": "bc-whatsapp" }),
+        " WhatsApp (to the Contact number agents entered in their Agent Profile)"
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("fieldset", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("legend", { children: "Kind" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.kind === "service", onChange: () => set({ kind: "service" }), "data-testid": "bc-service" }),
+        " ",
+        KIND_HELP.service
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.kind === "news", onChange: () => set({ kind: "news" }), "data-testid": "bc-news" }),
+        " ",
+        KIND_HELP.news
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("fieldset", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("legend", { children: "Who" }),
+      chosen > 0 && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.audience === "agents", onChange: () => set({ audience: "agents", group_ids: [] }), "data-testid": "bc-agents" }),
+        " ",
+        "The ",
+        chosen,
+        " agent",
+        chosen === 1 ? "" : "s",
+        " ticked in the Agents list",
+        to?.length ? `: ${to.slice(0, 5).map((a) => a.label).join(", ")}${to.length > 5 ? ` and ${to.length - 5} more` : ""}` : ""
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.audience === "all", onChange: () => set({ audience: "all", group_ids: [] }), "data-testid": "bc-all" }),
+        " Every agent"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { type: "radio", checked: d.audience === "groups", onChange: () => set({ audience: "groups" }), "data-testid": "bc-groups" }),
+        " Chosen audience groups"
+      ] }),
+      d.audience === "groups" && (groups.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "muted", children: "No audience groups yet (make them in Market News \u2192 Audience groups)." }) : groups.map((g) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
+          "input",
+          {
+            type: "checkbox",
+            checked: d.group_ids.includes(g.id),
+            onChange: (e) => set({ group_ids: e.target.checked ? [...d.group_ids, g.id] : d.group_ids.filter((x) => x !== g.id) }),
+            "data-testid": "bc-group"
+          }
+        ),
+        " ",
+        g.name
+      ] }, g.id)))
+    ] }),
+    langs.map((l) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("b", { children: [
+        LANG_LABEL[l],
+        l !== "en" && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "muted small", children: " (optional; empty = English)" })
+      ] }),
+      d.channel === "email" && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "Subject" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("input", { value: d[`subject_${l}`] ?? "", maxLength: 200, onChange: (e) => set({ [`subject_${l}`]: e.target.value }), "data-testid": `bc-subject-${l}` })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { children: "Message" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("textarea", { rows: 4, value: d[`body_${l}`] ?? "", maxLength: 5e3, onChange: (e) => set({ [`body_${l}`]: e.target.value }), "data-testid": `bc-body-${l}` })
+      ] })
+    ] }, l)),
+    problem && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "muted", children: problem }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "error", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn gold", disabled: !!problem || busy, onClick: () => void save(), "data-testid": "bc-save", children: busy ? "Saving\u2026" : "Save draft" })
+    ] })
+  ] });
+}
+function BroadcastScreen({ id }) {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editBroadcasts");
+  const [b, setB] = (0, import_react23.useState)(null);
+  const [err, setErr] = (0, import_react23.useState)(null);
+  const [preview, setPreview] = (0, import_react23.useState)(null);
+  const [changing, setChanging] = (0, import_react23.useState)(false);
+  const [confirm, setConfirm] = (0, import_react23.useState)(null);
+  const [sending, setSending] = (0, import_react23.useState)(false);
+  const [sent, setSent] = (0, import_react23.useState)(null);
+  const [sendErr, setSendErr] = (0, import_react23.useState)(null);
+  const load = (0, import_react23.useCallback)(async () => {
+    setErr(null);
+    try {
+      setB(await api2.broadcast(id));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, id]);
+  (0, import_react23.useEffect)(() => {
+    void load();
+  }, [load]);
+  (0, import_react23.useEffect)(() => {
+    if (b?.status === "draft") api2.broadcastPreview(id).then(setPreview).catch(() => setPreview(null));
+  }, [api2, id, b?.status]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!b) return /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Loading, {});
+  const live = b.status === "queued" || b.status === "sending";
+  const send = async () => {
+    setSending(true);
+    setSendErr(null);
+    setSent(null);
+    try {
+      if (!api2.files.sendBroadcast) throw new Error("not available");
+      setSent(await api2.files.sendBroadcast(b.id));
+      await load();
+    } catch (e) {
+      setSendErr(errText(e));
+    } finally {
+      setSending(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "stack", "data-testid": "broadcast", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("h1", { className: "spacer", children: b.ref }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: `tag ${statusTag(b.status)}`, "data-testid": "bc-status", children: BC_STATUS[b.status] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      b.channel === "email" ? "Email" : "WhatsApp",
+      " \xB7 ",
+      b.kind === "news" ? "News & offers" : "Service notice",
+      " \xB7",
+      b.audience === "all" ? " every agent" : b.audience === "agents" ? ` ${b.user_ids?.length ?? 0} chosen agent${b.user_ids?.length === 1 ? "" : "s"}` : ` ${b.group_ids.length} audience group${b.group_ids.length === 1 ? "" : "s"}`,
+      " \xB7 written by ",
+      b.created_by_email ?? "\u2014",
+      " ",
+      fmtTime(b.created_at),
+      b.queued_at && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+        " \xB7 queued by ",
+        b.queued_by_email ?? "\u2014",
+        " ",
+        fmtTime(b.queued_at)
+      ] })
+    ] }),
+    changing ? /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(BroadcastEditor, { draft: b, onClose: () => setChanging(false), onSaved: async () => {
+      setChanging(false);
+      await load();
+    } }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "card boxed stack", children: [
+      b.channel === "email" && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { children: b.subject_en }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { style: { whiteSpace: "pre-wrap", margin: 0 }, "data-testid": "bc-text", children: b.body_en }),
+      (b.body_bm || b.body_zh) && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("small", { className: "muted", children: [
+        "Also in ",
+        [b.body_bm && "Bahasa Melayu", b.body_zh && "\u4E2D\u6587"].filter(Boolean).join(" and "),
+        "."
+      ] })
+    ] }),
+    b.status === "draft" && preview && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "notice", "data-testid": "bc-preview", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { children: preview.reach }),
+      " agent",
+      preview.reach === 1 ? "" : "s",
+      " will get it now, of ",
+      preview.matched,
+      " in the audience.",
+      preview.no_consent > 0 && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+        " ",
+        preview.no_consent,
+        " said no to news & offers."
+      ] }),
+      preview.no_address > 0 && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+        " ",
+        preview.no_address,
+        " have no ",
+        b.channel === "email" ? "email" : "WhatsApp number",
+        "."
+      ] }),
+      preview.not_active > 0 && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+        " ",
+        preview.not_active,
+        " account",
+        preview.not_active === 1 ? " is" : "s are",
+        " not active."
+      ] })
+    ] }),
+    edit && b.status === "draft" && !changing && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn", onClick: () => setChanging(true), "data-testid": "bc-change", children: "Change" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn", onClick: () => setConfirm("cancel"), "data-testid": "bc-cancel", children: "Cancel broadcast" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn gold", disabled: !preview || preview.reach === 0, onClick: () => setConfirm("queue"), "data-testid": "bc-queue", children: "Make ready to send\u2026" })
+    ] }),
+    edit && live && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "card boxed stack", "data-testid": "bc-send-box", children: b.channel === "email" ? /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { children: "Send the emails" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "muted", children: "Sent by the server with Resend. Until your own domain is verified in Resend, only your own Resend address can receive them; the others are shown as failed with Resend\u2019s reason." }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn gold", disabled: sending, onClick: () => void send(), "data-testid": "bc-send", children: sending ? "Sending\u2026" : b.status === "sending" ? "Send the rest" : "Send now" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn", onClick: () => setConfirm("cancel"), disabled: b.status !== "queued", "data-testid": "bc-cancel", children: "Cancel broadcast" })
+      ] })
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { children: "Send on WhatsApp" }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "muted", children: "Tap-to-send: tap an agent below, WhatsApp opens with the message typed in, you press Send. Admin EAB records that you opened it (it cannot see whether you pressed Send)." }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn", disabled: sending, onClick: () => void send(), "data-testid": "bc-send", children: sending ? "Sending\u2026" : "Send all with WhatsApp Business" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn", onClick: () => setConfirm("cancel"), disabled: b.status !== "queued", "data-testid": "bc-cancel", children: "Cancel broadcast" })
+      ] })
+    ] }) }),
+    sent && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("p", { className: "notice ok", role: "status", "data-testid": "bc-sent", children: [
+      sent.sent,
+      " sent, ",
+      sent.failed,
+      " failed.",
+      sent.more ? " Some are still waiting: press again to send the rest." : ""
+    ] }),
+    sendErr && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "error", role: "alert", "data-testid": "bc-send-error", children: sendErr }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(Recipients, { b, onChanged: () => void load() }),
+    confirm === "queue" && preview && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
+      ConfirmDialog,
+      {
+        title: "Make ready to send",
+        confirmLabel: "Make ready",
+        body: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+          "This fixes the list now: ",
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("b", { children: preview.reach }),
+          " agent",
+          preview.reach === 1 ? "" : "s",
+          " by ",
+          b.channel === "email" ? "email" : "WhatsApp",
+          b.audience === "all" ? " \u2014 this is a broadcast to ALL agents" : "",
+          ". The text cannot be changed after this."
+        ] }),
+        onConfirm: async (reason) => {
+          await api2.broadcastQueue(b.id, reason);
+          await load();
+        },
+        onClose: () => setConfirm(null)
+      }
+    ),
+    confirm === "cancel" && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(
+      ConfirmDialog,
+      {
+        title: "Cancel this broadcast",
+        confirmLabel: "Cancel broadcast",
+        danger: true,
+        body: /* @__PURE__ */ (0, import_jsx_runtime24.jsx)(import_jsx_runtime24.Fragment, { children: "Nobody who has not been sent it yet will get it. It stays in the list for the record." }),
+        onConfirm: async (reason) => {
+          await api2.broadcastCancel(b.id, reason);
+          await load();
+        },
+        onClose: () => setConfirm(null)
+      }
+    )
+  ] });
+}
+function Recipients({ b, onChanged }) {
+  const { api: api2, me } = useAdmin();
+  const edit = can(me.role, "editBroadcasts");
+  const [err, setErr] = (0, import_react23.useState)(null);
+  const rs = b.recipients ?? [];
+  if (!rs.length) return null;
+  const tap = async (r) => {
+    setErr(null);
+    const { body } = textFor(b, r.lang);
+    const url = waLink(r.address ?? "", body);
+    if (isNative()) void openInBrowser(url);
+    else window.open(url, "_blank", "noopener");
+    try {
+      await api2.broadcastWaOpened(r.id);
+      onChanged();
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+  const live = b.status === "queued" || b.status === "sending";
+  return /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("h2", { children: [
+      "Who (",
+      rs.length,
+      ")"
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("p", { className: "error", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("table", { "data-testid": "bc-recipients", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("th", { children: b.channel === "email" ? "Email" : "WhatsApp" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("th", { children: "Language" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("th", { children: "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("tbody", { children: rs.map((r) => /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("tr", { "data-testid": "bc-recipient", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("td", { children: [
+          r.name ?? r.email,
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "muted", children: r.email })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("td", { className: "mono small", children: b.channel === "email" ? r.address : showPhone(r.address) }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("td", { children: LANG_LABEL[r.lang] }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("span", { className: `tag ${r.status === "sent" || r.status === "opened_wa" ? "ok" : r.status === "failed" ? "red" : ""}`, children: RCP_STATUS[r.status] }),
+          r.error && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("small", { className: "error", children: r.error })
+          ] }),
+          r.sent_at && /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)(import_jsx_runtime24.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime24.jsxs)("small", { className: "muted", children: [
+              fmtTime(r.sent_at),
+              r.sent_by_email ? ` by ${r.sent_by_email}` : ""
+            ] })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("td", { children: edit && live && b.channel === "whatsapp" && r.status === "pending" && r.address && /* @__PURE__ */ (0, import_jsx_runtime24.jsx)("button", { className: "btn small gold", onClick: () => void tap(r), "data-testid": "bc-wa-open", children: "Open WhatsApp" }) })
+      ] }, r.id)) })
+    ] }) })
+  ] });
+}
+
+// src/screens/WeeklyReports.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react24 = __toESM(require_react(), 1);
+var import_jsx_runtime25 = __toESM(require_jsx_runtime(), 1);
+function WeeklyReportsScreen() {
+  const { api: api2, me } = useAdmin();
+  const owner = can(me.role, "reportSchedule");
+  const [s, setS] = (0, import_react24.useState)(null);
+  const [runs, setRuns] = (0, import_react24.useState)(null);
+  const [err, setErr] = (0, import_react24.useState)(null);
+  const [form, setForm] = (0, import_react24.useState)(null);
+  const [confirm, setConfirm] = (0, import_react24.useState)(null);
+  const [msg, setMsg] = (0, import_react24.useState)(null);
+  const [dl, setDl] = (0, import_react24.useState)(null);
+  const load = (0, import_react24.useCallback)(async () => {
+    setErr(null);
+    try {
+      const [a, b] = await Promise.all([api2.reportSettings(), api2.reports()]);
+      setS(a);
+      setRuns(b);
+      setForm({ enabled: a.enabled, weekday: a.weekday, hour: a.hour, recipients: a.recipients });
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react24.useEffect)(() => {
+    void load();
+  }, [load]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s || !runs || !form) return /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(Loading, {});
+  const changed = form.enabled !== s.enabled || form.weekday !== s.weekday || form.hour !== s.hour || form.recipients.join() !== s.recipients.join();
+  const download2 = async (r) => {
+    setDl(null);
+    try {
+      const d = await api2.reportDownload(r.id);
+      const blob = await api2.files.download(d.path);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = d.file_name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1e4);
+    } catch (e) {
+      setDl(errText(e));
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "stack", "data-testid": "weekly-reports", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("h1", { children: "Scheduled reports" }),
+    /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "A one-page weekly summary (agents, listings, operations, Admin EAB activity, audit-log check). Totals only, no agent names. Each report is kept in the vault for 7 years and cannot be changed or deleted. Emails go out only once the email service is set up on the server." }),
+    /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "card boxed stack", "data-testid": "report-settings", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("h3", { children: "Every week" }),
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("input", { type: "checkbox", checked: form.enabled, disabled: !owner, onChange: (e) => setForm({ ...form, enabled: e.target.checked }), "data-testid": "rep-on" }),
+        " Make and send the weekly report"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { children: "Day" }),
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("select", { value: form.weekday, disabled: !owner, onChange: (e) => setForm({ ...form, weekday: Number(e.target.value) }), "data-testid": "rep-day", children: WEEKDAYS.map((d, i) => /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("option", { value: i + 1, children: d }, d)) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("label", { className: "field", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { children: "From (Malaysia time)" }),
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("select", { value: form.hour, disabled: !owner, onChange: (e) => setForm({ ...form, hour: Number(e.target.value) }), "data-testid": "rep-hour", children: Array.from({ length: 24 }, (_, h) => /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("option", { value: h, children: [
+            String(h).padStart(2, "0"),
+            ":00"
+          ] }, h)) })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("small", { className: "muted", children: "It covers the week before (Monday to Sunday)." }),
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("b", { children: "Who gets it (Owner and Compliance only)" }),
+      s.can_receive.map((a) => /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("label", { className: "choice", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
+          "input",
+          {
+            type: "checkbox",
+            disabled: !owner,
+            checked: form.recipients.includes(a.user_id),
+            onChange: (e) => setForm({ ...form, recipients: e.target.checked ? [...form.recipients, a.user_id] : form.recipients.filter((x) => x !== a.user_id) }),
+            "data-testid": "rep-who"
+          }
+        ),
+        " ",
+        a.email,
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("span", { className: "muted small", children: [
+          "(",
+          a.role,
+          ")"
+        ] })
+      ] }, a.user_id)),
+      owner ? /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: "spacer" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("button", { className: "btn gold", disabled: !changed || form.enabled && form.recipients.length === 0, onClick: () => setConfirm("save"), "data-testid": "rep-save", children: "Save\u2026" })
+      ] }) : /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("small", { className: "muted", children: "Only the Owner can change this." })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("h2", { className: "spacer", children: "Reports" }),
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("button", { className: "btn", onClick: () => setConfirm("run"), "data-testid": "rep-run", children: "Make one now\u2026" })
+    ] }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("p", { className: "notice ok", role: "status", "data-testid": "rep-msg", children: msg }),
+    dl && /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("p", { className: "error", role: "alert", children: dl }),
+    runs.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("p", { className: "muted", children: "No reports yet." }) : /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("table", { "data-testid": "rep-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("th", { children: "Week" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("th", { children: "Made" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("th", { children: "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("th", { children: "Emailed to" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("th", { children: "Fingerprint" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("th", {})
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("tbody", { children: runs.map((r) => /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("tr", { "data-testid": "rep-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("td", { children: [
+          r.period_from,
+          " \u2013 ",
+          r.period_to,
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("small", { className: "muted", children: [
+            r.ref,
+            r.trigger === "manual" ? " (by hand)" : ""
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("td", { children: [
+          fmtTime(r.created_at),
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("small", { className: "muted", children: r.started_by_email ?? "" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: `tag ${r.status === "failed" ? "red" : r.status === "making" ? "amber" : "ok"}`, children: REPORT_STATUS[r.status] }),
+          r.error && /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)(import_jsx_runtime25.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("br", {}),
+            /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("small", { className: "muted", children: r.error })
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("td", { className: "small", children: r.emailed_to.join(", ") || /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("span", { className: "muted", children: "\u2014" }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("td", { className: "mono small", children: r.sha256 ? shortFp(r.sha256) : "" }),
+        /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("td", { children: (r.status === "stored" || r.status === "emailed") && /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("button", { className: "btn small", onClick: () => void download2(r), "data-testid": "rep-dl", children: "PDF" }) })
+      ] }, r.id)) })
+    ] }) }),
+    confirm === "save" && /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
+      ConfirmDialog,
+      {
+        title: "Change the weekly report",
+        confirmLabel: "Save",
+        body: /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(import_jsx_runtime25.Fragment, { children: form.enabled ? /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)(import_jsx_runtime25.Fragment, { children: [
+          "Every ",
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("b", { children: WEEKDAYS[form.weekday - 1] }),
+          " from ",
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)("b", { children: [
+            String(form.hour).padStart(2, "0"),
+            ":00"
+          ] }),
+          ", to ",
+          form.recipients.length,
+          " admin",
+          form.recipients.length === 1 ? "" : "s",
+          "."
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime25.jsxs)(import_jsx_runtime25.Fragment, { children: [
+          "The weekly report will be ",
+          /* @__PURE__ */ (0, import_jsx_runtime25.jsx)("b", { children: "switched off" }),
+          "."
+        ] }) }),
+        onConfirm: async (reason) => {
+          await api2.reportSettingsSave(form, reason);
+          await load();
+        },
+        onClose: () => setConfirm(null)
+      }
+    ),
+    confirm === "run" && /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(
+      ConfirmDialog,
+      {
+        title: "Make the report now",
+        confirmLabel: "Make it",
+        body: /* @__PURE__ */ (0, import_jsx_runtime25.jsx)(import_jsx_runtime25.Fragment, { children: "The summary of last week is made now, kept in the vault and emailed to the chosen admins (if email is set up)." }),
+        onConfirm: async (reason) => {
+          if (!api2.files.runReport) throw new Error("not available");
+          const r = await api2.files.runReport(reason);
+          setMsg(r.run ? `${r.run.ref}: ${REPORT_STATUS[r.run.status]}${r.run.error ? ` \u2014 ${r.run.error}` : ""}.` : "Done.");
+          await load();
+        },
+        onClose: () => setConfirm(null)
+      }
+    )
+  ] });
+}
+
+// src/screens/Workspaces.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react25 = __toESM(require_react(), 1);
+var import_jsx_runtime26 = __toESM(require_jsx_runtime(), 1);
+function WorkspacesScreen() {
+  const { api: api2, go } = useAdmin();
+  const [q, setQ] = (0, import_react25.useState)("");
+  const [query, setQuery] = (0, import_react25.useState)("");
+  const [data, setData] = (0, import_react25.useState)(null);
+  const [err, setErr] = (0, import_react25.useState)(null);
+  const [tab, setTab] = (0, import_react25.useState)("teams");
+  const load = (0, import_react25.useCallback)(async () => {
+    setErr(null);
+    setData(null);
+    try {
+      setData(await api2.workspaces(query || null));
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2, query]);
+  (0, import_react25.useEffect)(() => {
+    void load();
+  }, [load]);
+  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "stack", "data-testid": "workspaces", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h1", { children: "Team Workspaces" }),
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "Read only. Opening this list is recorded." }),
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("form", { className: "row", onSubmit: (e) => {
+      e.preventDefault();
+      setQuery(q.trim());
+    }, children: [
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("input", { className: "spacer", type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Name or email of a member", "data-testid": "ws-q" }),
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("button", { className: "btn", type: "submit", children: "Search" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "tabs", role: "group", "aria-label": "Show", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("button", { "aria-pressed": tab === "teams", onClick: () => setTab("teams"), "data-testid": "ws-tab-teams", children: [
+        "Team Workspaces",
+        data ? ` (${data.teams.length})` : ""
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("button", { "aria-pressed": tab === "workspaces", onClick: () => setTab("workspaces"), "data-testid": "ws-tab-own", children: [
+        "Agents\u2019 own workspaces",
+        data ? ` (${data.workspaces.length})` : ""
+      ] })
+    ] }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Loading, {}) : tab === "teams" ? data.teams.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "muted", children: "No Team Workspaces." }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "stack", "data-testid": "team-list", children: data.teams.map((t) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "item", "data-testid": "team-row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: `tag ${t.ended_at ? "" : "ok"}`, children: t.ended_at ? "Ended" : "Active" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("b", { className: "spacer", children: t.leader_name ?? t.leader_email ?? "\u2014" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("small", { className: "muted", children: [
+          "since ",
+          fmtTime(t.created_at)
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("small", { children: t.members.map((m) => `${m.name ?? m.email}${m.left_at ? " (left)" : ""}`).join(" \xB7 ") || /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("span", { className: "muted", children: "No members" }) }),
+      t.ended_at && /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("small", { className: "muted", children: [
+        "Ended ",
+        fmtTime(t.ended_at),
+        t.end_reason ? ` (${t.end_reason})` : ""
+      ] })
+    ] }, t.id)) }) : data.workspaces.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("p", { className: "muted", children: "No workspaces." }) : /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("table", { "data-testid": "ws-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Workspace" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Owner" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Members" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Listings" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Records" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Made" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("tbody", { children: data.workspaces.map((w) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "workspace", id: w.id }), "data-testid": "ws-open", children: w.name }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("td", { children: [
+          w.owner_name ?? w.owner_email,
+          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("small", { className: "muted", children: w.owner_email })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: w.members }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: w.listings }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: w.records }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { className: "small", children: fmtTime(w.created_at) })
+      ] }, w.id)) })
+    ] }) })
+  ] });
+}
+function WorkspaceScreen({ id }) {
+  const { api: api2, go } = useAdmin();
+  const [w, setW] = (0, import_react25.useState)(null);
+  const [err, setErr] = (0, import_react25.useState)(null);
+  (0, import_react25.useEffect)(() => {
+    api2.workspace(id).then(setW).catch((e) => setErr(errText(e)));
+  }, [api2, id]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(ErrorBox, { text: err });
+  if (!w) return /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("div", { className: "stack", "data-testid": "workspace", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h1", { children: w.name }),
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)(Kv, { rows: [
+      { k: "Owner", v: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: w.owner_user }), "data-testid": "ws-owner", children: w.owner_name ?? w.owner_email }) },
+      { k: "Made", v: fmtTime(w.created_at) },
+      { k: "Records", v: Object.entries(w.by_kind).map(([k, n]) => `${labelOf(k)} ${n}`).join(" \xB7 ") || "\u2014" },
+      { k: "Deleted (kept 7 years)", v: String(w.deleted) }
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("h2", { children: "Members" }),
+    /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("div", { className: "tablewrap", children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("table", { "data-testid": "ws-members", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Email" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Role" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("th", { children: "Joined" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("tbody", { children: w.members.map((m) => /* @__PURE__ */ (0, import_jsx_runtime26.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("button", { className: "linkbtn", onClick: () => go({ k: "agent", id: m.user_id }), children: m.email }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: m.role }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { children: m.active ? "Active" : "Not active" }),
+        /* @__PURE__ */ (0, import_jsx_runtime26.jsx)("td", { className: "small", children: fmtTime(m.joined_at) })
+      ] }, m.user_id)) })
+    ] }) })
+  ] });
+}
+
+// src/screens/Todo.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react26 = __toESM(require_react(), 1);
+var import_jsx_runtime27 = __toESM(require_jsx_runtime(), 1);
+var DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+var MONTHS2 = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+function TodoScreen({ tab: first }) {
+  const { api: api2, me } = useAdmin();
+  const [tab, setTab] = (0, import_react26.useState)(first);
+  const [data, setData] = (0, import_react26.useState)(null);
+  const [err, setErr] = (0, import_react26.useState)(null);
+  const load = (0, import_react26.useCallback)(async () => {
+    setErr(null);
+    try {
+      setData(await api2.todo());
+    } catch (e) {
+      setErr(errText(e));
+    }
+  }, [api2]);
+  (0, import_react26.useEffect)(() => {
+    void load();
+  }, [load]);
+  const viewer = me.role === "viewer";
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "stack", "data-testid": "todo", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h1", { children: tab === "todo" ? "To-Do" : "Calendar" }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "tabs", role: "group", "aria-label": "Show", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { "aria-pressed": tab === "todo", onClick: () => setTab("todo"), "data-testid": "todo-tab-todo", children: "To-Do" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { "aria-pressed": tab === "calendar", onClick: () => setTab("calendar"), "data-testid": "todo-tab-cal", children: "Calendar" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("p", { className: "muted small", style: { margin: 0 }, children: [
+      "Private items are only for you. Shared items are seen by the whole admin team",
+      viewer ? " (as a Viewer you can read them, and make private items)" : " and every change to them is recorded",
+      "."
+    ] }),
+    err ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(ErrorBox, { text: err, onRetry: () => void load() }) : !data ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Loading, {}) : tab === "todo" ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Tasks, { tasks: data.tasks, onChanged: load }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(Calendar, { events: data.events, tasks: data.tasks, onChanged: load })
+  ] });
+}
+function SharedPick({ shared: shared2, set }) {
+  const { me } = useAdmin();
+  if (me.role === "viewer") return null;
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "choice", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { type: "radio", checked: !shared2, onChange: () => set(false), "data-testid": "todo-private" }),
+      " Just me"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "choice", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { type: "radio", checked: shared2, onChange: () => set(true), "data-testid": "todo-shared" }),
+      " Admin team"
+    ] })
+  ] });
+}
+var mayChange = (role, item) => !!item.mine || item.shared && role !== "viewer";
+function Tasks({ tasks, onChanged }) {
+  const { api: api2, me } = useAdmin();
+  const [title, setTitle] = (0, import_react26.useState)("");
+  const [due, setDue] = (0, import_react26.useState)("");
+  const [shared2, setShared] = (0, import_react26.useState)(false);
+  const [err, setErr] = (0, import_react26.useState)(null);
+  const today2 = myToday();
+  const list2 = (0, import_react26.useMemo)(() => sortTasks(tasks), [tasks]);
+  const run = async (f) => {
+    setErr(null);
+    try {
+      await f();
+      await onChanged();
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+  const add = () => run(async () => {
+    await api2.taskSave({ title: title.trim(), due_on: due || null, shared: shared2 });
+    setTitle("");
+    setDue("");
+  });
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "card boxed stack", "data-testid": "task-new", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+          "input",
+          {
+            className: "spacer",
+            value: title,
+            maxLength: 200,
+            onChange: (e) => setTitle(e.target.value),
+            placeholder: "New task",
+            "aria-label": "New task",
+            "data-testid": "task-title",
+            onKeyDown: (e) => {
+              if (e.key === "Enter" && title.trim()) void add();
+            }
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { type: "date", value: due, onChange: (e) => setDue(e.target.value), "aria-label": "Due on", "data-testid": "task-due" }),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn gold", disabled: !title.trim(), onClick: () => void add(), "data-testid": "task-add", children: "Add" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(SharedPick, { shared: shared2, set: setShared })
+    ] }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "error", role: "alert", children: err }),
+    list2.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "muted", children: "Nothing to do." }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { className: "stack", "data-testid": "task-list", children: list2.map((t) => {
+      const may = mayChange(me.role, t);
+      return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: `item task ${t.done ? "done" : ""}`, "data-testid": "task-row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "choice spacer", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(
+              "input",
+              {
+                type: "checkbox",
+                checked: t.done,
+                disabled: !may,
+                onChange: (e) => void run(() => api2.taskSave({ id: t.id, done: e.target.checked })),
+                "data-testid": "task-done"
+              }
+            ),
+            /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "t", children: t.title })
+          ] }),
+          t.shared && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "tag gold", children: "Team" }),
+          t.due_on && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: `tag ${overdue(t, today2) ? "red" : ""}`, children: [
+            overdue(t, today2) ? "Late \xB7 " : "",
+            t.due_on
+          ] }),
+          may && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn small", onClick: () => void run(() => api2.taskSave({ id: t.id, removed: true })), "data-testid": "task-remove", children: "Remove" })
+        ] }),
+        t.shared && !t.mine || t.done_by_email ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("small", { className: "muted", children: [t.shared && !t.mine && `by ${t.owner_email}`, t.done && t.done_by_email && `done by ${t.done_by_email}`].filter(Boolean).join(" \xB7 ") }) : null
+      ] }, t.id);
+    }) })
+  ] });
+}
+function Calendar({ events, tasks, onChanged }) {
+  const { api: api2, me } = useAdmin();
+  const today2 = myToday();
+  const [ym, setYm] = (0, import_react26.useState)(() => ({ y: Number(today2.slice(0, 4)), m: Number(today2.slice(5, 7)) - 1 }));
+  const [day, setDay] = (0, import_react26.useState)(today2);
+  const [adding, setAdding] = (0, import_react26.useState)(false);
+  const [err, setErr] = (0, import_react26.useState)(null);
+  const grid = (0, import_react26.useMemo)(() => monthGrid(ym.y, ym.m), [ym]);
+  const byDay = (0, import_react26.useMemo)(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const e of events) {
+      const d = myDay(e.starts_at);
+      m.set(d, [...m.get(d) ?? [], e]);
+    }
+    return m;
+  }, [events]);
+  const dueByDay = (0, import_react26.useMemo)(() => {
+    const m = /* @__PURE__ */ new Map();
+    for (const t of tasks) if (t.due_on && !t.done) m.set(t.due_on, (m.get(t.due_on) ?? 0) + 1);
+    return m;
+  }, [tasks]);
+  const move = (n) => setYm(({ y, m }) => {
+    const d = new Date(Date.UTC(y, m + n, 1));
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+  });
+  const dayEvents = (byDay.get(day) ?? []).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  const run = async (f) => {
+    setErr(null);
+    try {
+      await f();
+      await onChanged();
+    } catch (e) {
+      setErr(errText(e));
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn small", onClick: () => move(-1), "aria-label": "Previous month", children: "\u2039" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("b", { className: "spacer", style: { textAlign: "center" }, "data-testid": "cal-month", children: [
+        MONTHS2[ym.m],
+        " ",
+        ym.y
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn small", onClick: () => move(1), "aria-label": "Next month", children: "\u203A" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "cal", "data-testid": "cal-grid", children: [
+      DOW.map((d) => /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "dow", children: d }, d)),
+      grid.map((d) => {
+        const evs = byDay.get(d) ?? [];
+        const due = dueByDay.get(d) ?? 0;
+        return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)(
+          "button",
+          {
+            className: `${d.slice(5, 7) !== String(ym.m + 1).padStart(2, "0") ? "other" : ""} ${d === today2 ? "today" : ""}`,
+            "aria-pressed": d === day,
+            onClick: () => setDay(d),
+            "data-testid": `cal-${d}`,
+            "aria-label": `${d}${evs.length ? `, ${evs.length} event${evs.length === 1 ? "" : "s"}` : ""}`,
+            children: [
+              /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("b", { children: Number(d.slice(8)) }),
+              evs.slice(0, 2).map((e) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "dot", children: [
+                e.all_day ? "" : `${myTime(e.starts_at)} `,
+                e.title
+              ] }, e.id)),
+              evs.length > 2 && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "dot", children: [
+                "+",
+                evs.length - 2
+              ] }),
+              due > 0 && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("span", { className: "dot", children: [
+                "\u2610 ",
+                due
+              ] })
+            ]
+          },
+          d
+        );
+      })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("h2", { className: "spacer", children: day }),
+      !adding && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn gold", onClick: () => setAdding(true), "data-testid": "ev-new", children: "New event" })
+    ] }),
+    adding && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(EventEditor, { day, onClose: () => setAdding(false), onSaved: async () => {
+      setAdding(false);
+      await onChanged();
+    } }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "error", role: "alert", children: err }),
+    dayEvents.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "muted", children: "Nothing on this day." }) : /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("div", { className: "stack", "data-testid": "ev-list", children: dayEvents.map((e) => /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "item", "data-testid": "ev-row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("b", { className: "spacer", children: [
+          e.all_day ? "All day" : `${myTime(e.starts_at)}${e.ends_at ? `\u2013${myTime(e.ends_at)}` : ""}`,
+          " \xB7 ",
+          e.title
+        ] }),
+        e.shared && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "tag gold", children: "Team" }),
+        mayChange(me.role, e) && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn small", onClick: () => void run(() => api2.eventSave({ id: e.id, removed: true })), "data-testid": "ev-remove", children: "Remove" })
+      ] }),
+      (e.place || e.notes) && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("small", { children: [e.place, e.notes].filter(Boolean).join(" \xB7 ") }),
+      e.shared && !e.mine && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("small", { className: "muted", children: [
+        "by ",
+        e.owner_email
+      ] })
+    ] }, e.id)) })
+  ] });
+}
+function EventEditor({ day, onClose, onSaved }) {
+  const { api: api2 } = useAdmin();
+  const [title, setTitle] = (0, import_react26.useState)("");
+  const [place, setPlace] = (0, import_react26.useState)("");
+  const [notes, setNotes] = (0, import_react26.useState)("");
+  const [allDay, setAllDay] = (0, import_react26.useState)(false);
+  const [start, setStart] = (0, import_react26.useState)(`${day}T09:00`);
+  const [end, setEnd] = (0, import_react26.useState)(`${day}T10:00`);
+  const [shared2, setShared] = (0, import_react26.useState)(false);
+  const [busy, setBusy] = (0, import_react26.useState)(false);
+  const [err, setErr] = (0, import_react26.useState)(null);
+  const bad = !title.trim() ? "A title is needed." : !allDay && end && end < start ? "The end is before the start." : null;
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api2.eventSave({
+        title: title.trim(),
+        place: place.trim() || null,
+        notes: notes.trim() || null,
+        all_day: allDay,
+        shared: shared2,
+        starts_at: allDay ? fromLocalInput(`${day}T00:00`) : fromLocalInput(start),
+        ends_at: allDay ? null : end ? fromLocalInput(end) : null
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(errText(e));
+      setBusy(false);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "card boxed stack", "data-testid": "ev-editor", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Title" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { value: title, maxLength: 200, onChange: (e) => setTitle(e.target.value), "data-testid": "ev-title" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "choice", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { type: "checkbox", checked: allDay, onChange: (e) => setAllDay(e.target.checked), "data-testid": "ev-allday" }),
+      " All day"
+    ] }),
+    !allDay && /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Starts (Malaysia time)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { type: "datetime-local", value: start, onChange: (e) => setStart(e.target.value), "data-testid": "ev-start" })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "field", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Ends" }),
+        /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { type: "datetime-local", value: end, onChange: (e) => setEnd(e.target.value), "data-testid": "ev-end" })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Place (optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("input", { value: place, maxLength: 200, onChange: (e) => setPlace(e.target.value) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("label", { className: "field", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { children: "Notes (optional)" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("textarea", { rows: 2, value: notes, maxLength: 2e3, onChange: (e) => setNotes(e.target.value) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsx)(SharedPick, { shared: shared2, set: setShared }),
+    bad && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("small", { className: "muted", children: bad }),
+    err && /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("p", { className: "error", role: "alert", children: err }),
+    /* @__PURE__ */ (0, import_jsx_runtime27.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn", onClick: onClose, children: "Cancel" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("span", { className: "spacer" }),
+      /* @__PURE__ */ (0, import_jsx_runtime27.jsx)("button", { className: "btn gold", disabled: !!bad || busy, onClick: () => void save(), "data-testid": "ev-save", children: busy ? "Saving\u2026" : "Save" })
+    ] })
+  ] });
+}
+
+// src/screens/Market.tsx
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var import_react27 = __toESM(require_react(), 1);
+
+// src/admin/market.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var STUCK_DAYS = 30;
+var STUCK_CHOICES = [30, 45, 60, 90];
+var GOOD_SCORE = 80;
+var MISSING_LABEL = {
+  photos: "No photos",
+  more_photos: "Fewer than 5 photos",
+  price: "No price or rent",
+  title_type: "No title type",
+  tenure: "No tenure",
+  size: "No land or built-up size",
+  rooms: "No bedrooms or bathrooms",
+  location: "No state or city",
+  map_pin: "No map pin"
+};
+var missingLabel = (k) => MISSING_LABEL[k] ?? k;
+var MISSING_ORDER = ["photos", "more_photos", "price", "location", "title_type", "tenure", "size", "rooms", "map_pin"];
+var bandOf = (score) => score >= 80 ? "good" : score >= 50 ? "fair" : "poor";
+var BAND_LABEL = { good: "Good (80+)", fair: "Fair (50-79)", poor: "Poor (under 50)" };
+var bandLevel = (b) => b === "good" ? "ok" : b === "fair" ? "amber" : "red";
+function fmtRm(n, short = false) {
+  if (n === null || n === void 0 || !Number.isFinite(Number(n))) return "\u2014";
+  const v = Number(n);
+  if (short && Math.abs(v) >= 1e6) return `RM ${(v / 1e6).toLocaleString("en-MY", { maximumFractionDigits: 2 })}m`;
+  if (short && Math.abs(v) >= 1e4) return `RM ${(v / 1e3).toLocaleString("en-MY", { maximumFractionDigits: 1 })}k`;
+  return `RM ${v.toLocaleString("en-MY", { maximumFractionDigits: 2 })}`;
+}
+function fmtSignedPct(p) {
+  if (p === null || p === void 0 || !Number.isFinite(Number(p))) return "\u2014";
+  const v = Math.round(Number(p) * 10) / 10;
+  return `${v > 0 ? "+" : ""}${v.toLocaleString("en-MY", { maximumFractionDigits: 1 })}%`;
+}
+var fmtDays = (d) => d === null || d === void 0 || !Number.isFinite(Number(d)) ? "\u2014" : `${Math.round(Number(d))} d`;
+var stageLabel = (k) => k === "not_linked" ? "Not linked to a listing" : k === "none" ? "No status" : statusLabel(k);
+var SIDE_LABEL = { sale: "Sale", rent: "Rental" };
+var sideLabel = (s) => SIDE_LABEL[s] ?? s;
+var AUDIENCE_LABEL = { all: "Everyone", groups: "Chosen groups", codes: "Invitation code only" };
+var audienceLabel = (a) => AUDIENCE_LABEL[a] ?? a;
+var slotLabel = (dow, hour) => `${DOW_LABEL[(dow - 1 + 7) % 7]} ${String(hour).padStart(2, "0")}:00-${String((hour + 1) % 24).padStart(2, "0")}:00`;
+function fmtHours(h) {
+  if (h === null || h === void 0 || !Number.isFinite(Number(h))) return "\u2014";
+  const v = Number(h);
+  if (v < 1) return `${Math.max(1, Math.round(v * 60))} min`;
+  if (v < 48) return `${Math.round(v * 10) / 10} h`;
+  return `${Math.round(v / 24 * 10) / 10} days`;
+}
+var heatShade = (level) => level > 0 ? `rgba(212, 175, 55, ${(0.15 + 0.85 * Math.min(1, level)).toFixed(2)})` : void 0;
+function monthLabel(m) {
+  const [y, mo] = m.split("-").map(Number);
+  if (!y || !mo) return m;
+  return `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][mo - 1]} ${y}`;
+}
+
+// src/export/market.ts
+init_define_EAB_BUILD();
+init_define_EAB_CONFIG();
+var who2 = (email, name) => name ? `${name} (${email ?? "\u2014"})` : email ?? "\u2014";
+function buildMarketDoc(x) {
+  const { quality: q, dom: d, price: p, areas: a, stuck: s, commission: c, projects: pr, news: n } = x.data;
+  const b = [
+    { t: "title", text: "Listings & market report", sub: `${x.companyName ?? ""}${x.companyName ? " \xB7 " : ""}Estate Agent AI Buddy` },
+    { t: "rows", rows: [
+      { k: "Reference", v: x.reference, strong: true },
+      { k: "Period", v: `${x.from} to ${x.to} (${rangeDays(x)} days, Malaysia dates)` },
+      { k: "Made", v: `${fmtTime(x.createdAt)} by ${x.adminEmail}` },
+      { k: "Contains", v: "Totals, plus lists of named agents (listings needing work, deals compared, stuck deals, commission by agent)." }
+    ] },
+    { t: "heading", text: "Listing quality (on the market now)" },
+    { t: "rows", rows: [
+      { k: "Listings scored", v: fmtNum(q.listings) },
+      { k: "Average score", v: q.average === null ? "\u2014" : `${fmtNum(q.average, 1)} / 100`, strong: true },
+      { k: BAND_LABEL.good, v: fmtNum(q.bands.good) },
+      { k: BAND_LABEL.fair, v: fmtNum(q.bands.fair) },
+      { k: BAND_LABEL.poor, v: fmtNum(q.bands.poor), warn: q.bands.poor > 0 },
+      ...MISSING_ORDER.filter((k) => q.missing[k]).map((k) => ({ k: `  ${missingLabel(k)}`, v: `${fmtNum(q.missing[k])} listings`, sub: true })),
+      { k: `Needs work (below ${q.below})`, v: fmtNum(q.weak_count), warn: q.weak_count > 0 },
+      ...(q.weak ?? []).slice(0, 100).map((w) => ({ k: `  ${w.ref ?? w.id} \xB7 ${w.score}`, v: `${who2(w.email, w.name)} \xB7 ${w.missing.map(missingLabel).join(", ")}`, sub: true }))
+    ] },
+    { t: "heading", text: "Days on market" },
+    { t: "rows", rows: [
+      { k: "On the market now", v: fmtNum(d.open.listings) },
+      { k: "Median days listed", v: fmtDays(d.open.median) },
+      { k: "Under 30 / 30-89 / 90-179 / 180+ days", v: `${d.open.buckets.under_30} / ${d.open.buckets.d30_89} / ${d.open.buckets.d90_179} / ${d.open.buckets.d180_plus}` },
+      { k: "Sold or rented in the period", v: `${fmtNum(d.closed.listings)} \xB7 median ${fmtDays(d.closed.median)} to close (estimate)` },
+      ...d.by_state.map((r) => ({ k: `  ${r.state}`, v: `${r.open} on market \xB7 median ${fmtDays(r.median)} \xB7 oldest ${fmtDays(r.oldest)}`, sub: true }))
+    ] },
+    { t: "heading", text: "Asking vs final price" },
+    { t: "rows", rows: [
+      { k: "Deals in the period", v: `${fmtNum(p.deals)} (${fmtNum(p.compared)} compared, ${fmtNum(p.not_linked)} not linked to a listing)` },
+      { k: "Median difference", v: fmtSignedPct(p.median_pct), strong: true },
+      { k: "Average difference", v: fmtSignedPct(p.average_pct) },
+      { k: "Below / at / above asking", v: `${p.below} / ${p.at} / ${p.above}` },
+      ...p.by_state.map((r) => ({ k: `  ${r.state}`, v: `${r.deals} deals \xB7 median ${fmtSignedPct(r.median_pct)}`, sub: true })),
+      ...(p.list ?? []).slice(0, 100).map((r) => ({ k: `  ${r.date} ${r.ref ?? ""}`, v: `${fmtRm(r.asking)} -> ${fmtRm(r.final)} (${fmtSignedPct(r.pct)}) \xB7 ${who2(r.email, r.name)}`, sub: true }))
+    ] },
+    { t: "heading", text: "Hot areas" },
+    { t: "rows", rows: [
+      { k: "On the market now", v: fmtNum(a.on_market) },
+      { k: "New listings in the period", v: fmtNum(a.new) },
+      { k: "Enquiries in the period", v: `${fmtNum(a.enquiries)} (${fmtNum(a.enquiries_unlinked)} not about a listing)` },
+      ...a.by_city.slice(0, 30).map((r) => ({ k: `  ${r.city}, ${r.state}`, v: `${r.on_market} on market \xB7 ${r.enquiries} enquiries \xB7 ${r.per_listing ?? "\u2014"} per listing`, sub: true }))
+    ] },
+    { t: "heading", text: `Stuck deals (no change for ${s.days}+ days)` },
+    { t: "rows", rows: [
+      { k: "Booked, before SPA signed", v: fmtNum(s.booked) },
+      { k: "Stuck", v: fmtNum(s.stuck_count), warn: s.stuck_count > 0, strong: true },
+      ...s.by_stage.map((r) => ({ k: `  ${stageLabel(r.stage)}`, v: `${r.stuck} of ${r.booked} \xB7 oldest ${fmtDays(r.oldest)}`, sub: true })),
+      ...(s.list ?? []).slice(0, 100).map((r) => ({ k: `  ${r.ref ?? r.id}`, v: `${stageLabel(r.stage)} \xB7 ${r.days} days \xB7 ${who2(r.email, r.name)}`, sub: true }))
+    ] },
+    { t: "heading", text: "Commission forecast" },
+    { t: "rows", rows: [
+      { k: "Open deals (any date)", v: `${fmtNum(c.open.deals)} \xB7 worth ${fmtRm(c.open.value)}` },
+      { k: "Expected commission", v: fmtRm(c.open.commission), strong: true },
+      { k: "  Confirmed / estimated", v: `${fmtRm(c.open.confirmed)} / ${fmtRm(c.open.estimated)}`, sub: true },
+      { k: "Agents share", v: fmtRm(c.open.agents_share) },
+      { k: "Received in the period", v: `${fmtRm(c.received.commission)} (${fmtNum(c.received.deals)} deals)` },
+      ...c.by_month.map((m) => ({ k: `  ${monthLabel(m.month)}`, v: `${fmtRm(m.commission)} \xB7 ${m.deals} deals`, sub: true })),
+      ...(c.agents ?? []).slice(0, 50).map((r) => ({ k: `  ${who2(r.email, r.name)}`, v: `${r.deals} deals \xB7 ${fmtRm(r.commission)}`, sub: true }))
+    ] },
+    { t: "heading", text: "Pushed projects" },
+    { t: "rows", rows: [
+      { k: "Projects / reached / opened / codes redeemed", v: `${pr.projects} / ${pr.reached} / ${pr.opened} / ${pr.redeemed}` },
+      ...pr.list.slice(0, 50).map((r) => ({ k: `  ${r.title}`, v: `${r.opened} of ${r.reached} opened (${fmtPct0(r.open_pct)}) \xB7 ${r.redeemed} codes`, sub: true }))
+    ] },
+    { t: "heading", text: "Market News engagement" },
+    { t: "rows", rows: [
+      { k: "Posts in the period", v: fmtNum(n.posts) },
+      { k: "Open rate", v: `${fmtPct0(n.open_pct)} (${fmtNum(n.opened)} of ${fmtNum(n.reached)})`, strong: true },
+      { k: "With / without push alert", v: `${fmtPct0(n.with_alert.open_pct)} / ${fmtPct0(n.without_alert.open_pct)}` },
+      { k: "Best times to post", v: n.best.map((t) => slotLabel(t.dow, t.hour)).join("; ") || "\u2014" },
+      ...n.by_language.map((l) => ({ k: `  ${languageLabel(l.language)}`, v: `${fmtPct0(l.open_pct)} (${l.opened} of ${l.reached})`, sub: true })),
+      ...n.by_group.map((g) => ({ k: `  Group: ${g.group}`, v: `${fmtPct0(g.open_pct)} (${g.opened} of ${g.reached})`, sub: true }))
+    ] },
+    { t: "text", text: "Limits: the main app does not yet record old prices, a separate final price, buyer requirements, the date a Booked stage started, or project enquiries. Days to close and stuck deals use the listing last change.", small: true },
+    { t: "text", text: "Generated by Admin EAB from the live database. This export is recorded in the tamper-proof access log under the reference above.", small: true, muted: true }
+  ];
+  return { blocks: b, footer: `${x.reference} \xB7 Listings & market ${x.from} to ${x.to} \xB7 ${fmtTime(x.createdAt)}` };
+}
+function buildMarketSheets(x) {
+  const { quality: q, dom: d, price: p, areas: a, stuck: s, commission: c, projects: pr, news: n } = x.data;
+  return [
+    { name: "Summary", widths: [40, 60], rows: [
+      ["Listings & market report", x.reference],
+      ["Period", `${x.from} to ${x.to}`],
+      ["Made", `${fmtTime(x.createdAt)} by ${x.adminEmail}`],
+      ["Company", x.companyName ?? ""],
+      [],
+      ["Listings scored", q.listings],
+      ["Average quality score", q.average ?? ""],
+      [`Needs work (below ${q.below})`, q.weak_count],
+      ["On the market now", d.open.listings],
+      ["Median days listed", d.open.median ?? ""],
+      ["Sold or rented in period", d.closed.listings],
+      ["Deals compared (asking vs final)", p.compared],
+      ["Median difference %", p.median_pct ?? ""],
+      ["Enquiries in period", a.enquiries],
+      [`Stuck deals (${s.days}+ days)`, s.stuck_count],
+      ["Open deals", c.open.deals],
+      ["Expected commission RM", c.open.commission],
+      ["Agents share RM", c.open.agents_share],
+      ["Received in period RM", c.received.commission],
+      ["Projects", pr.projects],
+      ["Project opens", pr.opened],
+      ["Code redemptions", pr.redeemed],
+      ["News posts", n.posts],
+      ["News open rate %", n.open_pct ?? ""]
+    ] },
+    { name: "Quality", widths: [16, 34, 18, 14, 14, 32, 8, 8, 60], rows: [
+      ["Reference", "Headline", "Type", "State", "City", "Agent", "Score", "Photos", "Missing"],
+      ...(q.weak ?? []).map((w) => [w.ref ?? w.id, w.headline ?? "", w.type ?? "", w.state ?? "", w.city ?? "", w.email ?? "", w.score, w.photos, w.missing.map(missingLabel).join(", ")]),
+      [],
+      ["Missing", "Listings"],
+      ...MISSING_ORDER.filter((k) => q.missing[k]).map((k) => [missingLabel(k), q.missing[k]])
+    ] },
+    { name: "Days on market", widths: [12, 26, 26, 10, 12, 10, 10, 10, 12], rows: [
+      ["Level", "Name", "State", "On market", "Median days", "Average", "Oldest", "Closed", "Median to close"],
+      ...d.by_state.map((r) => ["State", r.state, r.state, r.open, r.median ?? "", r.average ?? "", r.oldest ?? "", r.closed, r.closed_median ?? ""]),
+      ...d.by_city.map((r) => ["City", r.city, r.state, r.open, r.median ?? "", r.average ?? "", r.oldest ?? "", r.closed, r.closed_median ?? ""]),
+      ...d.by_type.map((r) => ["Type", r.type, "", r.open, r.median ?? "", r.average ?? "", r.oldest ?? "", r.closed, r.closed_median ?? ""])
+    ] },
+    { name: "Asking vs final", widths: [12, 10, 16, 30, 18, 14, 14, 32, 14, 14, 10], rows: [
+      ["Date", "Side", "Reference", "Headline", "Type", "State", "City", "Agent", "Asking RM", "Final RM", "Difference %"],
+      ...(p.list ?? []).map((r) => [r.date, sideLabel(r.side), r.ref ?? "", r.headline ?? "", r.type ?? "", r.state ?? "", r.city ?? "", r.email ?? "", r.asking, r.final, r.pct])
+    ] },
+    { name: "Hot areas", widths: [20, 22, 12, 12, 12, 10, 10], rows: [
+      ["State", "City", "On market", "Enquiries", "Per listing", "New", "Closed"],
+      ...a.by_city.map((r) => [r.state, r.city, r.on_market, r.enquiries, r.per_listing ?? "", r.new, r.closed])
+    ] },
+    { name: "Stuck deals", widths: [16, 30, 26, 14, 14, 32, 14, 20, 8], rows: [
+      ["Reference", "Headline", "Stage", "State", "City", "Agent", "Asking RM", "Last change", "Days"],
+      ...(s.list ?? []).map((r) => [r.ref ?? r.id, r.headline ?? "", stageLabel(r.stage), r.state ?? "", r.city ?? "", r.email ?? "", r.asking ?? "", fmtTime(r.updated_at), r.days])
+    ] },
+    { name: "Commission", widths: [26, 10, 16, 16, 16], rows: [
+      ["Month", "Deals", "Estimated RM", "Confirmed RM", "Total RM"],
+      ...c.by_month.map((m) => [m.month, m.deals, m.estimated, m.confirmed, m.commission]),
+      [],
+      ["Stage", "Deals", "Commission RM"],
+      ...c.by_stage.map((r) => [stageLabel(r.stage), r.deals, r.commission]),
+      [],
+      ["Agent", "Deals", "Commission RM", "Agent share RM", "Next deal date"],
+      ...(c.agents ?? []).map((r) => [r.email ?? "", r.deals, r.commission, r.agents_share, r.next_date ?? ""])
+    ] },
+    { name: "Projects", widths: [36, 20, 18, 20, 10, 10, 10, 10, 8], rows: [
+      ["Project", "Developer", "Audience", "Published", "Reached", "Opened", "Open %", "Redeemed", "Codes"],
+      ...pr.list.map((r) => [r.title, r.developer ?? "", audienceLabel(r.audience), fmtTime(r.published_at), r.reached, r.opened, r.open_pct ?? "", r.redeemed, r.codes])
+    ] },
+    { name: "News", widths: [40, 20, 18, 8, 10, 10, 10, 14], rows: [
+      ["Post", "Published", "Audience", "Alert", "Reached", "Opened", "Open %", "Half opened within"],
+      ...n.list.map((r) => [r.title, fmtTime(r.published_at), audienceLabel(r.audience), r.push_alert ? "yes" : "no", r.reached, r.opened, r.open_pct ?? "", fmtHours(r.median_hours)]),
+      [],
+      ["Language", "Reached", "Opened", "Open %"],
+      ...n.by_language.map((l) => [languageLabel(l.language), l.reached, l.opened, l.open_pct ?? ""]),
+      [],
+      ["Group", "Reached", "Opened", "Open %"],
+      ...n.by_group.map((g) => [g.group, g.reached, g.opened, g.open_pct ?? ""]),
+      [],
+      ["Best time", "Opens"],
+      ...n.best.map((t) => [slotLabel(t.dow, t.hour), t.opens])
+    ] }
+  ];
+}
+var marketFileName = (reference, ext) => `Market-${reference}.${ext}`;
+async function exportMarket(api2, adminEmail, format, from, to) {
+  const [quality, dom, price, areas, stuck, commission, projects, news, companyName] = await Promise.all([
+    api2.marketQuality(GOOD_SCORE, 500),
+    api2.marketDom(from, to),
+    api2.marketPrice(from, to),
+    api2.marketAreas(from, to),
+    api2.marketStuck(STUCK_DAYS),
+    api2.marketCommission(from, to),
+    api2.marketProjects(from, to),
+    api2.marketNews(from, to),
+    api2.settings().then((s) => s.company_name).catch(() => void 0)
+  ]);
+  const reg = await api2.startExport("market_report", format, null, { from, to });
+  const input = {
+    reference: reg.reference,
+    createdAt: reg.at,
+    adminEmail,
+    companyName,
+    from,
+    to,
+    data: { quality, dom, price, areas, stuck, commission, projects, news }
+  };
+  const name = marketFileName(reg.reference, format);
+  const blob = format === "pdf" ? await renderPagesToPdf(layoutDocument(buildMarketDoc(input), canvasMeasure()), `Listings & market ${reg.reference}`) : new Blob([buildXlsx(buildMarketSheets(input), { title: `Listings & market ${reg.reference}`, author: adminEmail })], { type: XLSX_MIME });
+  return { reference: reg.reference, how: await saveLocally(blob, name) };
+}
+
+// src/screens/Market.tsx
+var import_jsx_runtime28 = __toESM(require_jsx_runtime(), 1);
+var TABS7 = [
+  { k: "quality", label: "Listing quality" },
+  { k: "dom", label: "Days on market" },
+  { k: "price", label: "Asking vs final" },
+  { k: "areas", label: "Hot areas" },
+  { k: "stuck", label: "Stuck deals" },
+  { k: "commission", label: "Commission" },
+  { k: "projects", label: "Projects" },
+  { k: "news", label: "News engagement" }
+];
+var NO_RANGE2 = ["quality", "stuck"];
+var LONG = ["dom", "price", "commission"];
+function MarketScreen({ tab: first }) {
+  const { me } = useAdmin();
+  const [tab, setTab] = (0, import_react27.useState)(first);
+  const [range, setRange] = (0, import_react27.useState)(() => presetRange(LONG.includes(first) ? "365" : "90", todayKL()));
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h1", { className: "spacer", children: "Listings & market" }),
+      can(me.role, "export") && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(MarketExport, { range })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tabs", role: "group", "aria-label": "Listings and market", children: TABS7.map((t) => /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("button", { "aria-pressed": tab === t.k, onClick: () => setTab(t.k), "data-testid": `mtab-${t.k}`, children: t.label }, t.k)) }),
+    !NO_RANGE2.includes(tab) && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(RangePicker, { range, onChange: setRange }),
+    tab === "quality" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(QualityTab, {}),
+    tab === "dom" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(DomTab, { range }),
+    tab === "price" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(PriceTab, { range }),
+    tab === "areas" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(AreasTab, { range }),
+    tab === "stuck" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(StuckTab, {}),
+    tab === "commission" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(CommissionTab, { range }),
+    tab === "projects" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ProjectsTab, { range }),
+    tab === "news" && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(NewsTab2, { range }),
+    !can(me.role, "viewMarketAgents") && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "notice small", "data-testid": "names-hidden", children: "Your role sees totals and charts only. Lists that name agents are shown to the Owner, Admin and Compliance only." })
+  ] });
+}
+var Limit = ({ children }) => /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "notice small", "data-testid": "limit", children });
+var plural = (n, w) => `${fmtNum(n)} ${w}${n === 1 ? "" : "s"}`;
+var where = (city, state) => [city, state].filter(Boolean).join(", ") || "\u2014";
+function QualityTab() {
+  const { api: api2, me } = useAdmin();
+  const { data: q, err, busy, load } = useLoad2(() => api2.marketQuality(GOOD_SCORE, 500), [api2]);
+  const [missing, setMissing] = (0, import_react27.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!q) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  const weak = (q.weak ?? []).filter((w) => !missing || w.missing.includes(missing));
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-quality", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Listing quality (listings on the market now)", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Listings scored", value: fmtNum(q.listings), sub: "not sold, rented or withdrawn" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Average score", value: q.average === null ? "\u2014" : `${fmtNum(q.average, 1)} / 100`, level: q.average === null ? void 0 : bandLevel(bandOf(q.average)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: BAND_LABEL.good, value: fmtNum(q.bands.good), level: "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: BAND_LABEL.fair, value: fmtNum(q.bands.fair), level: q.bands.fair ? "amber" : "ok" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: BAND_LABEL.poor, value: fmtNum(q.bands.poor), level: q.bands.poor ? "red" : "ok" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "What is missing most" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+          HBars,
+          {
+            testid: "missing",
+            label: "Listings missing each detail",
+            onPick: can(me.role, "viewMarketAgents") ? (k) => setMissing((m) => m === k ? null : k) : void 0,
+            items: MISSING_ORDER.filter((k) => q.missing[k]).map((k) => ({ key: k, label: missingLabel(k), value: q.missing[k] }))
+          }
+        ),
+        can(me.role, "viewMarketAgents") && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("small", { className: "muted", children: "Tap a line to show only the listings missing it." })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Average score by state" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { label: "Average score by state", items: q.by_state.slice(0, 16).map((s) => ({ key: s.state, label: s.state, value: Number(s.average), sub: plural(s.listings, "listing") })) })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "card small muted", children: "Score out of 100: photos 30 (5 or more), price 15, title type 10, tenure 10, size 10, bedrooms / bathrooms 10 (land and commercial lots get these free), state + city 10, map pin 5." }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("h3", { className: "spacer", children: [
+        "Needs work (below ",
+        q.below,
+        ")"
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("span", { className: "tag", children: [
+        fmtNum(q.weak_count),
+        " listings"
+      ] }),
+      missing && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("button", { className: "btn small", onClick: () => setMissing(null), "data-testid": "missing-clear", children: [
+        "Show all (",
+        missingLabel(missing),
+        ")"
+      ] })
+    ] }),
+    q.weak === null || !can(me.role, "viewMarketAgents") ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Hidden, { what: "The list (it names agents) is" }) : weak.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("p", { className: "muted", children: [
+      "No listings below ",
+      q.below,
+      "."
+    ] }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "weak", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Listing" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Where" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Score" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Missing" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: weak.map((w) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: w.ref ?? w.id }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("small", { className: "muted", children: w.headline ?? w.type ?? "" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: where(w.city, w.state) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(AgentLink, { id: w.user_id, email: w.email, name: w.name }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: `tag ${bandOf(w.score) === "poor" ? "red" : "amber"}`, children: w.score }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: w.missing.map(missingLabel).join(" \xB7 ") })
+      ] }, `${w.user_id}/${w.id}`)) })
+    ] }) })
+  ] });
+}
+function DomTab({ range }) {
+  const { api: api2 } = useAdmin();
+  const { data: d, err, busy, load } = useLoad2(() => api2.marketDom(range.from, range.to), [api2, range.from, range.to]);
+  const [by, setBy] = (0, import_react27.useState)("state");
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!d) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  const rows = by === "state" ? d.by_state.map((r) => ({ ...r, k: r.state })) : by === "city" ? d.by_city.map((r) => ({ ...r, k: `${r.city}, ${r.state}` })) : d.by_type.map((r) => ({ ...r, k: r.type }));
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-dom", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Days on market", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "On the market now", value: fmtNum(d.open.listings), sub: "Available or not set" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Median days listed", value: fmtDays(d.open.median), sub: `average ${fmtDays(d.open.average)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Sold or rented in period", value: fmtNum(d.closed.listings), sub: `median ${fmtDays(d.closed.median)} to close` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "180+ days", value: fmtNum(d.open.buckets.d180_plus), level: d.open.buckets.d180_plus ? "amber" : "ok" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "How long listings have been on the market" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { testid: "dom-buckets", label: "Listings by days on the market", items: [
+        { key: "u30", label: "Under 30 days", value: d.open.buckets.under_30 },
+        { key: "30", label: "30-89 days", value: d.open.buckets.d30_89 },
+        { key: "90", label: "90-179 days", value: d.open.buckets.d90_179 },
+        { key: "180", label: "180 days or more", value: d.open.buckets.d180_plus }
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tabs", role: "group", "aria-label": "Group by", style: { margin: 0 }, children: ["state", "city", "type"].map((k) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("button", { "aria-pressed": by === k, onClick: () => setBy(k), "data-testid": `dom-by-${k}`, children: [
+      "By ",
+      k === "type" ? "property type" : k
+    ] }, k)) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "dom-table", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: by === "type" ? "Type" : by === "city" ? "City" : "State" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "On market" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Median days" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Average" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Oldest" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Closed in period" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Median to close" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: r.k }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(r.open) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtDays(r.median) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtDays(r.average) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtDays(r.oldest) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(r.closed) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtDays(r.closed_median) })
+      ] }, r.k)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)(Limit, { children: [
+      "Days are counted from the day the listing was added. The app does not record the day a listing was sold or rented, so \u201Cto close\u201D uses the listing\u2019s last change. Price changes cannot be shown yet: the main app does not keep old prices.",
+      d.no_date ? ` ${d.no_date} listings have no date and are left out.` : ""
+    ] })
+  ] });
+}
+function PriceTab({ range }) {
+  const { api: api2, me } = useAdmin();
+  const { data: p, err, busy, load } = useLoad2(() => api2.marketPrice(range.from, range.to), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!p) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-price", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Asking vs final price", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Deals in period", value: fmtNum(p.deals), sub: `${fmtNum(p.compared)} compared` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Median difference", value: fmtSignedPct(p.median_pct), sub: `average ${fmtSignedPct(p.average_pct)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Below asking", value: fmtNum(p.below), sub: `${fmtNum(p.at)} at \xB7 ${fmtNum(p.above)} above` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Not linked to a listing", value: fmtNum(p.not_linked), sub: p.no_price ? `${p.no_price} without a price` : void 0, level: p.not_linked ? "amber" : "ok" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", "data-testid": "price-by-state", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By state" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { className: "small", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "State" }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Deals" }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Median" }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Average" })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: p.by_state.map((s) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: s.state }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: s.deals }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtSignedPct(s.median_pct) }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtSignedPct(s.average_pct) })
+          ] }, s.state)) })
+        ] })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By property type and sale / rental" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { className: "small", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Type" }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Deals" }),
+            /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Median" })
+          ] }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tbody", { children: [
+            p.by_type.map((s) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: s.type }),
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: s.deals }),
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtSignedPct(s.median_pct) })
+            ] }, s.type)),
+            p.by_side.map((s) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("i", { children: sideLabel(s.side) }) }),
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: s.deals }),
+              /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtSignedPct(s.median_pct) })
+            ] }, `side-${s.side}`))
+          ] })
+        ] })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Deals compared" }),
+    p.list === null || !can(me.role, "viewMarketAgents") ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Hidden, { what: "The list (it names agents) is" }) : p.list.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "muted", children: "No deals linked to a listing with a price in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "price-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Date" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Listing" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Asking" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Final" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Difference" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: p.list.map((x) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { className: "small", children: [
+          x.date,
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("small", { className: "muted", children: sideLabel(x.side) })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: x.ref ?? "\u2014" }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+            x.headline ?? x.type ?? "",
+            " \xB7 ",
+            where(x.city, x.state)
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(AgentLink, { id: x.user_id, email: x.email, name: x.name }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtRm(x.asking) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtRm(x.final) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("span", { className: `tag ${x.pct < 0 ? "amber" : "ok"}`, children: fmtSignedPct(x.pct) }) })
+      ] }, `${x.user_id}/${x.deal_id}`)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Limit, { children: "Final price = the deal\u2019s price or rent; asking = the listing\u2019s asking price (sale) or monthly rent (rental). Only deals that the agent linked to a listing can be compared. A separate \u201Cfinal price\u201D is not recorded by the main app yet." })
+  ] });
+}
+function AreasTab({ range }) {
+  const { api: api2 } = useAdmin();
+  const { data: a, err, busy, load } = useLoad2(() => api2.marketAreas(range.from, range.to), [api2, range.from, range.to]);
+  const [state, setState] = (0, import_react27.useState)(null);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!a) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  const cities = a.by_city.filter((c) => !state || c.state === state);
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-areas", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Hot areas", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "On the market now", value: fmtNum(a.on_market) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "New listings in period", value: fmtNum(a.new) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Enquiries in period", value: fmtNum(a.enquiries), sub: a.enquiries_unlinked ? `${a.enquiries_unlinked} not about a listing` : void 0 }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Sold or rented in period", value: fmtNum(a.closed) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Enquiries by state" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(
+        HBars,
+        {
+          testid: "areas-states",
+          label: "Enquiries by state",
+          unit: "enquiries",
+          onPick: (k) => setState((s) => s === k ? null : k),
+          items: a.by_state.map((s) => ({ key: s.state, label: s.state, value: s.enquiries, sub: `${s.on_market} on market` }))
+        }
+      ),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("small", { className: "muted", children: "Tap a state to see only its cities." })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "row", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("h3", { className: "spacer", children: [
+        "Cities",
+        state ? ` in ${state}` : ""
+      ] }),
+      state && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("button", { className: "btn small", onClick: () => setState(null), children: "All states" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "areas-grid", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "City" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "On market (supply)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Enquiries (demand)" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Enquiries per listing" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "New" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Closed" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: cities.map((c) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          c.city,
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("small", { className: "muted", children: c.state })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { style: { background: heatShade(c.supply_level) }, children: fmtNum(c.on_market) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { style: { background: heatShade(c.demand_level) }, children: fmtNum(c.enquiries) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: c.per_listing === null ? "\u2014" : fmtNum(c.per_listing, 2) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(c.new) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(c.closed) })
+      ] }, `${c.state}/${c.city}`)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Limit, { children: "Darker gold = more. \u201CDemand\u201D is the number of enquiries agents recorded about listings in each area \u2014 the main app does not record buyer requirements yet, so Buyer Demand vs Supply (106) waits for that." })
+  ] });
+}
+function StuckTab() {
+  const { api: api2, me } = useAdmin();
+  const [days, setDays] = (0, import_react27.useState)(STUCK_DAYS);
+  const { data: s, err, busy, load } = useLoad2(() => api2.marketStuck(days), [api2, days]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!s) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-stuck", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: `Stuck deals (no change for ${s.days}+ days)`, onRefresh: () => void load(), busy, children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tabs", role: "group", "aria-label": "Days", style: { margin: 0 }, children: STUCK_CHOICES.map((d) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("button", { "aria-pressed": days === d, onClick: () => setDays(d), "data-testid": `stuck-${d}`, children: [
+      d,
+      " days",
+      d === STUCK_DAYS ? " (default)" : ""
+    ] }, d)) }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Booked, before SPA signed", value: fmtNum(s.booked) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Stuck", value: fmtNum(s.stuck_count), level: s.stuck_count ? "red" : "ok" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By stage" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { testid: "stuck-stages", label: "Stuck deals by stage", items: s.by_stage.map((x) => ({
+        key: x.stage,
+        label: stageLabel(x.stage),
+        value: x.stuck,
+        sub: `of ${x.booked} \xB7 oldest ${fmtDays(x.oldest)}`
+      })) })
+    ] }),
+    s.list === null || !can(me.role, "viewMarketAgents") ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Hidden, { what: "The list (it names agents) is" }) : s.list.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "muted", children: "No stuck deals." }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "stuck-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Listing" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Stage" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Asking" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Last change" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Days" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: s.list.map((x) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: x.ref ?? x.id }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+            x.headline ?? x.type ?? "",
+            " \xB7 ",
+            where(x.city, x.state)
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: stageLabel(x.stage) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(AgentLink, { id: x.user_id, email: x.email, name: x.name }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtRm(x.asking) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: fmtTime(x.updated_at) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: x.days }) })
+      ] }, `${x.user_id}/${x.id}`)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Limit, { children: "\u201CNo change\u201D means the agent has not changed the listing at all for that many days. The main app does not yet record the day each Booked stage started, so a listing edited for another reason starts counting again." })
+  ] });
+}
+function CommissionTab({ range }) {
+  const { api: api2, me } = useAdmin();
+  const { data: c, err, busy, load } = useLoad2(() => api2.marketCommission(range.from, range.to), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!c) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  const today2 = todayKL().slice(0, 7);
+  const ahead = c.by_month.filter((m) => m.month >= today2);
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-commission", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Commission forecast", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Open deals (all dates)", value: fmtNum(c.open.deals), sub: `worth ${fmtRm(c.open.value, true)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Expected commission", value: fmtRm(c.open.commission), sub: `confirmed ${fmtRm(c.open.confirmed, true)} \xB7 estimated ${fmtRm(c.open.estimated, true)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Agents\u2019 share", value: fmtRm(c.open.agents_share), sub: "after co-broke shares" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Received in period", value: fmtRm(c.received.commission), sub: `${fmtNum(c.received.deals)} deals` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Deal date passed", value: fmtNum(c.open.overdue), sub: "still not received", level: c.open.overdue ? "amber" : "ok" })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Expected by month of the deal date" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Bars, { testid: "commission-months", label: "Expected commission per month (RM)", items: c.by_month.map((m) => ({ label: monthLabel(m.month), value: Math.round(m.commission) })) }),
+      ahead.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+        "From this month on: ",
+        fmtRm(ahead.reduce((s, m) => s + m.commission, 0)),
+        " in ",
+        ahead.reduce((s, m) => s + m.deals, 0),
+        " deals."
+      ] }),
+      c.open.no_date > 0 && /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+        c.open.no_date,
+        " open deals have no date and are not in the chart."
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By listing stage" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { testid: "commission-stages", label: "Expected commission by stage", items: c.by_stage.map((s) => ({ key: s.stage, label: stageLabel(s.stage), value: Math.round(s.commission), sub: `${s.deals} deals` })) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Sale or rental" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { label: "Expected commission by sale or rental", items: c.by_side.map((s) => ({ key: s.side, label: sideLabel(s.side), value: Math.round(s.commission), sub: `${s.deals} deals` })) })
+      ] })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By agent" }),
+    c.agents === null || !can(me.role, "viewMarketAgents") ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Hidden, { what: "The list (it names agents) is" }) : c.agents.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "muted", children: "No open deals." }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "commission-agents", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Agent" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Open deals" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Commission" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Agent\u2019s share" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Next deal date" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: c.agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(AgentLink, { id: a.user_id, email: a.email, name: a.name }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: a.deals }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtRm(a.commission) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtRm(a.agents_share) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: a.next_date ?? "\u2014" })
+      ] }, a.user_id)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Limit, { children: "From the agents\u2019 own deal records (Estimated and Confirmed = open). Commission is the amount typed, or price \xD7 rate. The period filter only changes \u201CReceived in period\u201D; open deals are shown whatever their date." })
+  ] });
+}
+function ProjectsTab({ range }) {
+  const { api: api2 } = useAdmin();
+  const { data: p, err, busy, load } = useLoad2(() => api2.marketProjects(range.from, range.to), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!p) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-projects", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Project performance", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Projects", value: fmtNum(p.projects) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Agents reached", value: fmtNum(p.reached) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Opened in period", value: fmtNum(p.opened), sub: fmtPct0(p.reached ? p.opened / p.reached * 100 : null) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Code redemptions", value: fmtNum(p.redeemed) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Opens per day" }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Bars, { label: "Project opens per day", items: p.by_day.map((d) => ({ label: d.day, value: d.opened })) })
+    ] }),
+    p.list.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "muted", children: "No pushed projects in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "projects-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Project" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Audience" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Reached" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Opened" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Open rate" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Codes redeemed" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: p.list.map((x) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: x.title }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+            x.developer ?? "",
+            x.developer ? " \xB7 " : "",
+            fmtTime(x.published_at),
+            x.status !== "published" ? ` \xB7 ${x.status}` : ""
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: audienceLabel(x.audience) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(x.reached) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(x.opened) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtPct0(x.open_pct) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          fmtNum(x.redeemed),
+          x.codes ? /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+            " (",
+            x.codes,
+            " codes)"
+          ] }) : null
+        ] })
+      ] }, x.id)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Limit, { children: "\u201CReached\u201D = agents who can see the project now (everyone, its groups, or who used a code). Enquiries per project are not recorded by the main app yet. Agents who used a code are listed under News \u2192 Codes." })
+  ] });
+}
+function NewsTab2({ range }) {
+  const { api: api2 } = useAdmin();
+  const { data: n, err, busy, load } = useLoad2(() => api2.marketNews(range.from, range.to), [api2, range.from, range.to]);
+  if (err) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(ErrorBox, { text: err, onRetry: () => void load() });
+  if (!n) return /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Loading, {});
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stack", "data-testid": "mkt-news", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Head, { title: "Market News engagement", onRefresh: () => void load(), busy }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "stats", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Posts in period", value: fmtNum(n.posts) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Open rate", value: fmtPct0(n.open_pct), sub: `${fmtNum(n.opened)} of ${fmtNum(n.reached)}` }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "With push alert", value: fmtPct0(n.with_alert.open_pct), sub: plural(n.with_alert.posts, "post") }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Stat, { label: "Without alert", value: fmtPct0(n.without_alert.open_pct), sub: plural(n.without_alert.posts, "post") })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", "data-testid": "best-times", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "Best times to post" }),
+      n.best.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "muted small", style: { margin: 0 }, children: "No opens recorded yet." }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("ol", { style: { margin: 0 }, children: n.best.map((b) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("li", { children: [
+        slotLabel(b.dow, b.hour),
+        " ",
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+          "\xB7 ",
+          plural(b.opens, "open")
+        ] })
+      ] }, `${b.dow}-${b.hour}`)) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Heatmap, { testid: "news-heatmap", rows: n.heatmap, caption: (m) => `Market News opened, by day and hour (Malaysia time). Darker = more. Busiest hour: ${m} opens.` })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "grid2", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By language" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { testid: "news-languages", label: "Open rate by language", unit: "%", share: false, items: n.by_language.map((l) => ({
+          key: l.language,
+          label: languageLabel(l.language),
+          value: Math.round(l.open_pct ?? 0),
+          sub: `${l.opened} of ${l.reached}`
+        })) })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "card stack", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("h3", { children: "By audience group" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(HBars, { testid: "news-groups", label: "Open rate by audience group", unit: "%", share: false, items: n.by_group.map((g) => ({
+          key: g.group_id,
+          label: g.group,
+          value: Math.round(g.open_pct ?? 0),
+          sub: `${g.opened} of ${g.reached}`
+        })) })
+      ] })
+    ] }),
+    n.list.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("p", { className: "muted", children: "No posts in this period." }) : /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("div", { className: "tablewrap dash-table mkt-table", children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("table", { "data-testid": "news-list", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Post" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Audience" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Reached" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Opened" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Open rate" }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("th", { children: "Half opened within" })
+      ] }) }),
+      /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("tbody", { children: n.list.map((x) => /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("tr", { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("td", { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("b", { children: x.title }),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("br", {}),
+          /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+            fmtTime(x.published_at),
+            x.push_alert ? " \xB7 push alert" : ""
+          ] })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: audienceLabel(x.audience) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(x.reached) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtNum(x.opened) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { children: fmtPct0(x.open_pct) }),
+        /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("td", { className: "small", children: fmtHours(x.median_hours) })
+      ] }, x.id)) })
+    ] }) }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)(Limit, { children: "\u201CReached\u201D uses each agent\u2019s groups today. Open rate by group and language counts each agent once per post. Totals only \u2014 no names." })
+  ] });
+}
+function MarketExport({ range }) {
+  const { api: api2, me } = useAdmin();
+  const [busy, setBusy] = (0, import_react27.useState)(null);
+  const [msg, setMsg] = (0, import_react27.useState)(null);
+  const run = async (format) => {
+    setBusy(format);
+    setMsg(null);
+    try {
+      const r = await exportMarket(api2, me.email, format, range.from, range.to);
+      setMsg({ ok: true, text: `${r.reference}: ${r.how}` });
+    } catch (e) {
+      setMsg({ ok: false, text: errText(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("div", { className: "row", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsxs)("small", { className: "muted", children: [
+      "Report for ",
+      range.from,
+      " to ",
+      range.to,
+      ":"
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("button", { className: "btn small gold", disabled: !!busy, onClick: () => void run("pdf"), "data-testid": "mkt-pdf", children: busy === "pdf" ? "Making\u2026" : "PDF" }),
+    /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("button", { className: "btn small gold", disabled: !!busy, onClick: () => void run("xlsx"), "data-testid": "mkt-xlsx", children: busy === "xlsx" ? "Making\u2026" : "Excel" }),
+    msg && /* @__PURE__ */ (0, import_jsx_runtime28.jsx)("small", { className: msg.ok ? "" : "error", role: "status", "data-testid": "mkt-export-msg", children: msg.text })
+  ] });
+}
+
 // src/screens/Shell.tsx
-var import_jsx_runtime8 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime29 = __toESM(require_jsx_runtime(), 1);
 function Shell() {
   const { me, view, go, back, canBack, signOut, conn } = useAdmin();
-  const [q, setQ] = (0, import_react9.useState)("");
+  const [q, setQ] = (0, import_react28.useState)("");
   const submit = (e) => {
     e.preventDefault();
     if (q.trim().length >= 2) go({ k: "search", q: q.trim() });
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "app", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("header", { className: "topbar", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("button", { className: "brand", onClick: () => go({ k: "home" }), "aria-label": `${adminName()} home`, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("img", { src: logo_256_default, alt: "" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("b", { children: adminName() })
+  return /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "app", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("header", { className: "topbar", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("button", { className: "brand", onClick: () => go({ k: "home" }), "aria-label": `${adminName()} home`, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("img", { src: logo_256_default, alt: "" }),
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("b", { children: adminName() })
       ] }),
-      can(me.role, "search") && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("form", { className: "topsearch", role: "search", onSubmit: submit, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("input", { type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Search agent, email, phone, listing ref, address", "aria-label": "Global search", "data-testid": "global-search" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn gold", type: "submit", disabled: q.trim().length < 2, children: "Search" })
+      can(me.role, "search") && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("form", { className: "topsearch", role: "search", onSubmit: submit, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("input", { type: "search", value: q, onChange: (e) => setQ(e.target.value), placeholder: "Search agent, email, phone, listing ref, address", "aria-label": "Global search", "data-testid": "global-search" }),
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { className: "btn gold", type: "submit", disabled: q.trim().length < 2, children: "Search" })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("div", { className: "who", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "tag gold", "data-testid": "role", children: ROLE_LABEL[me.role] }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("span", { className: "muted", children: me.email }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { className: "btn small", onClick: () => signOut("manual"), "data-testid": "sign-out", children: "Sign out" })
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("div", { className: "who", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "tag gold", "data-testid": "role", children: ROLE_LABEL[me.role] }),
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("span", { className: "muted", children: me.email }),
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { className: "btn small", onClick: () => signOut("manual"), "data-testid": "sign-out", children: "Sign out" })
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("main", { className: "main", children: [
-      view.k !== "home" && /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("nav", { className: "crumbs", "aria-label": "Back", children: [
-        canBack && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { onClick: back, children: "\u2190 Back" }),
-        /* @__PURE__ */ (0, import_jsx_runtime8.jsx)("button", { onClick: () => go({ k: "home" }), children: "Home" })
+    /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("main", { className: "main", children: [
+      view.k !== "home" && /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("nav", { className: "crumbs", "aria-label": "Back", children: [
+        canBack && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { onClick: back, children: "\u2190 Back" }),
+        /* @__PURE__ */ (0, import_jsx_runtime29.jsx)("button", { onClick: () => go({ k: "home" }), children: "Home" })
       ] }),
-      view.k === "home" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(Home, {}),
-      view.k === "search" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(SearchScreen, { initial: view.q }, view.q ?? ""),
-      view.k === "agent" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AgentScreen, { id: view.id, openCollection: view.collection, openRecord: view.record }, view.id),
-      view.k === "logs" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(LogsScreen, { tab: view.tab, target: view.target }, view.tab + (view.target ?? "")),
-      view.k === "admins" && /* @__PURE__ */ (0, import_jsx_runtime8.jsx)(AdminsScreen, {}),
-      /* @__PURE__ */ (0, import_jsx_runtime8.jsxs)("footer", { className: "small muted", style: { marginTop: 32 }, children: [
+      view.k === "home" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(Home, {}),
+      view.k === "search" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(SearchScreen, { initial: view.q }, view.q ?? ""),
+      view.k === "agent" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(AgentScreen, { id: view.id, openCollection: view.collection, openRecord: view.record }, view.id),
+      view.k === "logs" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(LogsScreen, { tab: view.tab, target: view.target }, view.tab + (view.target ?? "")),
+      view.k === "admins" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(AdminsScreen, {}),
+      view.k === "agents" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(AgentsScreen, { filter: view.filter }, view.filter),
+      view.k === "settings" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(SettingsScreen, {}),
+      view.k === "cases" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(CasesScreen, {}),
+      view.k === "case" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(CaseScreen, { id: view.id }, view.id),
+      view.k === "vault" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(VaultScreen, {}),
+      view.k === "health" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(HealthScreen, { tab: view.tab }, view.tab),
+      view.k === "dash" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(DashboardsScreen, { tab: view.tab }, view.tab),
+      view.k === "news" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(NewsScreen, { tab: view.tab }, view.tab),
+      view.k === "tickets" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(TicketsScreen, {}),
+      view.k === "ticket" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(TicketScreen, { id: view.id }, view.id),
+      view.k === "ops" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(OpsScreen, { tab: view.tab }, view.tab),
+      view.k === "master" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(MasterScreen, {}),
+      view.k === "top" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(TopAgentsScreen, {}),
+      view.k === "live" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(LiveScreen, {}),
+      view.k === "pdpa" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(PdpaScreen, {}),
+      view.k === "pdpa_req" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(PdpaRequestScreen, { id: view.id }, view.id),
+      view.k === "complaints" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ComplaintsScreen, {}),
+      view.k === "complaint" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ComplaintScreen, { id: view.id }, view.id),
+      view.k === "holds" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(HoldsScreen, {}),
+      view.k === "licences" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(LicencesScreen, {}),
+      view.k === "retention" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(RetentionScreen, {}),
+      view.k === "reports" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ReportsScreen, { tab: view.tab }, view.tab),
+      view.k === "broadcasts" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(BroadcastsScreen, { to: view.to }, view.to?.length ?? 0),
+      view.k === "broadcast" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(BroadcastScreen, { id: view.id }, view.id),
+      view.k === "weeklyReports" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(WeeklyReportsScreen, {}),
+      view.k === "workspaces" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(WorkspacesScreen, {}),
+      view.k === "workspace" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(WorkspaceScreen, { id: view.id }, view.id),
+      view.k === "todo" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(TodoScreen, { tab: view.tab }, view.tab),
+      view.k === "market" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(MarketScreen, { tab: view.tab }, view.tab),
+      view.k === "scorecard" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(ScorecardScreen, {}),
+      view.k === "funnel" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(FunnelScreen, {}),
+      view.k === "duplicates" && /* @__PURE__ */ (0, import_jsx_runtime29.jsx)(DuplicatesScreen, {}),
+      /* @__PURE__ */ (0, import_jsx_runtime29.jsxs)("footer", { className: "small muted", style: { marginTop: 32 }, children: [
         adminName(),
         " ",
         buildInfo.version,
@@ -15180,29 +25469,66 @@ function Shell() {
 }
 
 // src/App.tsx
-var import_jsx_runtime9 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime30 = __toESM(require_jsx_runtime(), 1);
 function App() {
-  const [conn, setConn] = (0, import_react10.useState)(() => loadConn());
-  const [phase, setPhase] = (0, import_react10.useState)({ k: "checking" });
-  const session = (0, import_react10.useRef)(loadSession());
-  const device = (0, import_react10.useMemo)(() => deviceLabel(), []);
-  const setSession = (0, import_react10.useCallback)((s) => {
+  const [conn, setConn] = (0, import_react29.useState)(() => loadConn());
+  const [phase, setPhase] = (0, import_react29.useState)({ k: "checking" });
+  const session = (0, import_react29.useRef)(loadSession());
+  const device = (0, import_react29.useMemo)(() => deviceLabel(), []);
+  const setSession = (0, import_react29.useCallback)((s) => {
     session.current = s;
     saveSession(s);
   }, []);
-  const call = (0, import_react10.useCallback)(async (fn, args = {}) => {
+  const call = (0, import_react29.useCallback)(async (fn, args = {}) => {
     const s = session.current;
     if (!s) throw new ApiError("expired");
     return rpc(conn, s, fn, args, (ns) => setSession(ns));
   }, [conn, setSession]);
-  const api2 = (0, import_react10.useMemo)(() => api(call, device), [call, device]);
-  const signOut = (0, import_react10.useCallback)((why = "manual") => {
+  const files = (0, import_react29.useMemo)(() => ({
+    upload: async (path, blob) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      await vaultUpload(conn, s, path, blob, (ns) => setSession(ns));
+    },
+    download: async (path) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      return vaultDownload(conn, s, path, (ns) => setSession(ns));
+    },
+    media: async (path, blob) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      return mediaUpload(conn, s, path, blob, (ns) => setSession(ns));
+    },
+    screenshot: async (path) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      return screenshotDownload(conn, s, path, (ns) => setSession(ns));
+    },
+    sendPush: async (itemId) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      return sendPush(conn, s, itemId, (ns) => setSession(ns));
+    },
+    sendBroadcast: async (id) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      return callFunction(conn, s, "send-broadcast", { broadcast_id: id }, (ns) => setSession(ns));
+    },
+    runReport: async (reason) => {
+      const s = session.current;
+      if (!s) throw new ApiError("expired");
+      return callFunction(conn, s, "weekly-report", { reason }, (ns) => setSession(ns));
+    }
+  }), [conn, setSession]);
+  const api2 = (0, import_react29.useMemo)(() => api(call, device, files), [call, device, files]);
+  const signOut = (0, import_react29.useCallback)((why = "manual") => {
     const s = session.current;
     if (s) void signOutRemote(conn, s);
     setSession(null);
     setPhase({ k: "login", notice: why === "manual" ? void 0 : why });
   }, [conn, setSession]);
-  (0, import_react10.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     if (phase.k !== "checking") return;
     if (!configured(conn) || !session.current) {
       setPhase({ k: "login" });
@@ -15224,7 +25550,7 @@ function App() {
       else signOut("expired");
     });
   }, [phase.k, conn, api2, signOut]);
-  const onSignedIn = (0, import_react10.useCallback)(async (s) => {
+  const onSignedIn = (0, import_react29.useCallback)(async (s) => {
     setSession(s);
     try {
       const me = await api2.signedIn();
@@ -15238,11 +25564,11 @@ function App() {
       }
     }
   }, [api2, setSession, signOut]);
-  (0, import_react10.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     if (phase.k !== "in") return;
     return watchIdle(() => signOut("idle"));
   }, [phase.k, signOut]);
-  (0, import_react10.useEffect)(() => {
+  (0, import_react29.useEffect)(() => {
     if (phase.k !== "in" || !phase.me.expires_at) return;
     const ms = new Date(phase.me.expires_at).getTime() - Date.now();
     if (ms <= 0) {
@@ -15252,27 +25578,27 @@ function App() {
     const t = window.setTimeout(() => signOut("expired"), Math.min(ms, 2147e6));
     return () => window.clearTimeout(t);
   }, [phase, signOut]);
-  if (phase.k === "checking") return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("div", { className: "login", children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)("p", { className: "muted", role: "status", children: "Checking your sign-in\u2026" }) });
-  if (phase.k === "login") return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(LoginScreen, { conn, onConn: setConn, notice: phase.notice, onSignedIn });
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(SignedIn, { conn, me: phase.me, api: api2, signOut });
+  if (phase.k === "checking") return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("div", { className: "login", children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)("p", { className: "muted", role: "status", children: "Checking your sign-in\u2026" }) });
+  if (phase.k === "login") return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(LoginScreen, { conn, onConn: setConn, notice: phase.notice, onSignedIn });
+  return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(SignedIn, { conn, me: phase.me, api: api2, signOut });
 }
 function SignedIn({ conn, me, api: api2, signOut }) {
-  const [stack, setStack] = (0, import_react10.useState)([{ k: "home" }]);
+  const [stack, setStack] = (0, import_react29.useState)([{ k: "home" }]);
   const view = stack[stack.length - 1];
-  const go = (0, import_react10.useCallback)((v) => {
+  const go = (0, import_react29.useCallback)((v) => {
     setStack((s) => v.k === "home" ? [v] : [...s, v]);
     window.scrollTo?.(0, 0);
   }, []);
-  const back = (0, import_react10.useCallback)(() => setStack((s) => s.length > 1 ? s.slice(0, -1) : s), []);
-  const value = (0, import_react10.useMemo)(() => ({ conn, me, api: api2, view, go, back, canBack: stack.length > 1, signOut }), [conn, me, api2, view, go, back, stack.length, signOut]);
-  return /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Ctx.Provider, { value, children: /* @__PURE__ */ (0, import_jsx_runtime9.jsx)(Shell, {}) });
+  const back = (0, import_react29.useCallback)(() => setStack((s) => s.length > 1 ? s.slice(0, -1) : s), []);
+  const value = (0, import_react29.useMemo)(() => ({ conn, me, api: api2, view, go, back, canBack: stack.length > 1, signOut }), [conn, me, api2, view, go, back, stack.length, signOut]);
+  return /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Ctx.Provider, { value, children: /* @__PURE__ */ (0, import_jsx_runtime30.jsx)(Shell, {}) });
 }
 
 // src/main.tsx
-var import_jsx_runtime10 = __toESM(require_jsx_runtime(), 1);
+var import_jsx_runtime31 = __toESM(require_jsx_runtime(), 1);
 void nativeLook();
 (0, import_client.createRoot)(document.getElementById("root")).render(
-  /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(import_react11.StrictMode, { children: /* @__PURE__ */ (0, import_jsx_runtime10.jsx)(App, {}) })
+  /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(import_react30.StrictMode, { children: /* @__PURE__ */ (0, import_jsx_runtime31.jsx)(App, {}) })
 );
 /*! Bundled license information:
 

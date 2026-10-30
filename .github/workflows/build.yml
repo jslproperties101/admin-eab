@@ -1,6 +1,7 @@
 # Admin EAB — test and build on every push.
 #  test     type check, unit tests, browser screen tests (fake database; no keys needed)
-#  android  debug APK (Capacitor) attached to a GitHub Release "admin-<commit>" for download on the phone
+#  android  one debug APK per admin (Capacitor), each its own package, attached to a GitHub Release:
+#           Admin EAB "admin-<commit>" (unchanged); the others "admin-<app>-<commit>" (all = combined Admin AI Buddy)
 #
 # Settings → Secrets and variables → Actions → Repository secrets (none are written in the code):
 #   EAB_SUPABASE_URL       the Supabase project shared with the main app (the TEST project while building)
@@ -44,7 +45,12 @@ jobs:
   android:
     needs: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [eab, all, pos, mm2h, odw, biz]
     env:
+      EAB_APP: ${{ matrix.app }}
       EAB_SUPABASE_URL: ${{ secrets.EAB_SUPABASE_URL }}
       EAB_SUPABASE_ANON_KEY: ${{ secrets.EAB_SUPABASE_ANON_KEY }}
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
@@ -62,6 +68,7 @@ jobs:
         run: npm run build && rm -f dist/*.map
       - name: Android project
         run: |
+          node scripts/app-config.mjs
           npx cap add android
           npx @capacitor/assets generate --android --iconBackgroundColor '#08080A' --iconBackgroundColorDark '#08080A' --splashBackgroundColor '#08080A' --splashBackgroundColorDark '#08080A'
           npx cap sync android
@@ -76,7 +83,8 @@ jobs:
         run: |
           APK=android/app/build/outputs/apk/debug/app-debug.apk
           AAPT=$(ls $ANDROID_HOME/build-tools/*/aapt2 | tail -1)
-          $AAPT dump badging "$APK" | grep -q "package: name='com.jslproperties.admineab'" || { echo "wrong package"; exit 1; }
+          PKG=$(node scripts/app-config.mjs appId)
+          $AAPT dump badging "$APK" | grep -q "package: name='$PKG'" || { echo "wrong package, expected $PKG"; exit 1; }
           SHA1=$(keytool -printcert -jarfile "$APK" | grep -m1 'SHA1:' | awk '{print $2}')
           echo "APK SHA1 $SHA1"
           test "$SHA1" = "79:F6:77:F7:40:64:F0:ED:22:CB:20:CE:44:67:07:23:C5:FC:FD:A0"
@@ -85,16 +93,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT=${GITHUB_SHA::7}
-          OUT="AdminEAB-${SHORT}-debug.apk"
+          NAME=$(node scripts/app-config.mjs appName)
+          FILE=$(node scripts/app-config.mjs file)
+          PKG=$(node scripts/app-config.mjs appId)
+          OUT="${FILE}-${SHORT}-debug.apk"
           cp android/app/build/outputs/apk/debug/app-debug.apk "$OUT"
-          TAG="admin-$SHORT"
+          if [ "$EAB_APP" = eab ]; then TAG="admin-$SHORT"; else TAG="admin-$EAB_APP-$SHORT"; fi
           {
-            echo "**Admin EAB** debug APK for commit ${GITHUB_SHA} (${GITHUB_REF_NAME}), build ${GITHUB_RUN_NUMBER}."
+            echo "**${NAME}** debug APK for commit ${GITHUB_SHA} (${GITHUB_REF_NAME}), build ${GITHUB_RUN_NUMBER}."
             echo
-            echo "Package com.jslproperties.admineab (installs beside Estate Agent AI Buddy, never over it)."
+            echo "Package ${PKG} (installs beside the other apps and admins, never over them)."
             echo "Database connection built in: $([ -n "$EAB_SUPABASE_URL" ] && [ -n "$EAB_SUPABASE_ANON_KEY" ] && echo yes || echo 'no - type it on the sign-in screen')"
           } > notes.md
           gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" "$OUT" --prerelease --target "$GITHUB_SHA" --title "Admin EAB ${TAG}" --notes-file notes.md
+          gh release create "$TAG" "$OUT" --prerelease --target "$GITHUB_SHA" --title "${NAME} ${TAG}" --notes-file notes.md
       - uses: actions/upload-artifact@v4
-        with: { name: apk, path: 'AdminEAB-*.apk' }
+        with: { name: 'apk-${{ matrix.app }}', path: 'Admin*.apk' }

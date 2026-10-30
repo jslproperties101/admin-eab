@@ -1,5 +1,6 @@
 // Sign-in screen: "Continue with Google", the reason for a sign-out (idle, not on the list…), and the connection
 // settings (database address + PUBLIC key) for a build that has none built in.
+import { adminName } from '../apps';
 import { useEffect, useRef, useState } from 'react';
 import { Conn, configured, connProblem, projectHost, saveConn, loadConn, builtIn } from '../config';
 import { startGoogleSignIn, handleCallback, cleanWebAddress, canSignInHere } from '../api/auth';
@@ -13,7 +14,7 @@ export type LoginNotice = 'idle' | 'expired' | 'not-admin' | 'network' | { error
 const NOTICE: Record<string, string> = {
   idle: `You were signed out after ${IDLE_MS / 60_000} minutes without use. Sign in again to continue.`,
   expired: 'Your sign-in has ended. Please sign in again.',
-  'not-admin': 'This Google account is not on the Admin EAB list, or its access has ended. Ask the Owner to add it.',
+  'not-admin': `This Google account is not on the ${adminName()} list, or its access has ended. Ask the Owner to add it.`,
   network: 'No connection to the database. Check the internet and try again.',
 };
 
@@ -53,13 +54,13 @@ export function LoginScreen({ conn, onConn, notice, onSignedIn }: {
     <main className="login" data-testid="login">
       <section className="login-card stack">
         <img className="logo" src={logo} alt="" />
-        <h1>Admin EAB</h1>
+        <h1>{adminName()}</h1>
         <p className="muted">Compliance and administration for Estate Agent AI Buddy. Authorised staff only.</p>
         {noticeText && <div className={`notice ${notice === 'not-admin' ? 'error' : 'warn'}`} role="status" data-testid="login-notice">{noticeText}</div>}
         {!configured(conn) ? (
           <div className="notice warn" role="status" data-testid="login-not-set-up">The database connection is not set up yet. Open <b>Connection settings</b> below.</div>
         ) : !canSignInHere() ? (
-          <div className="notice warn">Open Admin EAB from its web address or the Android app to sign in.</div>
+          <div className="notice warn">Open {adminName()} from its web address or the Android app to sign in.</div>
         ) : (
           <button className="btn big google-btn" onClick={() => void go()} disabled={busy !== 'idle'} data-testid="google-sign-in">
             <GoogleG /> {busy === 'exchanging' ? 'Signing in…' : busy === 'opening' ? 'Opening Google…' : 'Continue with Google'}

@@ -232,3 +232,7 @@ fieldset > legend { font-weight: 700; padding: 0 6px; }
 /* AdminBatch009 — choosing agents for bulk actions */
 .item.picked { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
 .tick { color: var(--gold); font-size: 1.1rem; }
+
+/* AdminBatch010: app switcher in the combined admin (wraps on a phone). */
+.apppick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.apppick .btn { min-height: 40px; }

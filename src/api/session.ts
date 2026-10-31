@@ -57,7 +57,7 @@ export function errorFrom(status: number, body: { code?: string; message?: strin
  */
 export async function rpc<T>(c: Conn, s: Session, fn: string, args: Record<string, unknown>,
   onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<T> {
-  if (!/^eab_admin_[a-z_]+$/.test(fn)) throw new ApiError('server', 'unknown function');
+  if (!/^eab_admin_[a-z0-9_]+$/.test(fn)) throw new ApiError('server', 'unknown function');
   let session = s;
   if (session.expiresAt - Date.now() < 60_000) {
     try { session = await refresh(c, session, fetchFn); onSession(session); }

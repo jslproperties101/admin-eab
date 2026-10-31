@@ -35,7 +35,9 @@ The database side lives in the main repo: `supabase/migrations/20261021000000_ad
 | `odw` | Admin On Da Way | com.jslproperties.adminodw | On Da Way |
 | `biz` | Admin Biz | com.jslproperties.adminbiz | AI Buddy Biz |
 
-Sign-in, roles, the allow-list and both tamper-proof logs are shared. Feature lists live in `src/apps.ts`; tiles that
+Sign-in, roles, the allow-list and both tamper-proof logs are shared. AI Buddy Biz has its own database: the admin
+signs in to it a second time with Google, and the Biz database's own admin list decides (set `EAB_BIZ_SUPABASE_URL`
+and `EAB_BIZ_SUPABASE_ANON_KEY`, or type them on the Biz screen). Database changes: `database/`. Feature lists live in `src/apps.ts`; tiles that
 are not working yet say what they need (POS synced to the server; MM2H app data is on the phone only; On Da Way not
 linked; AI Buddy Biz has its own database, not linked yet).
 

@@ -2,6 +2,7 @@
 import { createContext, useContext } from 'react';
 import { Conn } from './config';
 import { Api, Me } from './api/admin';
+import { AppCalls } from './api/apps';
 
 export type View =
   | { k: 'home' }
@@ -42,7 +43,10 @@ export type View =
   | { k: 'market'; tab: MarketTab }
   | { k: 'scorecard' }
   | { k: 'funnel' }
-  | { k: 'duplicates' };
+  | { k: 'duplicates' }
+  // AdminBatch010
+  | { k: 'appdata'; app: 'pos' | 'odw' | 'mm2h' | 'biz'; view: string; title: string }
+  | { k: 'appsettings'; app: 'odw' | 'mm2h' | 'biz'; title: string };
 
 /** AdminBatch009 — Listings & market tabs. */
 export type MarketTab = 'quality' | 'dom' | 'price' | 'areas' | 'stuck' | 'commission' | 'projects' | 'news';
@@ -59,6 +63,9 @@ export interface AdminCtx {
   conn: Conn;
   me: Me;
   api: Api;
+  /** AdminBatch010: the other apps' admin data in the Admin EAB database (POS, On Da Way, MM2H). */
+  apps: AppCalls;
+  device: string;
   view: View;
   go: (v: View) => void;
   back: () => void;

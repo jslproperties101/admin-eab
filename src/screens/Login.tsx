@@ -6,6 +6,7 @@ import { Conn, configured, connProblem, projectHost, saveConn, loadConn, builtIn
 import { startGoogleSignIn, handleCallback, cleanWebAddress, canSignInHere } from '../api/auth';
 import { Session } from '../api/session';
 import { onAppUrlOpen, isNative, AUTH_CALLBACK } from '../native/native';
+import { isBizReturn } from '../api/biz';
 import { IDLE_MS } from '../admin/idle';
 import logo from '../brand/logo-256.webp';
 
@@ -22,7 +23,7 @@ export function LoginScreen({ conn, onConn, notice, onSignedIn }: {
   conn: Conn; onConn: (c: Conn) => void; notice?: LoginNotice; onSignedIn: (s: Session) => void;
 }) {
   const [busy, setBusy] = useState<'idle' | 'opening' | 'exchanging'>(() =>
-    typeof window !== 'undefined' && /[?&]code=/.test(window.location.search) ? 'exchanging' : 'idle');
+    typeof window !== 'undefined' && /[?&]code=/.test(window.location.search) && !isBizReturn(window.location.href) ? 'exchanging' : 'idle');
   const [err, setErr] = useState<string | null>(null);
   const [showConn, setShowConn] = useState(!configured(conn));
   const done = useRef(onSignedIn);
@@ -37,7 +38,8 @@ export function LoginScreen({ conn, onConn, notice, onSignedIn }: {
       if (r.kind === 'signed-in') done.current(r.session);
       else { setBusy('idle'); setErr(r.code === 'access_denied' ? 'Sign-in was cancelled.' : `Sign-in did not finish (${r.code}). Try again.`); }
     };
-    if (!isNative() && /[?&#](code|error)=/.test(window.location.href)) void finish(window.location.href);
+    // AdminBatch010: a return from the AI Buddy Biz sign-in (?biz=1) is not for this screen.
+    if (!isNative() && /[?&#](code|error)=/.test(window.location.href) && !isBizReturn(window.location.href)) void finish(window.location.href);
     let l: { remove: () => unknown } | null = null;
     void onAppUrlOpen(url => { if (url.startsWith(AUTH_CALLBACK)) void finish(url); }).then(x => { l = x; });
     return () => { void l?.remove(); };

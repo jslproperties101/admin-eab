@@ -6,9 +6,19 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 export const isNative = (): boolean => { try { return Capacitor.isNativePlatform(); } catch { return false; } };
 export const platform = (): 'android' | 'ios' | 'web' => { try { return Capacitor.getPlatform() as 'android' | 'ios' | 'web'; } catch { return 'web'; } };
 
-/** Android package id, also the link Google sign-in returns to. Different from the main app's, so the two never clash. */
-export const APP_ID = 'com.jslproperties.admineab';
+/**
+ * Android package id of THIS admin build, also the link Google sign-in returns to. AdminBatch010: each admin app has
+ * its own package (see scripts/app-config.mjs), so each must send Google back to itself, not to Admin EAB.
+ */
+declare const __EAB_APP__: string | undefined;
+export const ADMIN_PACKAGES: Record<string, string> = {
+  all: 'com.jslproperties.adminhub', eab: 'com.jslproperties.admineab', pos: 'com.jslproperties.adminpos',
+  mm2h: 'com.jslproperties.adminmm2h', odw: 'com.jslproperties.adminodw', biz: 'com.jslproperties.adminbiz',
+};
+export const APP_ID = ADMIN_PACKAGES[(typeof __EAB_APP__ !== 'undefined' && __EAB_APP__) || 'eab'] ?? ADMIN_PACKAGES.eab;
 export const AUTH_CALLBACK = `${APP_ID}://auth-callback`;
+/** AdminBatch010: the second Google sign-in, into the AI Buddy Biz database, comes back here. */
+export const BIZ_CALLBACK = `${APP_ID}://biz-callback`;
 
 const cache = new Map<string, any>();
 export function plugin<T = any>(name: string): T | undefined {

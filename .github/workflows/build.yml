@@ -53,6 +53,8 @@ jobs:
       EAB_APP: ${{ matrix.app }}
       EAB_SUPABASE_URL: ${{ secrets.EAB_SUPABASE_URL }}
       EAB_SUPABASE_ANON_KEY: ${{ secrets.EAB_SUPABASE_ANON_KEY }}
+      EAB_BIZ_SUPABASE_URL: ${{ secrets.EAB_BIZ_SUPABASE_URL }}
+      EAB_BIZ_SUPABASE_ANON_KEY: ${{ secrets.EAB_BIZ_SUPABASE_ANON_KEY }}
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4

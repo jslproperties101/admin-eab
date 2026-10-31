@@ -19,6 +19,8 @@ if (!noEnv && existsSync('.env')) {
   }
 }
 const config = { supabaseUrl: env.EAB_SUPABASE_URL ?? '', supabaseAnonKey: env.EAB_SUPABASE_ANON_KEY ?? '' };
+// AdminBatch010: the AI Buddy Biz project (its own database). Public key only, same checks as above.
+const biz = { supabaseUrl: env.EAB_BIZ_SUPABASE_URL ?? '', supabaseAnonKey: env.EAB_BIZ_SUPABASE_ANON_KEY ?? '' };
 // A service-role key is a JWT whose payload says "service_role". Refuse to build one into the app.
 if (/eyJ/.test(config.supabaseAnonKey)) {
   try {
@@ -27,6 +29,10 @@ if (/eyJ/.test(config.supabaseAnonKey)) {
   } catch (e) { if (String(e).includes('SERVICE-ROLE')) throw e; }
 }
 if (/^sb_secret_/.test(config.supabaseAnonKey)) throw new Error('EAB_SUPABASE_ANON_KEY is a SECRET key. Use the publishable key.');
+for (const k of [biz.supabaseAnonKey]) {
+  if (/^sb_secret_/.test(k)) throw new Error('EAB_BIZ_SUPABASE_ANON_KEY is a SECRET key. Use the publishable key.');
+  if (/eyJ/.test(k)) { let role = ''; try { role = JSON.parse(Buffer.from(k.split('.')[1], 'base64url').toString()).role; } catch { /* not a JWT */ } if (role === 'service_role') throw new Error('EAB_BIZ_SUPABASE_ANON_KEY is a SERVICE-ROLE key. Use the public anon key.'); }
+}
 
 const APPS = ['all', 'eab', 'pos', 'mm2h', 'odw', 'biz'];
 const app = (env.EAB_APP ?? 'eab').trim().toLowerCase() || 'eab';
@@ -51,7 +57,7 @@ await build({
   minify: !process.env.EAB_NOMINIFY,
   sourcemap: true,
   outdir: OUT,
-  define: { 'process.env.NODE_ENV': '"production"', __EAB_CONFIG__: JSON.stringify(config), __EAB_BUILD__: JSON.stringify(buildInfo), __EAB_APP__: JSON.stringify(app) },
+  define: { 'process.env.NODE_ENV': '"production"', __EAB_CONFIG__: JSON.stringify(config), __EAB_BUILD__: JSON.stringify(buildInfo), __EAB_APP__: JSON.stringify(app), __EAB_BIZ__: JSON.stringify(biz) },
   loader: { '.webp': 'dataurl' },
   plugins: [capacitorPlugin()],
   logLevel: 'info',

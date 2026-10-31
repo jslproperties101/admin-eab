@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conn, configured, loadConn } from './config';
 import { ApiError, Session, loadSession, rpc, saveSession, signOutRemote, vaultUpload, vaultDownload, mediaUpload, screenshotDownload, sendPush, callFunction, BroadcastSendResult } from './api/session';
 import { Me, api as makeApi } from './api/admin';
+import { appCalls } from './api/apps';
 import { deviceLabel } from './native/native';
 import { isIdle, lastUsed, watchIdle, markUsed } from './admin/idle';
 import { Ctx, View, errText } from './ctx';
@@ -35,6 +36,7 @@ export default function App() {
     runReport: async (reason: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return callFunction<{ run?: import('./api/admin').ReportRun }>(conn, s, 'weekly-report', { reason }, ns => setSession(ns)); },
   }), [conn, setSession]);
   const api = useMemo(() => makeApi(call, device, files), [call, device, files]);
+  const apps = useMemo(() => appCalls(call, device), [call, device]);
 
   const signOut = useCallback((why: 'idle' | 'manual' | 'expired' | 'not-admin' = 'manual') => {
     const s = session.current;
@@ -88,14 +90,14 @@ export default function App() {
 
   if (phase.k === 'checking') return <div className="login"><p className="muted" role="status">Checking your sign-in…</p></div>;
   if (phase.k === 'login') return <LoginScreen conn={conn} onConn={setConn} notice={phase.notice} onSignedIn={onSignedIn} />;
-  return <SignedIn conn={conn} me={phase.me} api={api} signOut={signOut} />;
+  return <SignedIn conn={conn} me={phase.me} api={api} apps={apps} device={device} signOut={signOut} />;
 }
 
-function SignedIn({ conn, me, api, signOut }: { conn: Conn; me: Me; api: ReturnType<typeof makeApi>; signOut: (w?: 'idle' | 'manual' | 'expired') => void }) {
+function SignedIn({ conn, me, api, apps, device, signOut }: { conn: Conn; me: Me; api: ReturnType<typeof makeApi>; apps: ReturnType<typeof appCalls>; device: string; signOut: (w?: 'idle' | 'manual' | 'expired') => void }) {
   const [stack, setStack] = useState<View[]>([{ k: 'home' }]);
   const view = stack[stack.length - 1];
   const go = useCallback((v: View) => { setStack(s => (v.k === 'home' ? [v] : [...s, v])); window.scrollTo?.(0, 0); }, []);
   const back = useCallback(() => setStack(s => (s.length > 1 ? s.slice(0, -1) : s)), []);
-  const value = useMemo(() => ({ conn, me, api, view, go, back, canBack: stack.length > 1, signOut }), [conn, me, api, view, go, back, stack.length, signOut]);
+  const value = useMemo(() => ({ conn, me, api, apps, device, view, go, back, canBack: stack.length > 1, signOut }), [conn, me, api, apps, device, view, go, back, stack.length, signOut]);
   return <Ctx.Provider value={value}><Shell /></Ctx.Provider>;
 }

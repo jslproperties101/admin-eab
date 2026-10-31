@@ -1,5 +1,8 @@
 // The signed-in frame: top bar (brand, global search, who is signed in, sign out) and the current screen.
 import { adminName } from '../apps';
+import { AppDataScreen } from './AppData';
+import { AppSettingsScreen } from './AppSettings';
+import { useBizReturn } from './BizGate';
 import { FormEvent, useState } from 'react';
 import { useAdmin } from '../ctx';
 import { ROLE_LABEL, can } from '../admin/roles';
@@ -32,6 +35,12 @@ import { ComplaintScreen, ComplaintsScreen, HoldsScreen, LicencesScreen, PdpaReq
 
 export function Shell() {
   const { me, view, go, back, canBack, signOut, conn } = useAdmin();
+  // AdminBatch010: the AI Buddy Biz Google sign-in comes back here; open the Biz space with the result.
+  useBizReturn(r => {
+    if (r !== 'ok') { try { sessionStorage.setItem('admin-biz-notice', r); } catch { /* blocked */ } }
+    try { localStorage.setItem('admin-eab-app', 'biz'); } catch { /* blocked */ }
+    go({ k: 'appdata', app: 'biz', view: 'businesses', title: 'Businesses & Templates' });
+  });
   const [q, setQ] = useState('');
   const submit = (e: FormEvent) => { e.preventDefault(); if (q.trim().length >= 2) go({ k: 'search', q: q.trim() }); };
   return (
@@ -96,6 +105,8 @@ export function Shell() {
         {view.k === 'scorecard' && <ScorecardScreen />}
         {view.k === 'funnel' && <FunnelScreen />}
         {view.k === 'duplicates' && <DuplicatesScreen />}
+        {view.k === 'appdata' && <AppDataScreen key={`${view.app}:${view.view}`} app={view.app} view={view.view} title={view.title} />}
+        {view.k === 'appsettings' && <AppSettingsScreen key={view.app} app={view.app} title={view.title} />}
         <footer className="small muted" style={{ marginTop: 32 }}>
           {adminName()} {buildInfo.version} · {buildInfo.sha} · database {projectHost(conn.supabaseUrl)} · signs out after 15 minutes without use
         </footer>

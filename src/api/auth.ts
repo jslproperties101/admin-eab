@@ -8,6 +8,9 @@ import { isNative, openInBrowser, closeBrowser, AUTH_CALLBACK } from '../native/
 import { ApiError, Session, TokenResponse, headers, toSession } from './session';
 
 const PKCE_KEY = 'admin-eab-pkce';
+/** AdminBatch010: the Biz sign-in keeps its own code verifier, so the two sign-ins never mix. */
+export interface SignInTarget { pkceKey: string; redirect: string }
+const MAIN = (): SignInTarget => ({ pkceKey: PKCE_KEY, redirect: redirectUrl() });
 const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 export function newVerifier(): string {
@@ -29,22 +32,23 @@ export function authorizeUrl(c: Conn, redirect: string, challenge: string): stri
 }
 export const canSignInHere = () => isNative() || /^https?:$/.test(window.location.protocol);
 
-const pk = {
-  set: (v: string) => { try { localStorage.setItem(PKCE_KEY, v); } catch { /* blocked */ } },
-  get: () => { try { return localStorage.getItem(PKCE_KEY); } catch { return null; } },
-  clear: () => { try { localStorage.removeItem(PKCE_KEY); } catch { /* blocked */ } },
-};
+const pkFor = (key: string) => ({
+  set: (v: string) => { try { localStorage.setItem(key, v); } catch { /* blocked */ } },
+  get: () => { try { return localStorage.getItem(key); } catch { return null; } },
+  clear: () => { try { localStorage.removeItem(key); } catch { /* blocked */ } },
+});
 
-export async function startGoogleSignIn(c: Conn): Promise<void> {
+export async function startGoogleSignIn(c: Conn, target: SignInTarget = MAIN()): Promise<void> {
   if (!configured(c)) throw new ApiError('not-configured');
   const v = newVerifier();
-  pk.set(v);
-  if (!(await openInBrowser(authorizeUrl(c, redirectUrl(), await challengeFor(v))))) throw new ApiError('network');
+  pkFor(target.pkceKey).set(v);
+  if (!(await openInBrowser(authorizeUrl(c, target.redirect, await challengeFor(v))))) throw new ApiError('network');
 }
 
 export type CallbackResult = { kind: 'none' } | { kind: 'error'; code: string } | { kind: 'signed-in'; session: Session };
 
-export async function handleCallback(c: Conn, url: string, fetchFn: typeof fetch = fetch): Promise<CallbackResult> {
+export async function handleCallback(c: Conn, url: string, fetchFn: typeof fetch = fetch, pkceKey = PKCE_KEY): Promise<CallbackResult> {
+  const pk = pkFor(pkceKey);
   let u: URL;
   try { u = new URL(url); } catch { return { kind: 'none' }; }
   const params = new URLSearchParams(u.search);

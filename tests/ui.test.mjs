@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 const PORT = 5199;
 const BASE = `http://localhost:${PORT}/`;
 const SB = 'https://fake.supabase.co';
+const BIZ = 'https://fakebiz.supabase.co';
 const SHOTS = 'tests/screens';
 let server, serverAll, browser;
 const PORT_ALL = 5198;
@@ -339,7 +340,34 @@ function marketFake() {
   };
 }
 
-async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false, base = BASE } = {}) {
+/** AdminBatch010 fake answers for eab_admin_app_view and the change functions (both the EAB and the Biz database). */
+function appsFake(role) {
+  const named = ['owner', 'admin', 'compliance'].includes(role);
+  const content = { hotspot: [{ id: 'h1', title: 'Gurney Drive', area: 'Penang', url: null, phone: null, valid_until: null, status: null, published: true, sort: 0, body: 'Hawker food', updated: '2026-10-30' }] };
+  const flags = { mm2h: [{ key: 'ai_chat', label: 'AI chat', enabled: false, updated_at: '2026-10-30T00:00:00Z' }], biz: [] };
+  const settings = {};
+  const tickets = [{ id: 't1', date: '2026-10-29', from_user: 'fam@x.com', subject: 'Cannot open Documents', details: 'Crash', status: 'open' }];
+  const modules = [{ tenant_id: 'tn1', business: 'Kopi Corner', module: 'KIDS', enabled: false }, { tenant_id: 'tn1', business: 'Kopi Corner', module: 'POS', enabled: true }];
+  const S = app => (settings[app] ??= { maintenance_on: false, maintenance_message: null, min_version: null, update_url: null, announcement: null, announcement_until: null, updated_at: '2026-10-30T00:00:00Z' });
+  const view = a => {
+    const v = a.p_view, app = a.p_app;
+    const r = (summary, rows) => ({ summary, rows: rows ?? [], names_hidden: !named, from: a.p_from ?? '2026-10-01', to: a.p_to ?? '2026-10-31' });
+    if (v === 'pnl') return r({ income_rm: 2200, expenses_rm: 1000, profit_rm: 1200 }, [{ business: 'Siti Realty', income: 2200, expenses: 1000, profit: 1200 }]);
+    if (v === 'sales' && app === 'pos') return r({ records: 1, total_rm: 54, by_status: { cash: 1 } }, named ? [{ business: 'Siti Realty', record: { no: 'R-1', date: '2026-10-30', method: 'cash', total: 54 }, changed: '2026-10-30T02:00:00Z' }] : [{ business: 'Siti Realty', record: null }]);
+    if (v === 'sales' && app === 'odw') return r({ sales: 1, value_rm: 580000 }, [{ property: 'Terrace Kajang', vendor: named ? 'Mr Tan' : null, buyer: named ? 'Puan Aina' : null, sale_price: 580000, status: 'in_progress', progress_pct: 40 }]);
+    if (v.startsWith('content:')) return r({ items: (content[v.slice(8)] ?? []).length }, content[v.slice(8)] ?? []);
+    if (v === 'flags') return r({ flags: (flags[app] ?? []).length }, flags[app] ?? []);
+    if (v === 'tickets') return r({ open: tickets.filter(t => t.status === 'open').length }, tickets.map(t => ({ ...t, from_user: named ? t.from_user : null })));
+    if (v === 'settings') return r(S(app), []);
+    if (v === 'modules') return r({ switched_on: modules.filter(m => m.enabled).length }, modules);
+    if (v === 'businesses' && app === 'biz') return r({ businesses: 1 }, [{ id: 'tn1', name: 'Kopi Corner', template: 'cafe', team: 3, modules_on: 'POS' }]);
+    if (v === 'families') return r({ families: 1 }, named ? [{ family_name: 'Smith family', city: 'Penang', email: 'fam@x.com' }] : []);
+    return r({ items: 0 }, []);
+  };
+  return { view, content, flags, settings, S, tickets, modules };
+}
+
+async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false, base = BASE, bizEmail = 'joe@example.com' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
   const page = await ctx.newPage();
   const calls = [];
@@ -370,6 +398,8 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const rep = reportsFake();
   const ins = insightFake();
   const b8 = b8Fake();
+  const apf = appsFake(role);
+  const bizCalls = [];
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
@@ -848,11 +878,38 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         if (args.p_action === 'suspend') profile.status = 'suspended';
         return route.fulfill(ok({ ref: `BULK-2026-000${++ins.bulks}`, action: args.p_action, count: args.p_users.length }));
       }
+      // AdminBatch010
+      case 'eab_admin_app_view': return ['owner', 'admin', 'compliance', 'viewer'].includes(role) ? route.fulfill(ok(apf.view(args))) : route.fulfill(denied);
+      case 'eab_admin_app_settings_set': if (!['owner', 'admin'].includes(role)) return route.fulfill(denied); Object.assign(apf.S(args.p_app), args.p_patch); return route.fulfill(ok(apf.S(args.p_app)));
+      case 'eab_admin_app_flag_set': { if (!['owner', 'admin'].includes(role)) return route.fulfill(denied); const l = (apf.flags[args.p_app] ??= []); const f = l.find(x => x.key === args.p_key);
+        if (f) f.enabled = args.p_enabled; else l.push({ key: args.p_key, label: args.p_label, enabled: args.p_enabled, updated_at: '2026-10-31T00:00:00Z' }); return route.fulfill(ok({})); }
+      case 'eab_admin_app_ticket_set': { const t = apf.tickets.find(x => x.id === args.p_id); t.status = args.p_status; return route.fulfill(ok(null)); }
+      case 'eab_admin_mm2h_content_save': { if (!['owner', 'admin'].includes(role)) return route.fulfill(denied); const k = args.p_kind; const l = (apf.content[k] ??= []);
+        const id = args.p_id ?? `n${l.length + 1}`; const i = l.findIndex(x => x.id === id); const item = { id, ...args.p_item }; if (i >= 0) l[i] = item; else l.push(item); return route.fulfill(ok(item)); }
+      case 'eab_admin_mm2h_content_delete': { const l = apf.content[args.p_kind] ?? []; l.splice(l.findIndex(x => x.id === args.p_id), 1); return route.fulfill(ok(null)); }
+      default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+    }
+  });
+  // AdminBatch010: the AI Buddy Biz database (separate project). Its own admin list: only joe@example.com is on it.
+  await page.route(`${BIZ}/**`, async route => {
+    const url = route.request().url();
+    const fn = url.split('/rpc/')[1];
+    let args = {};
+    if (fn) { try { args = route.request().postDataJSON() ?? {}; } catch { args = {}; } }
+    bizCalls.push({ fn: fn ?? url, args, auth: route.request().headers().authorization });
+    if (url.includes('/auth/v1/authorize')) { const back = new URL(url).searchParams.get('redirect_to'); return route.fulfill({ status: 302, headers: { location: `${back}&code=biz-code` } }); }
+    if (url.includes('/auth/v1/token')) return route.fulfill(ok({ access_token: 'biztok', refresh_token: 'bizref', expires_in: 3600, user: { id: 'bme', email: bizEmail } }));
+    if (url.includes('/auth/v1/logout')) return route.fulfill({ status: 204 });
+    const allowed = bizEmail === 'joe@example.com';
+    switch (fn) {
+      case 'eab_admin_signed_in': return allowed ? route.fulfill(ok({ user_id: 'bme', email: bizEmail, role: 'owner', expires_at: null })) : route.fulfill(denied);
+      case 'eab_admin_app_view': return route.fulfill(ok(apf.view(args)));
+      case 'eab_admin_biz_module_set': { const m = apf.modules.find(x => x.tenant_id === args.p_tenant && x.module === args.p_module); m.enabled = args.p_enabled; return route.fulfill(ok(m)); }
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
   await page.goto(base);
-  return { page, ctx, calls, b8 };
+  return { page, ctx, calls, b8, bizCalls };
 }
 
 test('no connection set up: the sign-in screen says so, and refuses a secret key', async () => {
@@ -2350,7 +2407,8 @@ test('combined admin: switch between all five apps; shared tools open in each; c
   }
   await page.getByTestId('app-pos').click();
   assert.ok(await page.getByTestId('tile-P1').isEnabled(), 'POS owner records open the search');
-  assert.match(await page.getByText('LHDN MyInvois Status (sandbox)').locator('..').innerText(), /Needs the POS module synced/);
+  assert.ok(await page.getByTestId('tile-P8').isEnabled(), 'MyInvois status opens');
+  assert.match(await page.getByText('Refunds & Disputes').locator('..').innerText(), /Payment gateways are not in the app yet/);
   await page.screenshot({ path: `${SHOTS}/20-combined-pos-phone.png`, fullPage: true });
   await page.getByTestId('tile-P1').click();
   await page.getByTestId('global-search').waitFor();
@@ -2358,7 +2416,7 @@ test('combined admin: switch between all five apps; shared tools open in each; c
   await page.getByTestId('app-title').waitFor();
   assert.equal(await page.getByTestId('app-title').innerText(), 'AI Buddy POS', 'last app remembered');
   await page.getByTestId('app-mm2h').click();
-  assert.match(await page.getByTestId('app-where').innerText(), /phone only/);
+  assert.match(await page.getByTestId('app-where').innerText(), /documents stay on the phone/);
   await page.screenshot({ path: `${SHOTS}/21-combined-mm2h-phone.png`, fullPage: true });
   await ctx.close();
 });
@@ -2370,5 +2428,150 @@ test('combined admin, viewer role: no personal-data tiles in any app', async () 
   assert.equal(await page.getByTestId('tile-P1').count(), 0);
   assert.equal(await page.getByTestId('tile-18').count(), 0);
   await page.screenshot({ path: `${SHOTS}/22-combined-viewer-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+// ======================================================================================== AdminBatch010 data screens
+test('owner, combined: POS profit & loss and sales list; Excel export gets a reference (phone)', async () => {
+  const { page, ctx, calls } = await open({ base: BASE_ALL });
+  await page.getByTestId('app-pos').click();
+  await page.getByTestId('tile-P6').click();
+  await page.getByTestId('app-summary').waitFor();
+  assert.match(await page.getByTestId('app-summary').innerText(), /Profit \(RM\)\s*1,200/);
+  assert.match(await page.getByTestId('app-rows').innerText(), /Siti Realty/);
+  const v = calls.find(c => c.fn === 'eab_admin_app_view');
+  assert.equal(v.args.p_app, 'pos'); assert.equal(v.args.p_view, 'pnl'); assert.ok(v.args.p_from && v.args.p_to && v.args.p_device, 'period and device sent');
+  await page.screenshot({ path: `${SHOTS}/70-pos-pnl-phone.png`, fullPage: true });
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-P4').click();
+  await page.getByTestId('app-rows').getByText('R-1').waitFor();
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('app-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^POS-sales-EAB-20261021-000007\.xlsx$/);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_export').args.p_kind, 'app_pos_sales');
+  await ctx.close();
+});
+
+test('owner: MM2H hotspot — add with a reason and two steps, then delete; settings: maintenance on (laptop)', async () => {
+  const { page, ctx, calls } = await open({ base: BASE_ALL, width: 1366 });
+  await page.getByTestId('app-mm2h').click();
+  await page.getByTestId('tile-M18').click();
+  await page.getByTestId('app-rows').getByText('Gurney Drive').waitFor();
+  await page.getByTestId('content-add').click();
+  await page.getByTestId('ce-title').fill('Penang Hill');
+  await page.getByTestId('ce-url').fill('http://not-secure');
+  await page.getByTestId('ce-save').click();
+  await page.getByText('Links must start with https://').waitFor();
+  await page.getByTestId('ce-url').fill('https://penanghill.gov.my');
+  await page.getByTestId('ce-published').check();
+  await page.getByTestId('ce-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('New family favourite');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('app-rows').getByText('Penang Hill').waitFor();
+  const sv = calls.find(c => c.fn === 'eab_admin_mm2h_content_save').args;
+  assert.equal(sv.p_kind, 'hotspot'); assert.equal(sv.p_id, null); assert.equal(sv.p_item.published, true); assert.equal(sv.p_reason, 'New family favourite');
+  await page.screenshot({ path: `${SHOTS}/71-mm2h-hotspots-laptop.png`, fullPage: true });
+  await page.getByTestId('app-row').filter({ hasText: 'Gurney Drive' }).getByTestId('content-delete').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Closed for repairs');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="app-rows"]')?.textContent?.includes('Gurney'));
+  // maintenance
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-O6').click();
+  await page.getByTestId('maint-toggle').check();
+  await page.getByTestId('maint-msg').fill('Back by 6pm');
+  await page.getByTestId('update-url').fill('http://x');
+  assert.ok(await page.getByTestId('settings-save').isDisabled(), 'http update link refused');
+  await page.getByTestId('update-url').fill('');
+  await page.getByTestId('settings-save').click();
+  await page.getByText('This closes the app for every user').waitFor();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Server upgrade tonight');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('maint-on').waitFor();
+  const st = calls.find(c => c.fn === 'eab_admin_app_settings_set').args;
+  assert.equal(st.p_app, 'mm2h'); assert.equal(st.p_patch.maintenance_on, true); assert.equal(st.p_patch.maintenance_message, 'Back by 6pm');
+  await page.screenshot({ path: `${SHOTS}/72-mm2h-maintenance-laptop.png`, fullPage: true });
+  // a ticket is moved on
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-O4').click();
+  await page.getByTestId('ticket-closed').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Fixed in version 1.3');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('app-msg').getByText('Ticket updated.').waitFor();
+  await ctx.close();
+});
+
+test('viewer: On Da Way sales without names, no editing, no export; MM2H families list hidden (phone)', async () => {
+  const { page, ctx } = await open({ base: BASE_ALL, role: 'viewer' });
+  await page.getByTestId('app-odw').click();
+  await page.getByTestId('tile-W2').click();
+  await page.getByTestId('names-hidden').waitFor();
+  const t = await page.getByTestId('app-rows').innerText();
+  assert.match(t, /Terrace Kajang/); assert.doesNotMatch(t, /Mr Tan|Puan Aina/);
+  assert.equal(await page.getByTestId('app-xlsx').count(), 0);
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('app-mm2h').click();
+  await page.getByTestId('tile-M18').click();
+  await page.getByTestId('app-rows').waitFor();
+  assert.equal(await page.getByTestId('content-add').count(), 0, 'viewer cannot add');
+  assert.equal(await page.getByTestId('content-delete').count(), 0, 'viewer cannot delete');
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-O6').click();
+  await page.getByTestId('maint-toggle').waitFor();
+  assert.ok(await page.getByTestId('maint-toggle').isDisabled(), 'settings read-only');
+  assert.equal(await page.getByTestId('settings-save').count(), 0);
+  await page.screenshot({ path: `${SHOTS}/73-odw-viewer-phone.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('Biz: separate Google sign-in to the Biz database; refused if not on its list; then module switch with a reason (laptop)', async () => {
+  // not on the Biz admin list
+  {
+    const { page, ctx, bizCalls } = await open({ base: BASE_ALL, width: 1366, bizEmail: 'someone@else.com' });
+    await page.getByTestId('app-biz').click();
+    await page.getByTestId('tile-B1').click();
+    await page.getByTestId('biz-connect').waitFor();
+    await page.getByTestId('biz-url').fill('https://fakebiz.supabase.co');
+    await page.getByTestId('biz-key').fill('sb_secret_nope');
+    await page.getByTestId('biz-save').click();
+    await page.getByTestId('biz-notice').getByText(/SECRET/).waitFor();
+    await page.getByTestId('biz-key').fill('sb_publishable_biz');
+    await page.getByTestId('biz-save').click();
+    await page.getByTestId('biz-google').click();
+    await page.getByTestId('biz-notice').getByText(/not on the AI Buddy Biz admin list/).waitFor();
+    assert.ok(bizCalls.some(c => c.fn.includes('/auth/v1/logout')), 'signed out of Biz again');
+    assert.equal(await page.evaluate(() => localStorage.getItem('admin-biz-session')), null);
+    assert.ok(await page.getByTestId('global-search').isVisible(), 'still signed in to Admin EAB');
+    await ctx.close();
+  }
+  const { page, ctx, calls, bizCalls } = await open({ base: BASE_ALL, width: 1366 });
+  await page.getByTestId('app-biz').click();
+  await page.getByTestId('tile-B2').click();
+  await page.getByTestId('biz-url').fill('https://fakebiz.supabase.co');
+  await page.getByTestId('biz-key').fill('sb_publishable_biz');
+  await page.getByTestId('biz-save').click();
+  await page.getByTestId('biz-google').click();
+  await page.getByTestId('biz-signed-in').waitFor();
+  const auth = bizCalls.find(c => c.fn.includes('/auth/v1/authorize'));
+  assert.match(auth.fn, /redirect_to=[^&]*biz%3D1/); assert.match(auth.fn, /code_challenge_method=s256/);
+  assert.ok(bizCalls.find(c => c.fn === 'eab_admin_signed_in').auth.includes('biztok'), 'Biz calls use the Biz session');
+  assert.ok(!calls.some(c => c.fn === 'eab_admin_signed_in'), 'the Admin EAB session is untouched');
+  assert.match(await page.getByTestId('app-rows').innerText(), /Kopi Corner/);
+  // to the modules list
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-B2').click();
+  await page.getByTestId('module-KIDS').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Business opened a kids corner');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('app-msg').getByText('Module switched on.').waitFor();
+  const m = bizCalls.find(c => c.fn === 'eab_admin_biz_module_set').args;
+  assert.equal(m.p_tenant, 'tn1'); assert.equal(m.p_module, 'KIDS'); assert.equal(m.p_enabled, true); assert.equal(m.p_reason, 'Business opened a kids corner');
+  await page.screenshot({ path: `${SHOTS}/74-biz-modules-laptop.png`, fullPage: true });
+  await page.getByTestId('biz-sign-out').click();
+  await page.getByTestId('biz-connect').waitFor();
   await ctx.close();
 });

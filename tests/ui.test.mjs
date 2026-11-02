@@ -458,6 +458,7 @@ function moneyFake() {
 
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
+  await ctx.clock.setFixedTime(new Date("2026-10-30T04:00:00Z")); // tests assume this date, not the real clock
   const page = await ctx.newPage();
   const calls = [];
   await page.addInitScript(({ SB, signedIn, lastUsedAgoMs, conn }) => {

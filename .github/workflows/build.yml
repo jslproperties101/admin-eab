@@ -25,7 +25,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,7 +43,7 @@ jobs:
 
   android:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       EAB_SUPABASE_URL: ${{ secrets.EAB_SUPABASE_URL }}
       EAB_SUPABASE_ANON_KEY: ${{ secrets.EAB_SUPABASE_ANON_KEY }}

@@ -4,15 +4,17 @@
 //   - one standalone admin per app (EAB_APP=eab|pos|mm2h|odw|biz): its own name and Android package, only that app.
 // Sign-in, roles, the allow-list and the two tamper-proof logs are shared by all of them (the eab_admin_* functions).
 // `open` features work now. `blocked` says in plain words why a feature cannot work yet.
-import { SECTIONS as EAB_SECTIONS, Section, Feature } from './screens/features';
+import { SECTIONS as EAB_SECTIONS, MONEY_SECTIONS, Section, Feature } from './screens/features';
 import { Ability } from './admin/roles';
 import { View } from './ctx';
 
 export type AppId = 'eab' | 'pos' | 'mm2h' | 'odw' | 'biz';
 export type BuildApp = AppId | 'all';
+/** AdminBatch012: a space on the Home switcher is an app, or the company-wide Money space (never a build of its own). */
+export type SpaceId = AppId | 'money';
 
 export interface AdminApp {
-  id: AppId;
+  id: SpaceId;
   product: string;   // the app being administered
   admin: string;     // the admin app's own name (standalone build)
   androidId: string; // Android package of the standalone admin build
@@ -177,6 +179,13 @@ export const APPS: AdminApp[] = [
   },
 ];
 
+/** AdminBatch012: company-wide Money (one ledger and one Google bill for the whole company, not per app). */
+export const MONEY_SPACE: AdminApp = {
+  id: 'money', product: 'Company Money', admin: 'Admin EAB', androidId: 'com.jslproperties.admineab',
+  where: 'Company ledger and Google API usage in the Estate Agent AI Buddy database (owner changes; staff read)',
+  sections: MONEY_SECTIONS,
+};
+
 export const appById = (id: AppId): AdminApp => APPS.find(a => a.id === id)!;
 
 declare const __EAB_APP__: string | undefined;
@@ -189,5 +198,6 @@ export function buildApp(raw: string | undefined = typeof __EAB_APP__ !== 'undef
 export const COMBINED = { admin: 'Admin AI Buddy', androidId: 'com.jslproperties.adminhub' };
 /** The name shown in the top bar, sign-in screen and window title. */
 export const adminName = (b: BuildApp = buildApp()) => (b === 'all' ? COMBINED.admin : appById(b).admin);
-/** Apps this build may show. */
-export const appsFor = (b: BuildApp = buildApp()): AdminApp[] => (b === 'all' ? APPS : [appById(b)]);
+/** Spaces this build may show: every app plus Money in the combined admin; Admin EAB adds Money; others only themselves. */
+export const appsFor = (b: BuildApp = buildApp()): AdminApp[] =>
+  (b === 'all' ? [...APPS, MONEY_SPACE] : b === 'eab' ? [appById('eab'), MONEY_SPACE] : [appById(b)]);

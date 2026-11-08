@@ -66,7 +66,33 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
-AdminBatch009: Listings & market — Listing quality score out of 100 with a "needs work" list (what is missing), Days on
+AdminBatch012 (0.12.0, 9 Nov 2026): ONE admin codebase again. AdminBatch010 "Content & Maps" and AdminBatch011 "Money"
+(built on a separate line) were merged into the multi-app line (Joe's choice, 8 Nov). Placement (Joe): Moderation and
+Content insight stay in the Estate Agent AI Buddy space; Money is its own company-wide space, "Company Money", shown in
+the combined admin and in Admin EAB (not in Admin POS / MM2H / On Da Way / Biz). The database for 010 and 011 had never
+been written (both were built against the fake test database only); it was rebuilt from the screens:
+`database/20261109000000_admin_batch_012_content_money.sql` (24 functions, 6 tables, a storage rule for listing photos;
+undo file in `database/rollback/`; tests `database/tests/b12_00_stubs.sql` + `b12_10_tests.sql`). Applied to EAB-QA-Test
+only, 9 Nov 2026, in 6 parts (admin_batch_012_p1 ... p6). Production untouched. From now on Admin EAB database files live
+in this repo's `database/` folder (Joe, 8 Nov).
+
+AdminBatch010 "Apps" (multi-app, 31 Oct): one codebase for EAB, AI Buddy POS, MM2H, On Da Way and AI Buddy Biz (see the
+table above). Needs `database/20261030120000_admin_batch_010_apps.sql` (EAB database) and `20261030130000_biz_admin.sql`
+(Biz database).
+
+AdminBatch009 Merged (0.9.1): one app with both Agent insight and Market. Database order: 008 Reports, then
+`20261027000000_admin_batch_009_agents.sql`, then `20261027100000_admin_batch_009_market.sql` (either order works;
+no shared function names).
+
+AdminBatch009 "Agent insight": Agent scorecard (Listings 40 + Activity 30 + Compliance 30, lowest first, with the reasons;
+score card on each Agent Profile; Viewer sees the spread only), Onboarding funnel (sign-up → opened → Terms → licence →
+verified → first listing → first deal; "who is stuck" for Owner / Admin / Compliance), Bulk actions in the Agents list
+(up to 50 agents: suspend, re-activate, sign out, tag, or message them as a broadcast for just those agents; one reason,
+two steps, batch reference BULK-YYYY-####), Duplicate accounts (same phone number, phone or licence), Phones tab on the
+Agent Profile (every phone used; Owner / Admin can remove one, which signs it out — needs the main app MainForAdmin-G).
+Needs `20261027000000_admin_batch_009_agents.sql` (main repo branch feature/admin-batch-009-db).
+
+AdminBatch009 "Market": Listings & market — Listing quality score out of 100 with a "needs work" list (what is missing), Days on
 market by state / city / type, Asking vs final price (deals linked to a listing), Hot areas (listings and enquiries per
 state and city), Stuck deals (Booked before SPA signed with no change for 30 days; 45 / 60 / 90 to choose), Commission
 forecast (open deals by month and stage, agents' share, received in the period), Project performance (opens, code
@@ -75,13 +101,22 @@ lists naming agents for Owner / Admin / Compliance (access log); PDF / Excel for
 `20261027100000_admin_batch_009_market.sql` (main repo branch feature/admin-batch-009-market-db, after AdminBatch008 Reports).
 Buyer Demand vs Supply (106) waits for buyer requirements in the main app.
 
-AdminBatch009 "Agent insight": Agent scorecard (Listings 40 + Activity 30 + Compliance 30, lowest first, with the reasons;
-score card on each Agent Profile; Viewer sees the spread only), Onboarding funnel (sign-up → opened → Terms → licence →
-verified → first listing → first deal; "who is stuck" for Owner / Admin / Compliance), Bulk actions in the Agents list
-(up to 50 agents: suspend, re-activate, sign out, tag, or message them as a broadcast for just those agents; one reason,
-two steps, batch reference BULK-YYYY-####), Duplicate accounts (same phone number, phone or licence), Phones tab on the
-Agent Profile (every phone used; Owner / Admin can remove one, which signs it out — needs the main app MainForAdmin-G).
-Needs `20261027000000_admin_batch_009_agents.sql` (after 007, 008 Comms and 008 Reports).
+AdminBatch010 "Content & Maps" (0.10.0): Moderation screen (Owner / Admin / Compliance) — moderation cases MOD-YYYY-####
+(16, never deleted; open, cleared, confirmed, referred to a complaint), automatic checks (price far from the area, no
+title type, no price, no photos after 14 days, same photo or same spot as another agent), photo moderation (57: OK or
+Flag; a flag opens a case; a storage rule lets staff open listing PHOTOS only) and duplicate listings (56). Content insight
+screen — Listings map (54) and Geography map (28; sign-in places rounded to ~10 km, only areas with 3+ agents), Buyers &
+vendors (8; counts only, no contact names or phones), Price trends (55), AI command usage (60; understood or not — the
+words are not recorded) and Marketing Studio usage (61). Maps are drawn by the app over OpenStreetMap tiles (internet
+needed for the background; dots still show offline). PDF / Excel for Owner / Compliance. Nothing in the main app changes.
+Database: rebuilt in AdminBatch012 (`database/20261109000000_admin_batch_012_content_money.sql`).
+
+AdminBatch011 "Money" (0.11.0): Money screen (Owner / Admin / Compliance see it; only the Owner changes it). Billing &
+expenses ledger (10; LED-YYYY-####, money paid and received, foreign currency with its rate, "repeat monthly" copy; never
+deleted or edited — void with a reason), Google API usage & estimated cost per Google product (2), quota alerts against
+monthly / daily limits and the free allowance (40), profit & loss by month (33) and cost per active agent (34), prices and
+the US$ → RM rate. Subscription revenue stays blocked until subscriptions exist in the main app. PDF / Excel for Owner /
+Compliance. Database: rebuilt in AdminBatch012 (same file). Shown as its own "Company Money" space since AdminBatch012.
 
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel

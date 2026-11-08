@@ -79,6 +79,8 @@ export interface Files {
   media?: (path: string, blob: Blob) => Promise<string>;
   /** AdminBatch006: a problem report's screenshot. */
   screenshot?: (path: string) => Promise<Blob>;
+  /** AdminBatch010: a listing photo from the agents' cloud folder (storage rule: Owner / Admin / Compliance, photos only). */
+  photo?: (path: string) => Promise<Blob>;
   /** AdminBatch006: send waiting push alerts (one post, or all when null). */
   sendPush?: (itemId: string | null) => Promise<PushSendItem[]>;
   /** AdminBatch008: deliver a queued broadcast (server function send-broadcast). */
@@ -274,6 +276,124 @@ export interface MarketNews {
   by_group: { group_id: string; group: string; priority: number; reached: number; opened: number; open_pct: number | null }[];
   heatmap: { dow: number; hour: number; events: number }[];
   best: { dow: number; hour: number; opens: number }[];
+}
+
+// ---------- AdminBatch011: Money (ledger, Google API usage and cost, quota alerts, profit & loss, cost per user) ----------
+export type LedgerKind = 'expense' | 'income';
+export type LedgerCategory = 'supabase' | 'aws' | 'google' | 'app_stores' | 'domain_hosting' | 'email_messaging' | 'software' | 'legal_compliance'
+  | 'marketing' | 'staff' | 'other_expense' | 'developer_partner' | 'advertising' | 'other_income';
+export interface LedgerEntry {
+  id: string; ref: string; kind: LedgerKind; category: LedgerCategory; payee: string; description: string | null;
+  amount: number; currency: string; fx_to_myr: number; amount_myr: number; paid_on: string; period_month: string; recurring: boolean;
+  invoice_ref: string | null; repeat_of: string | null; repeat_ref: string | null; voided_at: string | null; void_reason: string | null;
+  voided_by_email: string | null; created_by_email: string | null; created_at: string;
+}
+export interface NewLedgerEntry {
+  kind: LedgerKind; category: LedgerCategory; payee: string; description?: string; amount: number; currency: string; fx_to_myr?: number | null;
+  paid_on: string; period_month?: string; recurring: boolean; invoice_ref?: string;
+}
+export interface Ledger {
+  from: string; to: string; expenses_myr: number; income_myr: number; voided: number;
+  by_category: { kind: LedgerKind; category: LedgerCategory; entries: number; amount_myr: number }[]; entries: LedgerEntry[];
+}
+export interface ApiSku {
+  sku: string; label: string; names: string[]; price_per_1000: number | null; free_per_month: number | null;
+  monthly_limit: number | null; daily_limit: number | null; alert_pct: number; updated_at: string;
+}
+export interface MoneySettings { settings: { usd_myr: number | null; monthly_budget_myr: number | null; updated_at: string }; skus: ApiSku[] }
+export interface ApiProduct extends Omit<ApiSku, 'updated_at'> {
+  month_calls: number; today_calls: number; projected: number; level: 'ok' | 'amber' | 'red'; reasons: string[];
+  month_usd: number | null; projected_usd: number | null; month_myr: number | null; projected_myr: number | null;
+}
+export interface ApiUsage {
+  months: number; since: string; this_month: string; days_in_month: number; days_passed: number; usd_myr: number | null;
+  products: ApiProduct[]; alerts: number; month_usd: number | null; projected_usd: number | null; month_myr: number | null; projected_myr: number | null;
+  unpriced_calls: number;
+  by_month: { month: string; calls: number; failures: number; usd: number | null; myr: number | null }[];
+  by_month_sku: { month: string; sku: string; calls: number; failures: number }[];
+  by_name: { name: string; sku: string; calls: number; failures: number; agents: number }[];
+  by_day: { day: string; calls: number }[];
+  top_agents: (AgentRef & { calls: number })[];
+}
+export interface MoneyMonth {
+  month: string; income: number; expenses: number; net: number; active: number; cost_per_active: number | null;
+  google_usd: number | null; google_myr: number | null; google_billed: boolean; over_budget: boolean;
+}
+export interface MoneySummary {
+  months: number; since: string; usd_myr: number | null; monthly_budget_myr: number | null; income: number; expenses: number; net: number;
+  this_month: { income: number; expenses: number; net: number; active: number; cost_per_active: number | null; over_budget: boolean };
+  by_month: MoneyMonth[]; by_category: { kind: LedgerKind; category: LedgerCategory; amount_myr: number; per_active: number | null }[];
+  average_active: number | null; cost_per_active_avg: number | null;
+}
+
+// ---------- AdminBatch010: Content & Maps (moderation, photos, duplicates, maps, contacts, trends, AI, Studio) ----------
+export type ModStatus = 'open' | 'cleared' | 'confirmed' | 'referred';
+export type ModReason = 'price_far' | 'no_title_type' | 'no_price' | 'no_photos' | 'same_photo' | 'same_spot' | 'same_address'
+  | 'wrong_photo' | 'offensive_photo' | 'misleading' | 'other';
+/** A listing as the moderation screens show it (no owner, vendor or commission details). */
+export interface ModListing extends AgentRef {
+  id: string; ref: string | null; headline: string | null; type: string | null; state: string | null; city: string | null; status: string;
+  asking: number | null; rent: number | null; photos: number; updated_at: string;
+}
+export interface ModEvent { id: number; kind: 'created' | 'status' | 'updated' | 'note'; body: string | null; from_status: string | null; to_status: string | null; by_email: string | null; at: string }
+export interface ModCase {
+  id: string; ref: string; kind: 'listing' | 'photo'; agent_user: string | null; workspace_id: string | null; record_id: string | null;
+  listing_ref: string | null; file_sha: string | null; reason: ModReason; source: 'admin' | 'suspect' | 'photo_review';
+  details?: string; summary?: string; status: ModStatus; outcome: string | null; complaint_id: string | null; created_at: string; updated_at: string;
+  agent_email: string | null; agent_name: string | null;
+  complaint_ref?: string | null; listing?: ModListing | null; agent_cases?: number; history?: ModEvent[];
+}
+export interface ModCases { counts: Partial<Record<ModStatus, number>>; by_reason: Partial<Record<ModReason, number>>; cases: ModCase[] }
+export interface NewModCase { kind: 'listing' | 'photo'; agent_user: string; record_id?: string; workspace_id?: string; file_sha?: string; reason: ModReason; source?: ModCase['source']; details: string }
+export interface SuspectListing extends ModListing { reasons: { reason: ModReason; detail: string; case_ref: string | null }[] }
+export interface ModSuspects { checked: number; counts: Partial<Record<ModReason, number>>; listings: SuspectListing[] }
+export type PhotoStatus = 'unreviewed' | 'flagged' | 'ok' | 'all';
+export interface QueuePhoto {
+  workspace_id: string; sha256: string; path: string; mime: string | null; bytes: number; uploaded_at: string | null;
+  decision: 'ok' | 'flagged' | null; reason: string | null; reviewed_at: string | null; reviewed_by: string | null; case_ref: string | null;
+  other_agents: number; listing: ModListing;
+}
+export interface PhotoQueue { counts: { all: number; unreviewed: number; ok: number; flagged: number; shared: number }; status: PhotoStatus; photos: QueuePhoto[] }
+export interface DupGroup { kind: 'photo' | 'address' | 'spot'; key: string; agents: number; listings: ModListing[] }
+export interface DupListings { counts: { photo: number; address: number; spot: number }; groups: DupGroup[] }
+export interface MapPoint {
+  lat: number; lng: number; status: string; type: string | null; side: 'sale' | 'rent'; price: number | null; state: string | null; city: string | null;
+  id?: string; ref?: string | null; headline?: string | null; user_id?: string; email?: string | null; name?: string | null;
+}
+export interface MapListings { scope: 'open' | 'all'; listings: number; with_pin: number; names_hidden: boolean; states: string[]; types: string[]; points: MapPoint[] }
+export interface GeoAgents {
+  agents: number; with_listings: number; with_place: number;
+  by_country: { country: string; agents: number }[]; by_state: { state: string; agents: number }[];
+  by_city: { state: string; city: string; agents: number }[]; cells: { lat: number; lng: number; agents: number }[]; cells_hidden: number;
+}
+export interface ContactStats {
+  from: string; to: string; contacts: number; new_in_period: number;
+  by_role: { role: string; contacts: number; new: number }[]; vendor_status: Record<string, number>;
+  vendors: number; vendors_with_listing: number; buyers: number; in_a_deal: number;
+  by_month: { month: string; buyers: number; vendors: number; others: number }[];
+  enquiries: number; enquiries_by_channel: { channel: string; enquiries: number }[]; enquiries_with_contact: number; agents_with_buyers: number;
+  names_hidden: boolean; agents: (AgentRef & { contacts: number; buyers: number; vendors: number; new: number; enquiries: number })[] | null;
+}
+export interface PriceTrends {
+  months: number; since: string; listings: number; no_date: number; states: string[]; cities: { state: string; city: string }[]; types: string[];
+  sale: { listings: number; median_price: number | null; median_ppsf: number | null }; rent: { listings: number; median_rent: number | null };
+  by_month: { month: string; sale_listings: number; median_price: number | null; median_ppsf: number | null; rent_listings: number; median_rent: number | null }[];
+  by_area: { state: string; city: string; listings: number; median_price: number | null; median_ppsf: number | null; recent_ppsf: number | null; before_ppsf: number | null; change_pct: number | null }[];
+  by_type: { type: string; listings: number; median_price: number | null; median_ppsf: number | null; median_rent: number | null }[];
+}
+export interface AiUsage {
+  from: string; to: string; commands: number; understood: number; not_understood: number; success_pct: number | null; agents: number;
+  screen_opens: number; screen_agents: number;
+  by_day: { day: string; understood: number; not_understood: number }[];
+  by_version: { version: string; commands: number; not_understood: number; success_pct: number | null }[];
+  by_language: { language: string; commands: number; not_understood: number; success_pct: number | null }[];
+  heatmap: { dow: number; hour: number; events: number }[];
+  names_hidden: boolean; list: (AgentRef & { commands: number; not_understood: number; success_pct: number | null; last_at: string })[] | null;
+}
+export interface StudioUsage {
+  from: string; to: string; opened: number; created: number; saved: number; shared: number; agents: number; makers: number; share_pct: number | null;
+  by_day: { day: string; created: number; saved: number; shared: number }[];
+  names_hidden: boolean; list: (AgentRef & { opened: number; created: number; saved: number; shared: number; last_at: string })[] | null;
 }
 
 // ---------- AdminBatch006: news (MainForAdmin-D functions), tickets, flags, overview ----------
@@ -664,6 +784,41 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   agentDevices: (user: string) => call<AgentDevice[]>('eab_admin_agent_devices', { p_user: user, p_device: device }),
   deviceRemove: (user: string, deviceId: string, reason: string) =>
     call<unknown>('eab_admin_device_remove', { p_user: user, p_device_id: deviceId, p_reason: reason, p_device: device }),
+  // AdminBatch011 — Money
+  ledger: (from: string, to: string, kind: LedgerKind | null = null, voided = false) =>
+    call<Ledger>('eab_admin_ledger', { p_from: from, p_to: to, p_kind: kind, p_voided: voided, p_device: device }),
+  ledgerAdd: (p: NewLedgerEntry) => call<LedgerEntry>('eab_admin_ledger_add', { p, p_device: device }),
+  ledgerVoid: (id: string, reason: string) => call<LedgerEntry>('eab_admin_ledger_void', { p_id: id, p_reason: reason, p_device: device }),
+  ledgerRepeat: (month: string, reason: string) => call<{ month: string; copied: number }>('eab_admin_ledger_repeat', { p_month: month, p_reason: reason, p_device: device }),
+  moneySettings: () => call<MoneySettings>('eab_admin_money_settings'),
+  moneySettingsSet: (p: Partial<{ usd_myr: number | string | null; monthly_budget_myr: number | string | null }>, reason: string) =>
+    call<MoneySettings>('eab_admin_money_settings_set', { p, p_reason: reason, p_device: device }),
+  apiSkuSet: (sku: string, p: Partial<Record<'price_per_1000' | 'free_per_month' | 'monthly_limit' | 'daily_limit' | 'alert_pct', number | string | null>>, reason: string) =>
+    call<MoneySettings>('eab_admin_api_sku_set', { p_sku: sku, p, p_reason: reason, p_device: device }),
+  apiUsage: (months = 6) => call<ApiUsage>('eab_admin_api_usage', { p_months: months, p_device: device }),
+  moneySummary: (months = 12) => call<MoneySummary>('eab_admin_money_summary', { p_months: months }),
+  // AdminBatch010 — Content & Maps
+  modCases: (status: ModStatus | 'closed' | null = null, agent: string | null = null) =>
+    call<ModCases>('eab_admin_mod_cases', { p_status: status, p_agent: agent, p_device: device }),
+  modGet: (id: string) => call<ModCase>('eab_admin_mod_get', { p_id: id, p_device: device }),
+  modCreate: (p: NewModCase) => call<ModCase>('eab_admin_mod_create', { p, p_device: device }),
+  modUpdate: (id: string, p: Partial<Pick<ModCase, 'status' | 'outcome' | 'complaint_id'>>, note: string) =>
+    call<ModCase>('eab_admin_mod_update', { p_id: id, p, p_note: note, p_device: device }),
+  modNote: (id: string, note: string) => call<ModCase>('eab_admin_mod_note', { p_id: id, p_note: note, p_device: device }),
+  modSuspects: () => call<ModSuspects>('eab_admin_mod_suspects', { p_device: device }),
+  photoQueue: (status: PhotoStatus = 'unreviewed', limit = 120) => call<PhotoQueue>('eab_admin_photo_queue', { p_status: status, p_limit: limit, p_device: device }),
+  photoReview: (workspace: string, sha: string, decision: 'ok' | 'flagged', reason: string | null = null, caseReason: ModReason | null = null) =>
+    call<{ decision: 'ok' | 'flagged'; case_ref: string | null }>('eab_admin_photo_review',
+      { p_workspace: workspace, p_sha: sha, p_decision: decision, p_reason: reason, p_case_reason: caseReason, p_device: device }),
+  dupListings: () => call<DupListings>('eab_admin_dup_listings', { p_device: device }),
+  mapListings: (scope: 'open' | 'all' = 'open', state: string | null = null, type: string | null = null, side: 'sale' | 'rent' | null = null) =>
+    call<MapListings>('eab_admin_map_listings', { p_scope: scope, p_state: state, p_type: type, p_side: side, p_device: device }),
+  geoAgents: () => call<GeoAgents>('eab_admin_geo_agents'),
+  contactStats: (from: string, to: string) => call<ContactStats>('eab_admin_contacts_stats', { p_from: from, p_to: to, p_device: device }),
+  priceTrends: (months = 12, state: string | null = null, city: string | null = null, type: string | null = null) =>
+    call<PriceTrends>('eab_admin_price_trends', { p_months: months, p_state: state, p_city: city, p_type: type }),
+  aiUsage: (from: string, to: string) => call<AiUsage>('eab_admin_ai_usage', { p_from: from, p_to: to, p_device: device }),
+  studioUsage: (from: string, to: string) => call<StudioUsage>('eab_admin_studio_usage', { p_from: from, p_to: to, p_device: device }),
   setSettings: (patch: Partial<Pick<Settings, 'company_name' | 'support_email' | 'business_address'>>, reason: string) =>
     call<Settings>('eab_admin_set_settings', { p_patch: patch, p_reason: reason, p_device: device }),
   setAdmin: (email: string, role: Role, active: boolean, expiresAt: string | null, reason: string) =>

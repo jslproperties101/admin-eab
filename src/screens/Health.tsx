@@ -565,7 +565,7 @@ function ErrorsTab() {
           ))}
         </div>
       )}
-      <small className="muted">Changing a report's status belongs to Support Tickets (feature 65), not built yet. This list is recorded in the access log.</small>
+      <small className="muted">To change a report's status, open it in Support Tickets (feature 65). This list is recorded in the access log.</small>
     </div>
   );
 }

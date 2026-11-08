@@ -46,7 +46,19 @@ export type View =
   | { k: 'duplicates' }
   // AdminBatch010
   | { k: 'appdata'; app: 'pos' | 'odw' | 'mm2h' | 'biz'; view: string; title: string }
-  | { k: 'appsettings'; app: 'odw' | 'mm2h' | 'biz'; title: string };
+  | { k: 'appsettings'; app: 'odw' | 'mm2h' | 'biz'; title: string }
+  | { k: 'moderation'; tab: ModTab }
+  | { k: 'modcase'; id: string }
+  | { k: 'content'; tab: ContentTab }
+  // AdminBatch011
+  | { k: 'money'; tab: MoneyTab };
+
+/** AdminBatch011 — Money tabs (10, 2, 40, 33, 34 and prices). */
+export type MoneyTab = 'ledger' | 'google' | 'alerts' | 'pnl' | 'cost' | 'prices';
+
+/** AdminBatch010 — Moderation tabs (16, 57, 56) and Content insight tabs (54, 28, 8, 55, 60, 61). */
+export type ModTab = 'cases' | 'suspects' | 'photos' | 'duplicates';
+export type ContentTab = 'map' | 'geo' | 'contacts' | 'trends' | 'ai' | 'studio';
 
 /** AdminBatch009 — Listings & market tabs. */
 export type MarketTab = 'quality' | 'dom' | 'price' | 'areas' | 'stuck' | 'commission' | 'projects' | 'news';

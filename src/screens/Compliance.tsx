@@ -71,7 +71,7 @@ function CasePicker({ value, onChange }: { value: string | null; onChange: (id: 
 }
 
 
-function Events({ items, words }: { items: { id: number; kind: string; body: string | null; from_status: string | null; to_status: string | null; by_email: string | null; at: string }[]; words: Record<string, string> }) {
+export function Events({ items, words }: { items: { id: number; kind: string; body: string | null; from_status: string | null; to_status: string | null; by_email: string | null; at: string }[]; words: Record<string, string> }) {
   return (
     <ol className="history" data-testid="history">
       {items.map(e => (

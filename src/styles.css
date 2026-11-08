@@ -236,3 +236,28 @@ fieldset > legend { font-weight: 700; padding: 0 6px; }
 /* AdminBatch010: app switcher in the combined admin (wraps on a phone). */
 .apppick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .apppick .btn { min-height: 40px; }
+/* AdminBatch010 — in-app map (OpenStreetMap tiles under gold bubbles) */
+.map { margin: 0; }
+.map-box { position: relative; overflow: hidden; border-radius: 14px; border: 1px solid var(--box-line); background: #101014;
+  touch-action: none; user-select: none; cursor: grab; }
+.map-box:active { cursor: grabbing; }
+.map-tile { position: absolute; width: 256px; height: 256px; max-width: none; pointer-events: none; filter: grayscale(.55) brightness(.62) contrast(1.05); }
+.map .bubble { position: absolute; z-index: 2; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-items: center;
+  font-size: .72rem; font-weight: 800; color: var(--on-gold); background: var(--gold); border: 2px solid #08080A;
+  box-shadow: 0 0 0 1px var(--gold-hi), 0 2px 6px rgba(0,0,0,.6); cursor: pointer; }
+.map .bubble:hover, .map .bubble:focus-visible { background: var(--gold-hi); }
+.map .bubble.booked { background: #E39B3B; } .map .bubble.closed { background: #8A8A8F; color: #fff; } .map .bubble.other { background: var(--gold-lo); color: #fff; }
+.map-ctl { position: absolute; z-index: 3; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 6px; }
+.map-ctl .btn { min-height: 36px; min-width: 40px; padding: 4px 10px; background: rgba(19,19,22,.92); }
+.map-attr { position: absolute; z-index: 3; right: 6px; bottom: 4px; padding: 1px 6px; border-radius: 6px; background: rgba(8,8,10,.8); color: var(--muted); font-size: .68rem; }
+.map figcaption { margin-top: 6px; }
+.legend .sw.avail { background: var(--gold); } .legend .sw.booked { background: #E39B3B; } .legend .sw.closed { background: #8A8A8F; }
+.legend .sw.avail, .legend .sw.booked, .legend .sw.closed { width: 10px; height: 10px; border-radius: 50%; margin-left: 8px; }
+
+/* AdminBatch010 — photo moderation */
+.photo-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.photo-card { gap: 6px; padding: 10px; }
+.photo-card img, .photo-missing { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: #0E0E10; border: 1px solid var(--line); }
+.photo-missing { display: grid; place-items: center; }
+@media (max-width: 480px) { .photo-grid { grid-template-columns: 1fr 1fr; gap: 8px; } .photo-card { padding: 8px; } }
+.filters { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }

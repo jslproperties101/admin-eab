@@ -10,8 +10,9 @@ test('builds: unknown or missing EAB_APP stays the original Admin EAB', () => {
   assert.equal(buildApp('all'), 'all');
   assert.equal(adminName('eab'), 'Admin EAB');
   assert.equal(adminName('all'), 'Admin AI Buddy');
-  assert.deepEqual(appsFor('all').map(a => a.id), ['eab', 'pos', 'mm2h', 'odw', 'biz']);
-  assert.deepEqual(appsFor('biz').map(a => a.id), ['biz']);
+  assert.deepEqual(appsFor('all').map(a => a.id), ['eab', 'pos', 'mm2h', 'odw', 'biz', 'money']);
+  assert.deepEqual(appsFor('eab').map(a => a.id), ['eab', 'money'], 'Admin EAB also shows Company Money');
+  for (const b of ['pos', 'mm2h', 'odw', 'biz'] as const) assert.deepEqual(appsFor(b).map(a => a.id), [b], `${b} shows only itself`);
 });
 
 test('every app has its own Android package, separate from the products', () => {

@@ -24,7 +24,9 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'viewBroadcasts' | 'broadcastNames' | 'editBroadcasts' | 'reports' | 'reportSchedule' | 'workspaces' | 'todo'
   | 'viewMarket' | 'viewMarketAgents'
   | 'scorecard' | 'funnel' | 'bulkActions' | 'duplicates' | 'viewDevices' | 'removeDevice'
-  | 'appView' | 'appManage' | 'appTickets' | 'appRequests' | 'appLog' | 'appAdmins';
+  | 'appView' | 'appManage' | 'appTickets' | 'appRequests' | 'appLog' | 'appAdmins'
+  | 'moderate'
+  | 'viewMoney' | 'editMoney';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -80,7 +82,8 @@ const RULES: Record<Ability, Role[]> = {
   workspaces: ['owner', 'admin', 'compliance'],
   todo: ['owner', 'admin', 'compliance', 'viewer'],              // own items; a Viewer cannot share or change shared ones
   // AdminBatch009 — same rules as the eab_admin_market_* database functions
-  viewMarket: ['owner', 'admin', 'compliance', 'viewer'],        // totals and charts
+  // AdminBatch009 Market — same rules as the eab_admin_market_* database functions
+  viewMarket: ['owner', 'admin', 'compliance', 'viewer'],        // totals and charts (also AdminBatch010 Content insight)
   viewMarketAgents: ['owner', 'admin', 'compliance'],            // lists that name agents (needs work, deals, stuck, commission by agent)
   // AdminBatch009 — same rules as the agent-insight database functions
   scorecard: ['owner', 'admin', 'compliance', 'viewer'],         // Viewer: how scores are spread, no names
@@ -96,6 +99,11 @@ const RULES: Record<Ability, Role[]> = {
   appRequests: ['owner', 'compliance'],                          // MM2H data copy / deletion requests (PDPA)
   appLog: ['owner', 'compliance'],                               // the Biz database's own admin log
   appAdmins: ['owner'],                                          // who may open the Biz admin
+  // AdminBatch010 Content & Maps — moderation, photos and duplicates are staff only
+  moderate: ['owner', 'admin', 'compliance'],
+  // AdminBatch011 — Money: see (owner, admin, compliance); add, void, prices and settings (owner only)
+  viewMoney: ['owner', 'admin', 'compliance'],
+  editMoney: ['owner'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

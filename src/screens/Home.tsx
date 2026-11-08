@@ -3,18 +3,18 @@
 import { useState } from 'react';
 import { useAdmin } from '../ctx';
 import { can, ROLE_HELP } from '../admin/roles';
-import { AppId, appsFor } from '../apps';
+import { SpaceId, appsFor } from '../apps';
 
 const PICK = 'admin-eab-app';
 const readPick = (): string | null => { try { return localStorage.getItem(PICK); } catch { return null; } };
-const savePick = (id: AppId) => { try { localStorage.setItem(PICK, id); } catch { /* storage blocked */ } };
+const savePick = (id: SpaceId) => { try { localStorage.setItem(PICK, id); } catch { /* storage blocked */ } };
 
 export function Home() {
   const { me, go } = useAdmin();
   // AdminBatch008: To-Do & Calendar asks which one first, like the main app's Agenda card.
   const [ask, setAsk] = useState(false);
   const apps = appsFor();
-  const [pick, setPick] = useState<AppId>(() => (apps.find(a => a.id === readPick()) ?? apps[0]).id);
+  const [pick, setPick] = useState<SpaceId>(() => (apps.find(a => a.id === readPick()) ?? apps[0]).id);
   if (me.role === 'regulator') return <RegulatorHome />;
   const app = apps.find(a => a.id === pick) ?? apps[0];
   const ready = app.sections.flatMap(s => s.items).filter(f => f.open && (!f.needs || can(me.role, f.needs))).length;

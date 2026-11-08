@@ -367,8 +367,133 @@ function appsFake(role) {
   return { view, content, flags, settings, S, tickets, modules };
 }
 
+/** AdminBatch010 fake Content & Maps: moderation register, automatic checks, photos, duplicates, maps and counts. */
+function contentFake() {
+  let n = 0; const now = '2026-10-30T02:00:00Z';
+  const staff = ['owner', 'admin', 'compliance'], view = [...staff, 'viewer'];
+  const siti = { user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent' };
+  const ali = { user_id: 'b2', email: 'ali@example.com', name: 'Ali' };
+  const L = (who, o) => ({ ...who, headline: null, type: 'Terrace house', state: 'Selangor', city: 'Kajang', status: 'available', asking: 500000, rent: null, photos: 3, updated_at: '2026-10-29T02:00:00Z', ...o });
+  const x1 = L(siti, { id: 'p1', ref: 'P1001', headline: 'Terrace in Kajang', asking: 1500000 });
+  const y1 = L(ali, { id: 'q1', ref: 'Q2001' });
+  const st = { cases: [], reviews: new Map(), seq: 0 };
+  const ev = (kind, body, from, to) => ({ id: ++n, kind, body, from_status: from ?? null, to_status: to ?? null, by_email: 'joe@example.com', at: now });
+  const cjson = c => ({ ...c, agent_email: 'agent@example.com', agent_name: 'Siti Agent', summary: c.details.slice(0, 160), listing: x1, agent_cases: st.cases.length, complaint_ref: null });
+  const suspects = () => ({ checked: 6, counts: { price_far: 1, no_title_type: 2, same_photo: 2 }, listings: [
+    { ...x1, reasons: [
+      { reason: 'price_far', detail: 'RM 1,500.00 per sq ft; others in Kajang (Terrace house): median RM 300.00', case_ref: st.cases.find(c => c.reason === 'price_far' && c.status === 'open')?.ref ?? null },
+      { reason: 'same_photo', detail: 'a photo is also in a listing of another agent', case_ref: null }] },
+    { ...y1, reasons: [{ reason: 'no_title_type', detail: 'no title type', case_ref: null }] }] });
+  const sha = 'a1'.repeat(32), own = 'b2'.repeat(32);
+  const photo = (s, l, other) => ({ workspace_id: 'w1', sha256: s, path: `aaaaaaaa-0000-4000-8000-000000000001/${s}`, mime: 'image/jpeg', bytes: 220287, uploaded_at: '2026-10-29T03:00:00Z',
+    other_agents: other, listing: l, ...(st.reviews.get(s) ?? { decision: null, reason: null, reviewed_at: null, reviewed_by: null, case_ref: null }) });
+  const queue = status => {
+    const all = [photo(sha, x1, 1), photo(own, x1, 0)];
+    const counts = { all: all.length, unreviewed: all.filter(p => !p.decision).length, ok: all.filter(p => p.decision === 'ok').length, flagged: all.filter(p => p.decision === 'flagged').length, shared: 1 };
+    return { counts, status, photos: all.filter(p => status === 'all' || (status === 'unreviewed' ? !p.decision : p.decision === status)) };
+  };
+  const create = p => {
+    const c = { id: `dddddddd-0000-4000-8000-${String(++n).padStart(12, '0')}`, ref: `MOD-2026-${String(++st.seq).padStart(4, '0')}`, kind: p.kind ?? 'listing', agent_user: p.agent_user,
+      workspace_id: p.workspace_id ?? 'w1', record_id: p.record_id ?? 'p1', listing_ref: 'P1001', file_sha: p.file_sha ?? null, reason: p.reason, source: p.source ?? 'admin',
+      details: p.details, status: 'open', outcome: null, complaint_id: null, created_at: now, updated_at: now, history: [ev('created', null, null, 'open')] };
+    st.cases.unshift(c); return c;
+  };
+  const points = names => [
+    { lat: 3.0, lng: 101.79, status: 'available', type: 'Terrace house', side: 'sale', price: 1500000, state: 'Selangor', city: 'Kajang', ...(names ? { id: 'p1', ref: 'P1001', headline: 'Terrace in Kajang', ...siti } : {}) },
+    { lat: 3.0001, lng: 101.7901, status: 'booked_pending_loan', type: 'Terrace house', side: 'sale', price: 520000, state: 'Selangor', city: 'Kajang', ...(names ? { id: 'q1', ref: 'Q2001', headline: null, ...ali } : {}) },
+    { lat: 1.49, lng: 103.74, status: 'available', type: 'Condominium', side: 'rent', price: 2500, state: 'Johor', city: 'Johor Bahru', ...(names ? { id: 'p3', ref: 'P1003', headline: null, ...siti } : {}) }];
+  return {
+    staff, view, st, sha, own, suspects, queue, create, cjson, ev, now,
+    dups: () => ({ counts: { photo: 1, address: 1, spot: 0 }, groups: [
+      { kind: 'photo', key: sha.slice(0, 12), agents: 2, listings: [x1, y1] },
+      { kind: 'address', key: '12 | jalan ujian | kajang', agents: 2, listings: [x1, y1] }] }),
+    map: (a, role) => {
+      const names = staff.includes(role);
+      const pts = points(names).filter(p => (!a.p_state || p.state === a.p_state) && (!a.p_side || p.side === a.p_side));
+      return { scope: a.p_scope ?? 'open', listings: pts.length + 2, with_pin: pts.length, names_hidden: !names, states: ['Johor', 'Selangor'], types: ['Condominium', 'Terrace house'], points: pts };
+    },
+    geo: () => ({ agents: 9, with_listings: 6, with_place: 7, by_country: [{ country: 'Malaysia', agents: 8 }, { country: 'Singapore', agents: 1 }],
+      by_state: [{ state: 'Selangor', agents: 5 }, { state: 'Johor', agents: 2 }, { state: 'No listings yet', agents: 2 }],
+      by_city: [{ state: 'Selangor', city: 'Kajang', agents: 3 }, { state: 'Selangor', city: 'Cheras', agents: 2 }, { state: 'Johor', city: 'Johor Bahru', agents: 2 }],
+      cells: [{ lat: 3.1, lng: 101.6, agents: 4 }, { lat: 3.0, lng: 101.8, agents: 3 }], cells_hidden: 2 }),
+    contacts: (a, role) => ({ from: a.p_from, to: a.p_to, contacts: 7, new_in_period: 2, by_role: [{ role: 'vendor', contacts: 6, new: 1 }, { role: 'buyer', contacts: 2, new: 1 }, { role: 'professional', contacts: 2, new: 0 }],
+      vendor_status: { pending_info: 2, not_set: 4 }, vendors: 6, vendors_with_listing: 3, buyers: 2, in_a_deal: 1, by_month: [{ month: '2026-09', buyers: 0, vendors: 2, others: 1 }, { month: '2026-10', buyers: 1, vendors: 1, others: 0 }],
+      enquiries: 3, enquiries_by_channel: [{ channel: 'whatsapp', enquiries: 2 }, { channel: 'phone', enquiries: 1 }], enquiries_with_contact: 2, agents_with_buyers: 1,
+      names_hidden: !staff.includes(role), agents: staff.includes(role) ? [{ ...siti, contacts: 7, buyers: 2, vendors: 6, new: 2, enquiries: 3 }] : null }),
+    trends: a => ({ months: a.p_months, since: '2025-11-01', listings: 10, no_date: 1, states: ['Johor', 'Selangor'], cities: [{ state: 'Johor', city: 'Johor Bahru' }, { state: 'Selangor', city: 'Kajang' }], types: ['Condominium', 'Terrace house'],
+      sale: { listings: 8, median_price: 520000, median_ppsf: 305 }, rent: { listings: 2, median_rent: 2500 },
+      by_month: [{ month: '2026-09', sale_listings: 2, median_price: 480000, median_ppsf: 290, rent_listings: 0, median_rent: null }, { month: '2026-10', sale_listings: 3, median_price: 500000, median_ppsf: 310, rent_listings: 1, median_rent: 2500 }],
+      by_area: [{ state: 'Selangor', city: 'Kajang', listings: 6, median_price: 500000, median_ppsf: 300, recent_ppsf: 310, before_ppsf: 290, change_pct: 6.9 }],
+      by_type: [{ type: 'Terrace house', listings: 6, median_price: 500000, median_ppsf: 300, median_rent: null }] }),
+    ai: (a, role) => ({ from: a.p_from, to: a.p_to, commands: 8, understood: 6, not_understood: 2, success_pct: 75, agents: 2, screen_opens: 9, screen_agents: 2,
+      by_day: [{ day: '2026-10-28', understood: 3, not_understood: 0 }, { day: '2026-10-29', understood: 3, not_understood: 2 }],
+      by_version: [{ version: '2.2.0', commands: 6, not_understood: 1, success_pct: 83.3 }, { version: '2.1.0', commands: 2, not_understood: 1, success_pct: 50 }],
+      by_language: [{ language: 'en', commands: 5, not_understood: 0, success_pct: 100 }, { language: 'ms', commands: 3, not_understood: 2, success_pct: 33.3 }],
+      heatmap: [{ dow: 3, hour: 10, events: 5 }], names_hidden: !staff.includes(role),
+      list: staff.includes(role) ? [{ ...siti, commands: 6, not_understood: 2, success_pct: 66.7, last_at: '2026-10-29T03:00:00Z' }] : null }),
+    studio: (a, role) => ({ from: a.p_from, to: a.p_to, opened: 22, created: 13, saved: 8, shared: 4, agents: 3, makers: 2, share_pct: 30.8,
+      by_day: [{ day: '2026-10-29', created: 2, saved: 1, shared: 1 }], names_hidden: !staff.includes(role),
+      list: staff.includes(role) ? [{ ...siti, opened: 10, created: 9, saved: 6, shared: 3, last_at: '2026-10-29T03:00:00Z' }] : null }),
+  };
+}
+
+/** AdminBatch011 fake Money: ledger (add, void, repeat), Google products and prices, usage with alerts, monthly summary. */
+function moneyFake() {
+  let n = 0, seq = 0; const now = '2026-10-30T03:00:00Z';
+  const view = ['owner', 'admin', 'compliance'];
+  const st = { entries: [], settings: { usd_myr: null, monthly_budget_myr: null, updated_at: now }, skus: [
+    { sku: 'dynamic_maps', label: 'Dynamic Maps (each map shown)', names: ['maps.map'], price_per_1000: 7, free_per_month: 10000, monthly_limit: null, daily_limit: null, alert_pct: 80, updated_at: now },
+    { sku: 'geocoding', label: 'Geocoding (address ↔ map pin)', names: ['geocoding.reverse', 'geocoding.forward'], price_per_1000: 5, free_per_month: 10000, monthly_limit: null, daily_limit: null, alert_pct: 80, updated_at: now },
+    { sku: 'places_autocomplete', label: 'Places Autocomplete', names: ['places.autocomplete'], price_per_1000: null, free_per_month: null, monthly_limit: null, daily_limit: null, alert_pct: 80, updated_at: now }] };
+  const calls = { dynamic_maps: 9200, geocoding: 300, places_autocomplete: 40 };
+  const entry = (p, extra = {}) => ({ id: `eeeeeeee-0000-4000-8000-${String(++n).padStart(12, '0')}`, ref: `LED-2026-${String(++seq).padStart(4, '0')}`,
+    kind: p.kind, category: p.category, payee: p.payee, description: p.description || null, amount: Number(p.amount), currency: p.currency ?? 'MYR',
+    fx_to_myr: p.currency && p.currency !== 'MYR' ? Number(p.fx_to_myr) : 1, amount_myr: Math.round(Number(p.amount) * (p.currency && p.currency !== 'MYR' ? Number(p.fx_to_myr) : 1) * 100) / 100,
+    paid_on: p.paid_on, period_month: p.period_month ?? `${p.paid_on.slice(0, 7)}-01`, recurring: !!p.recurring, invoice_ref: p.invoice_ref || null,
+    repeat_of: null, repeat_ref: null, voided_at: null, void_reason: null, voided_by_email: null, created_by_email: 'joe@example.com', created_at: now, ...extra });
+  st.entries.push(entry({ kind: 'expense', category: 'supabase', payee: 'Supabase Inc', amount: 25, currency: 'USD', fx_to_myr: 4.5, paid_on: '2026-09-05', recurring: true }));
+  const usage = () => {
+    const products = st.skus.map(k => {
+      const c = calls[k.sku] ?? 0, proj = Math.round(c * 31 / 30);
+      const cost = x => (k.price_per_1000 === null ? null : Math.round(Math.max(0, x - (k.free_per_month ?? 0)) * k.price_per_1000 / 10) / 100);
+      let level = 'ok'; const reasons = [];
+      if (k.daily_limit && c / 30 >= k.daily_limit) { level = 'red'; reasons.push('daily limit reached today'); }
+      if (k.monthly_limit && c >= k.monthly_limit) { level = 'red'; reasons.push('monthly limit reached'); }
+      else if (k.monthly_limit && proj >= k.monthly_limit * k.alert_pct / 100) { level = level === 'red' ? 'red' : 'amber'; reasons.push(`on course for ${k.alert_pct}% of the monthly limit`); }
+      if (k.price_per_1000 && k.free_per_month && proj >= k.free_per_month * k.alert_pct / 100) { if (level === 'ok') level = 'amber'; reasons.push(`on course to use ${k.alert_pct}% of the free allowance`); }
+      return { ...k, month_calls: c, today_calls: Math.round(c / 30), projected: proj, level, reasons, month_usd: cost(c), projected_usd: cost(proj),
+        month_myr: st.settings.usd_myr && cost(c) !== null ? Math.round(cost(c) * st.settings.usd_myr * 100) / 100 : null,
+        projected_myr: st.settings.usd_myr && cost(proj) !== null ? Math.round(cost(proj) * st.settings.usd_myr * 100) / 100 : null };
+    }).sort((a, b) => ({ red: 0, amber: 1, ok: 2 }[a.level] - { red: 0, amber: 1, ok: 2 }[b.level]) || b.month_calls - a.month_calls);
+    const usd = products.reduce((s, p) => s + (p.month_usd ?? 0), 0);
+    return { months: 6, since: '2026-05-01', this_month: '2026-10-01', days_in_month: 31, days_passed: 30, usd_myr: st.settings.usd_myr, products,
+      alerts: products.filter(p => p.level !== 'ok').length, month_usd: usd, projected_usd: usd, month_myr: st.settings.usd_myr ? usd * st.settings.usd_myr : null,
+      projected_myr: st.settings.usd_myr ? usd * st.settings.usd_myr : null, unpriced_calls: 40,
+      by_month: [{ month: '2026-09', calls: 4000, failures: 2, usd: 0, myr: 0 }, { month: '2026-10', calls: 9540, failures: 3, usd, myr: null }],
+      by_month_sku: [], by_name: [{ name: 'maps.map', sku: 'dynamic_maps', calls: 9200, failures: 0, agents: 6 }, { name: 'geocoding.reverse', sku: 'geocoding', calls: 300, failures: 3, agents: 4 }],
+      by_day: [{ day: '2026-10-29', calls: 320 }, { day: '2026-10-30', calls: 310 }],
+      top_agents: [{ user_id: AGENT, email: 'agent@example.com', name: 'Siti Agent', calls: 5200 }] };
+  };
+  const summary = () => {
+    const live = st.entries.filter(e => !e.voided_at);
+    const month = m => { const l = live.filter(e => e.period_month.startsWith(m)); const inc = l.filter(e => e.kind === 'income').reduce((s, e) => s + e.amount_myr, 0);
+      const exp = l.filter(e => e.kind === 'expense').reduce((s, e) => s + e.amount_myr, 0); const active = m === '2026-10' ? 4 : 3;
+      return { month: m, income: inc, expenses: exp, net: inc - exp, active, cost_per_active: Math.round(exp / active * 100) / 100, google_usd: m === '2026-10' ? 0 : 0, google_myr: null,
+        google_billed: l.some(e => e.category === 'google'), over_budget: !!st.settings.monthly_budget_myr && exp > st.settings.monthly_budget_myr }; };
+    const by_month = [month('2026-09'), month('2026-10')];
+    const tot = k => by_month.reduce((s, m) => s + m[k], 0);
+    const cats = {}; for (const e of live) { const key = `${e.kind}/${e.category}`; cats[key] = (cats[key] ?? 0) + e.amount_myr; }
+    return { months: 12, since: '2025-11-01', usd_myr: st.settings.usd_myr, monthly_budget_myr: st.settings.monthly_budget_myr, income: tot('income'), expenses: tot('expenses'), net: tot('net'),
+      this_month: { ...by_month[1] }, by_month,
+      by_category: Object.entries(cats).map(([k, v]) => ({ kind: k.split('/')[0], category: k.split('/')[1], amount_myr: v, per_active: Math.round(v / 7 * 100) / 100 })),
+      average_active: 3.5, cost_per_active_avg: Math.round(tot('expenses') / 7 * 100) / 100 };
+  };
+  return { view, st, entry, usage, summary, now };
+}
+
 async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoMs = 0, conn = true, extraAgent = false, base = BASE, bizEmail = 'joe@example.com' } = {}) {
   const ctx = await browser.newContext({ viewport: { width, height: 860 }, acceptDownloads: true });
+  await ctx.clock.setFixedTime(new Date("2026-10-30T04:00:00Z")); // tests assume this date, not the real clock
   const page = await ctx.newPage();
   const calls = [];
   await page.addInitScript(({ SB, signedIn, lastUsedAgoMs, conn }) => {
@@ -400,9 +525,12 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const b8 = b8Fake();
   const apf = appsFake(role);
   const bizCalls = [];
+  const c10 = contentFake();
+  const m11 = moneyFake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
+  await page.route('https://tile.openstreetmap.org/**', route => { calls.push({ fn: 'osm_tile', args: {} }); return route.fulfill({ status: 404, body: '' }); });
   await page.route(`${SB}/**`, async route => {
     const url = route.request().url();
     const fn = url.split('/rpc/')[1];
@@ -419,6 +547,11 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       return route.fulfill(ok({ Key: `eab-feed-media/${path}` }));
     }
     if (url.includes('/storage/v1/object/public/eab-feed-media/')) return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    if (url.includes('/storage/v1/object/authenticated/eab-files/')) {
+      if (!c10.staff.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
+      calls.push({ fn: 'photo_download', args: { path: url.split('/eab-files/')[1] } });
+      return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
+    }
     if (url.includes('/storage/v1/object/authenticated/bug-reports/')) {
       if (!ops.staff.includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: '{}' });
       return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64') });
@@ -887,6 +1020,86 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_mm2h_content_save': { if (!['owner', 'admin'].includes(role)) return route.fulfill(denied); const k = args.p_kind; const l = (apf.content[k] ??= []);
         const id = args.p_id ?? `n${l.length + 1}`; const i = l.findIndex(x => x.id === id); const item = { id, ...args.p_item }; if (i >= 0) l[i] = item; else l.push(item); return route.fulfill(ok(item)); }
       case 'eab_admin_mm2h_content_delete': { const l = apf.content[args.p_kind] ?? []; l.splice(l.findIndex(x => x.id === args.p_id), 1); return route.fulfill(ok(null)); }
+      // AdminBatch011 — Money
+      case 'eab_admin_ledger': {
+        if (!m11.view.includes(role)) return route.fulfill(denied);
+        const list = m11.st.entries.filter(e => (!args.p_kind || e.kind === args.p_kind) && (args.p_voided || !e.voided_at));
+        const live = m11.st.entries.filter(e => !e.voided_at), cats = {};
+        for (const e of live) { const k = `${e.kind}/${e.category}`; cats[k] = cats[k] ?? { kind: e.kind, category: e.category, entries: 0, amount_myr: 0 }; cats[k].entries++; cats[k].amount_myr += e.amount_myr; }
+        return route.fulfill(ok({ from: args.p_from, to: args.p_to, expenses_myr: live.filter(e => e.kind === 'expense').reduce((s, e) => s + e.amount_myr, 0),
+          income_myr: live.filter(e => e.kind === 'income').reduce((s, e) => s + e.amount_myr, 0), voided: m11.st.entries.filter(e => e.voided_at).length,
+          by_category: Object.values(cats), entries: [...list].reverse() }));
+      }
+      case 'eab_admin_ledger_add': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const e = m11.entry(args.p); m11.st.entries.push(e); return route.fulfill(ok(e));
+      }
+      case 'eab_admin_ledger_void': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const e = m11.st.entries.find(x => x.id === args.p_id);
+        Object.assign(e, { voided_at: m11.now, void_reason: args.p_reason, voided_by_email: 'joe@example.com' }); return route.fulfill(ok(e));
+      }
+      case 'eab_admin_ledger_repeat': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const src = m11.st.entries.filter(e => e.recurring && !e.voided_at && e.period_month === '2026-09-01' && !m11.st.entries.some(c => c.repeat_of === e.id));
+        for (const e of src) m11.st.entries.push(m11.entry({ ...e, paid_on: '2026-10-05', period_month: '2026-10-01' }, { repeat_of: e.id, repeat_ref: e.ref }));
+        return route.fulfill(ok({ month: args.p_month, copied: src.length }));
+      }
+      case 'eab_admin_money_settings': return m11.view.includes(role) ? route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus })) : route.fulfill(denied);
+      case 'eab_admin_money_settings_set': {
+        if (role !== 'owner') return route.fulfill(denied);
+        for (const k of ['usd_myr', 'monthly_budget_myr']) if (k in args.p) m11.st.settings[k] = args.p[k] === '' ? null : Number(args.p[k]);
+        return route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus }));
+      }
+      case 'eab_admin_api_sku_set': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const k = m11.st.skus.find(x => x.sku === args.p_sku);
+        for (const [f, v] of Object.entries(args.p)) k[f] = v === '' ? (f === 'alert_pct' ? 80 : null) : Number(v);
+        return route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus }));
+      }
+      case 'eab_admin_api_usage': return m11.view.includes(role) ? route.fulfill(ok(m11.usage())) : route.fulfill(denied);
+      case 'eab_admin_money_summary': return m11.view.includes(role) ? route.fulfill(ok(m11.summary())) : route.fulfill(denied);
+      // AdminBatch010 — Content & Maps
+      case 'eab_admin_mod_cases': {
+        if (!c10.staff.includes(role)) return route.fulfill(denied);
+        const f = args.p_status; const counts = {}, by = {};
+        for (const c of c10.st.cases) { counts[c.status] = (counts[c.status] ?? 0) + 1; if (c.status === 'open') by[c.reason] = (by[c.reason] ?? 0) + 1; }
+        return route.fulfill(ok({ counts, by_reason: by, cases: c10.st.cases.filter(c => !f || c.status === f || (f === 'closed' && c.status !== 'open')).map(c => { const j = c10.cjson(c); delete j.details; delete j.history; return j; }) }));
+      }
+      case 'eab_admin_mod_get': { const c = c10.st.cases.find(x => x.id === args.p_id); return c && c10.staff.includes(role) ? route.fulfill(ok(c10.cjson(c))) : route.fulfill(denied); }
+      case 'eab_admin_mod_create': {
+        if (!c10.staff.includes(role)) return route.fulfill(denied);
+        if (!args.p?.details || args.p.details.trim().length < 1) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'describe what is wrong' }) });
+        return route.fulfill(ok(c10.cjson(c10.create(args.p))));
+      }
+      case 'eab_admin_mod_update': {
+        const c = c10.st.cases.find(x => x.id === args.p_id);
+        if (!c || !c10.staff.includes(role)) return route.fulfill(denied);
+        if (!args.p_note) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'a reason is required' }) });
+        const from = c.status; Object.assign(c, args.p, { updated_at: c10.now });
+        c.history.push(c10.ev(from !== c.status ? 'status' : 'updated', args.p_note, from !== c.status ? from : null, from !== c.status ? c.status : null));
+        return route.fulfill(ok(c10.cjson(c)));
+      }
+      case 'eab_admin_mod_note': { const c = c10.st.cases.find(x => x.id === args.p_id); c.history.push(c10.ev('note', args.p_note)); return route.fulfill(ok(c10.cjson(c))); }
+      case 'eab_admin_mod_suspects': return c10.staff.includes(role) ? route.fulfill(ok(c10.suspects())) : route.fulfill(denied);
+      case 'eab_admin_photo_queue': return c10.staff.includes(role) ? route.fulfill(ok(c10.queue(args.p_status))) : route.fulfill(denied);
+      case 'eab_admin_photo_review': {
+        if (!c10.staff.includes(role)) return route.fulfill(denied);
+        let ref = null;
+        if (args.p_decision === 'flagged') {
+          if (!args.p_reason || args.p_reason.length < 5) return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: '22023', message: 'say what is wrong with the photo (at least 5 characters)' }) });
+          ref = c10.create({ kind: 'photo', agent_user: AGENT, file_sha: args.p_sha, reason: args.p_case_reason, source: 'photo_review', details: args.p_reason }).ref;
+        }
+        c10.st.reviews.set(args.p_sha, { decision: args.p_decision, reason: args.p_reason, reviewed_at: c10.now, reviewed_by: 'joe@example.com', case_ref: ref });
+        return route.fulfill(ok({ decision: args.p_decision, case_ref: ref }));
+      }
+      case 'eab_admin_dup_listings': return c10.staff.includes(role) ? route.fulfill(ok(c10.dups())) : route.fulfill(denied);
+      case 'eab_admin_map_listings': return c10.view.includes(role) ? route.fulfill(ok(c10.map(args, role))) : route.fulfill(denied);
+      case 'eab_admin_geo_agents': return c10.view.includes(role) ? route.fulfill(ok(c10.geo())) : route.fulfill(denied);
+      case 'eab_admin_contacts_stats': return c10.view.includes(role) ? route.fulfill(ok(c10.contacts(args, role))) : route.fulfill(denied);
+      case 'eab_admin_price_trends': return c10.view.includes(role) ? route.fulfill(ok(c10.trends(args))) : route.fulfill(denied);
+      case 'eab_admin_ai_usage': return c10.view.includes(role) ? route.fulfill(ok(c10.ai(args, role))) : route.fulfill(denied);
+      case 'eab_admin_studio_usage': return c10.view.includes(role) ? route.fulfill(ok(c10.studio(args, role))) : route.fulfill(denied);
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
@@ -948,8 +1161,9 @@ test('owner: home sections, search, Agent Profile with deleted record and histor
   const { page, ctx, calls } = await open({ role: 'owner', width: 390 });
   await page.getByTestId('role').waitFor();
   assert.equal(await page.getByTestId('role').innerText(), 'Owner');
-  for (const s of ['Compliance', 'Security', 'Communication & Operations', 'Users & Growth', 'Content & Business', 'System Health', 'Money'])
+  for (const s of ['Compliance', 'Security', 'Communication & Operations', 'Users & Growth', 'Content & Business', 'System Health'])
     assert.ok(await page.getByRole('heading', { name: s, exact: true }).isVisible(), s);
+  assert.equal(await page.getByRole('heading', { name: 'Money', exact: true }).count(), 0, 'Money is its own space since AdminBatch012');
   assert.ok(await page.getByTestId('tile-14').isEnabled());
   assert.ok(await page.getByTestId('tile-17').isEnabled(), 'owner manages admins');
   await page.screenshot({ path: `${SHOTS}/03-home-owner-phone.png`, fullPage: true });
@@ -2384,16 +2598,22 @@ test('viewer: scorecard spread and funnel counts only — no names, no "who is s
   await ctx.close();
 });
 
-test('standalone Admin EAB shows only Estate Agent AI Buddy, no app switcher', async () => {
+test('standalone Admin EAB shows Estate Agent AI Buddy plus Company Money only (no other apps)', async () => {
   const { page, ctx } = await open();
   await page.getByTestId('app-title').waitFor();
   assert.equal(await page.getByTestId('app-title').innerText(), 'Estate Agent AI Buddy');
-  assert.equal(await page.getByTestId('app-pos').count(), 0, 'no switcher in a standalone admin');
+  for (const id of ['pos', 'mm2h', 'odw', 'biz']) assert.equal(await page.getByTestId(`app-${id}`).count(), 0, `no ${id} in Admin EAB`);
+  await page.getByTestId('app-money').click();
+  assert.equal(await page.getByTestId('app-title').innerText(), 'Company Money');
+  assert.ok(await page.getByTestId('tile-10').isEnabled(), 'ledger opens in the Money space');
+  assert.ok(await page.getByTestId('tile-18').count() === 0, 'Money space has no audit tiles of its own');
+  await page.getByTestId('app-eab').click();
+  assert.equal(await page.getByTestId('tile-10').count(), 0, 'no Money tiles in the EAB space');
   assert.equal(await page.title(), 'Admin EAB');
   await ctx.close();
 });
 
-test('combined admin: switch between all five apps; shared tools open in each; choice is remembered', async () => {
+test('combined admin: switch between all five apps and Company Money; shared tools open in each app; choice is remembered', async () => {
   const { page, ctx } = await open({ base: BASE_ALL });
   await page.getByTestId('app-eab').waitFor();
   assert.equal(await page.title(), 'Admin AI Buddy');
@@ -2405,6 +2625,9 @@ test('combined admin: switch between all five apps; shared tools open in each; c
     assert.ok(await page.getByTestId('tile-18').isEnabled(), `audit log opens in ${id}`);
     assert.ok(await page.getByTestId('tile-17').isEnabled(), `admins & roles opens in ${id}`);
   }
+  await page.getByTestId('app-money').click();
+  assert.equal(await page.getByTestId('app-title').innerText(), 'Company Money');
+  assert.ok(await page.getByTestId('tile-33').isEnabled(), 'profit & loss opens in the combined admin');
   await page.getByTestId('app-pos').click();
   assert.ok(await page.getByTestId('tile-P1').isEnabled(), 'POS owner records open the search');
   assert.ok(await page.getByTestId('tile-P8').isEnabled(), 'MyInvois status opens');
@@ -2574,4 +2797,287 @@ test('Biz: separate Google sign-in to the Biz database; refused if not on its li
   await page.getByTestId('biz-sign-out').click();
   await page.getByTestId('biz-connect').waitFor();
   await ctx.close();
+});
+
+// ======================================================================================== AdminBatch010 Content & Maps / AdminBatch011 Money (merged in AdminBatch012)
+test('compliance: automatic checks → open a case → case screen; referred needs a complaint; confirm with a reason; duplicates (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'compliance', width: 1366 });
+  for (const n of [16, 57, 56, 54, 28, 8, 55, 60, 61]) assert.ok(await page.getByTestId(`tile-${n}`).isEnabled(), `tile ${n}`);
+  await page.getByTestId('tile-16').click();
+  await page.getByTestId('mod-cases').waitFor();
+  assert.match(await page.locator('main').innerText(), /No cases here/);
+  await page.getByTestId('modtab-suspects').click();
+  await page.getByTestId('suspect-list').waitFor();
+  assert.match(await page.getByTestId('suspect-list').innerText(), /P1001[\s\S]*Siti Agent[\s\S]*Price far from the area[\s\S]*median RM 300/);
+  await page.screenshot({ path: `${SHOTS}/70-mod-suspects-laptop.png`, fullPage: true });
+  await page.getByTestId('suspect-raise').first().click();
+  await page.getByTestId('raise-case').waitFor();
+  assert.equal(await page.getByTestId('raise-reason').inputValue(), 'price_far');
+  assert.match(await page.getByTestId('raise-details').inputValue(), /Price far from the area: RM 1,500/);
+  await page.getByTestId('raise-save').click();
+  await page.getByTestId('mod-case').waitFor();
+  assert.match(await page.locator('h1').innerText(), /MOD-2026-0001/);
+  const cr = calls.find(c => c.fn === 'eab_admin_mod_create').args.p;
+  assert.equal(cr.agent_user, AGENT); assert.equal(cr.record_id, 'p1'); assert.equal(cr.reason, 'price_far'); assert.equal(cr.source, 'suspect');
+  // referred without a complaint: cannot save, and says where to log one
+  await page.getByTestId('mod-to-referred').click();
+  await page.getByTestId('mod-note').fill('Sent on');
+  assert.ok(await page.getByTestId('mod-apply').isDisabled());
+  assert.match(await page.getByTestId('mod-actions').innerText(), /no complaint yet/);
+  await page.getByTestId('mod-to-referred').click();
+  await page.getByTestId('mod-to-confirmed').click();
+  await page.getByTestId('mod-outcome').fill('Agent asked to correct the price');
+  await page.getByTestId('mod-note').fill('Price typed with an extra zero');
+  await page.getByTestId('mod-apply').click();
+  await page.getByTestId('mod-status').getByText(/Confirmed/).waitFor();
+  assert.match(await page.getByTestId('history').innerText(), /Open → Confirmed[\s\S]*extra zero/);
+  const up = calls.find(c => c.fn === 'eab_admin_mod_update').args;
+  assert.equal(up.p.status, 'confirmed'); assert.equal(up.p_note, 'Price typed with an extra zero');
+  await page.screenshot({ path: `${SHOTS}/71-mod-case-laptop.png`, fullPage: true });
+  // the check now shows the case is open
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await page.getByTestId('tile-56').click();
+  await page.getByTestId('dup-photo').waitFor();
+  assert.match(await page.getByTestId('dup-photo').innerText(), /Same photo[\s\S]*2 agents[\s\S]*P1001[\s\S]*Q2001/);
+  await page.getByTestId('dup-address').waitFor();
+  await page.screenshot({ path: `${SHOTS}/72-mod-duplicates-laptop.png`, fullPage: true });
+  await ctx.close();
+});
+
+test('admin: photo moderation — photos open through the photo rule; OK one; flag one with a reason → case (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'admin', width: 390 });
+  await page.getByTestId('tile-57').click();
+  await page.getByTestId('photo-grid').waitFor();
+  await page.getByTestId('photo-img').first().waitFor();
+  assert.equal(await page.getByTestId('photo-card').count(), 2);
+  assert.ok(calls.some(c => c.fn === 'photo_download' && /^aaaaaaaa-0000-4000-8000-000000000001\/[0-9a-f]{64}$/.test(c.args.path)));
+  assert.match(await page.getByTestId('photo-shared').innerText(), /also used by 1 other agent/);
+  await page.screenshot({ path: `${SHOTS}/73-mod-photos-phone.png`, fullPage: true });
+  // OK the second photo
+  await page.getByTestId('photo-card').nth(1).getByTestId('photo-ok').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="photo-card"]').length === 1);
+  // flag the shared one: reason too short, then right
+  await page.getByTestId('photo-flag').click();
+  assert.equal(await page.getByTestId('photo-reason').inputValue(), 'same_photo');
+  await page.getByTestId('photo-why').fill('bad');
+  assert.ok(await page.getByTestId('photo-flag-save').isDisabled());
+  await page.getByTestId('photo-why').fill('Same picture as Ali\'s listing Q2001');
+  await page.getByTestId('photo-flag-save').click();
+  await page.locator('main').getByText('No photos here.').waitFor();
+  const rv = calls.filter(c => c.fn === 'eab_admin_photo_review').map(c => c.args);
+  assert.deepEqual(rv.map(r => r.p_decision), ['ok', 'flagged']);
+  assert.equal(rv[1].p_case_reason, 'same_photo'); assert.match(rv[1].p_reason, /Q2001/);
+  await page.getByTestId('pfilter-flagged').click();
+  await page.getByTestId('photo-card').waitFor();
+  assert.match(await page.getByTestId('photo-card').innerText(), /Flagged[\s\S]*MOD-2026-0001/);
+  await ctx.close();
+});
+
+test('owner: Content insight — listings map bubbles and pick list, geography, buyers & vendors, price trends, AI, Studio; Excel report (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  await page.getByTestId('tile-54').click();
+  await page.getByTestId('listings-map').waitFor();
+  await page.getByTestId('map-bubble').first().waitFor();
+  assert.ok(calls.some(c => c.fn === 'osm_tile'), 'map tiles requested');
+  const bubbles = await page.getByTestId('map-bubble').count();
+  assert.equal(bubbles, 2, 'the two Kajang listings 10 m apart make one bubble, Johor Bahru another');
+  await page.getByTestId('map-bubble').filter({ hasText: '2' }).click();
+  await page.getByTestId('map-picked').waitFor();
+  assert.match(await page.getByTestId('map-picked').innerText(), /2 listings here[\s\S]*P1001[\s\S]*Q2001[\s\S]*Ali/);
+  await page.screenshot({ path: `${SHOTS}/74-content-map-laptop.png`, fullPage: true });
+  await page.getByTestId('map-state').selectOption('Johor');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="map-bubble"]').length === 1);
+  assert.equal(calls.filter(c => c.fn === 'eab_admin_map_listings').at(-1).args.p_state, 'Johor');
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.getByTestId('map-fit').waitFor();
+  // geography
+  await page.getByTestId('ctab-geo').click();
+  await page.getByTestId('geo-map').waitFor();
+  assert.match(await page.getByTestId('geo-countries').innerText(), /Malaysia[\s\S]*Singapore/);
+  assert.match(await page.getByTestId('geo-map').innerText(), /2 smaller areas hidden for privacy/);
+  await page.getByTestId('geo-states').getByText('Johor').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="geo-cities"]')?.textContent?.includes('Kajang'));
+  // buyers & vendors
+  await page.getByTestId('ctab-contacts').click();
+  await page.getByTestId('contact-agents').waitFor();
+  assert.match(await page.getByTestId('c-contacts').innerText(), /Vendors \(owners\)\s*6[\s\S]*3 linked to a listing/);
+  assert.match(await page.getByTestId('contact-channels').innerText(), /WhatsApp/);
+  // price trends
+  await page.getByTestId('ctab-trends').click();
+  await page.getByTestId('trend-areas').waitFor();
+  assert.match(await page.getByTestId('trend-areas').innerText(), /Kajang[\s\S]*RM 300 psf[\s\S]*\+6\.9%/);
+  await page.getByTestId('trend-24').click();
+  await page.waitForFunction(() => true);
+  assert.ok(calls.some(c => c.fn === 'eab_admin_price_trends' && c.args.p_months === 24));
+  await page.getByTestId('trend-state').selectOption('Selangor');
+  assert.equal(await page.getByTestId('trend-city').locator('option').count(), 2, 'only Selangor cities');
+  // AI and Studio
+  await page.getByTestId('ctab-ai').click();
+  await page.getByTestId('ai-agents').waitFor();
+  assert.match(await page.getByTestId('c-ai').innerText(), /Understood\s*75%/);
+  assert.match(await page.getByTestId('ai-languages').innerText(), /Bahasa Melayu[\s\S]*33 %/);
+  await page.screenshot({ path: `${SHOTS}/75-content-ai-laptop.png`, fullPage: true });
+  await page.getByTestId('ctab-studio').click();
+  await page.getByTestId('studio-agents').waitFor();
+  assert.match(await page.getByTestId('c-studio').innerText(), /Posters made\s*13[\s\S]*31% of posters made/);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('c-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^Content-EAB-20261021-000007\.xlsx$/);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_export').args.p_kind, 'content_report');
+  await ctx.close();
+});
+
+test('viewer: Content insight counts and anonymous dots only; no moderation; regulator sees neither (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'viewer', width: 390 });
+  for (const n of [16, 57, 56]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n}`);
+  await page.getByTestId('tile-54').click();
+  await page.getByTestId('map-bubble').first().waitFor();
+  await page.getByTestId('map-bubble').first().click();
+  await page.getByTestId('map-picked').waitFor();
+  const picked = await page.getByTestId('map-picked').innerText();
+  assert.doesNotMatch(picked, /P1001|Siti|Agent\b/);
+  assert.match(picked, /Terrace house|Condominium/);
+  await page.screenshot({ path: `${SHOTS}/76-content-map-viewer-phone.png`, fullPage: true });
+  await page.getByTestId('ctab-contacts').click();
+  await page.getByTestId('c-contacts').waitFor();
+  assert.equal(await page.getByTestId('contact-agents').count(), 0);
+  await page.getByTestId('names-hidden').waitFor();
+  await page.getByTestId('ctab-ai').click();
+  await page.getByTestId('c-ai').waitFor();
+  assert.equal(await page.getByTestId('ai-agents').count(), 0);
+  assert.equal(await page.getByTestId('c-xlsx').count(), 0, 'viewer cannot export');
+  assert.doesNotMatch(await page.locator('main').innerText(), /agent@example\.com|Siti Agent/);
+  assert.ok(!calls.some(c => c.fn === 'photo_download'));
+  await ctx.close();
+  const r = await open({ role: 'regulator', width: 390 });
+  await r.page.getByTestId('tile-my-case').waitFor();
+  for (const n of [16, 57, 56, 54, 28, 8, 55, 60, 61]) assert.equal(await r.page.getByTestId(`tile-${n}`).count(), 0, `regulator tile ${n}`);
+  await r.ctx.close();
+});
+
+test('owner: ledger — add a US$ bill with its rate, void an entry with a reason, copy monthly bills; P&L and cost per user (laptop)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  for (const n of [2, 40, 10, 34, 33]) assert.equal(await page.getByTestId(`tile-${n}`).count(), 0, `tile ${n} is not in the EAB space`);
+  await page.getByTestId('app-money').click();   // AdminBatch012: Money is its own company-wide space
+  assert.equal(await page.getByTestId('app-title').innerText(), 'Company Money');
+  for (const n of [2, 40, 10, 34, 33]) assert.ok(await page.getByTestId(`tile-${n}`).isEnabled(), `tile ${n}`);
+  await page.getByTestId('tile-10').click();
+  await page.getByTestId('ledger-list').waitFor();
+  assert.match(await page.getByTestId('ledger-list').innerText(), /LED-2026-0001[\s\S]*Supabase Inc[\s\S]*USD 25\.00[\s\S]*at 4\.5[\s\S]*RM 112\.50/);
+  // add: AWS US$ 12 — first without the rate
+  await page.getByTestId('ledger-new').click();
+  await page.getByTestId('lf-category').selectOption('aws');
+  await page.getByTestId('lf-payee').fill('Amazon Web Services');
+  await page.getByTestId('lf-amount').fill('12');
+  await page.getByTestId('lf-currency').selectOption('USD');
+  await page.getByTestId('lf-save').click();
+  assert.match(await page.getByTestId('lf-problems').innerText(), /how many RM for 1 USD/);
+  assert.ok(!calls.some(c => c.fn === 'eab_admin_ledger_add'));
+  await page.getByTestId('lf-fx').fill('4.4');
+  assert.match(await page.getByTestId('lf-myr').innerText(), /RM 52\.80/);
+  await page.getByTestId('lf-recurring').check();
+  await page.screenshot({ path: `${SHOTS}/80-money-ledger-form-laptop.png`, fullPage: true });
+  await page.getByTestId('lf-save').click();
+  await page.getByTestId('ledger-list').getByText('Amazon Web Services').waitFor();
+  const add = calls.find(c => c.fn === 'eab_admin_ledger_add').args.p;
+  assert.equal(add.category, 'aws'); assert.equal(add.currency, 'USD'); assert.equal(add.fx_to_myr, 4.4); assert.equal(add.amount, 12); assert.equal(add.recurring, true);
+  // void the AWS one
+  await page.getByTestId('ledger-row').filter({ hasText: 'Amazon Web Services' }).getByTestId('ledger-void').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Wrong month, entering again');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.waitForFunction(() => !document.querySelector('[data-testid="ledger-list"]')?.textContent?.includes('Amazon Web Services'));
+  assert.equal(calls.find(c => c.fn === 'eab_admin_ledger_void').args.p_reason, 'Wrong month, entering again');
+  await page.getByTestId('ledger-voided').check();
+  await page.getByTestId('ledger-row').filter({ hasText: 'Amazon Web Services' }).getByText('void', { exact: true }).waitFor();
+  // copy last month's monthly bills
+  await page.getByTestId('ledger-repeat').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('October bills');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('ledger-note').getByText(/1 entry copied/).waitFor();
+  assert.match(await page.getByTestId('ledger-list').innerText(), /copied from LED-2026-0001/);
+  await page.screenshot({ path: `${SHOTS}/81-money-ledger-laptop.png`, fullPage: true });
+  // P&L and cost per user
+  await page.getByTestId('mtab2-pnl').click();
+  await page.getByTestId('pnl-table').waitFor();
+  assert.match(await page.getByTestId('pnl-table').innerText(), /Oct 2026[\s\S]*RM 112\.50/);
+  await page.getByTestId('mtab2-cost').click();
+  await page.getByTestId('cost-table').waitFor();
+  assert.match(await page.getByTestId('money-cost').innerText(), /This month, per active agent\s*RM 28\.13[\s\S]*4 active agents/);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByTestId('money-xlsx').click()]);
+  assert.match(dl.suggestedFilename(), /^Money-EAB-20261021-000007\.xlsx$/);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_export').args.p_kind, 'money_report');
+  await ctx.close();
+});
+
+test('owner: Google API cost, quota alerts with a limit, prices and the US$ rate (phone)', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 390 });
+  await page.getByTestId('app-money').click();
+  await page.getByTestId('tile-2').click();
+  await page.getByTestId('google-products').waitFor();
+  assert.match(await page.getByTestId('google-products').innerText(), /Dynamic Maps[\s\S]*9,200[\s\S]*US\$ 7\.00[\s\S]*Places Autocomplete[\s\S]*not set/);
+  assert.match(await page.getByTestId('money-google').innerText(), /set the US\$ → RM rate in Prices/);
+  await page.screenshot({ path: `${SHOTS}/82-money-google-phone.png`, fullPage: true });
+  // alerts: Dynamic Maps is on course for 80% of the free allowance → Watch; set a monthly limit of 9,000 → Limit reached
+  await page.getByTestId('mtab2-alerts').click();
+  await page.getByTestId('alert-dynamic_maps').waitFor();
+  assert.match(await page.getByTestId('alert-dynamic_maps').innerText(), /Watch[\s\S]*80% of the free allowance/);
+  await page.getByTestId('alert-edit-dynamic_maps').click();
+  await page.getByTestId('sku-monthly_limit').fill('9000');
+  await page.getByTestId('sku-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Same as the Google Cloud quota');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('alert-dynamic_maps').getByText('Limit reached', { exact: true }).waitFor();
+  assert.deepEqual(calls.find(c => c.fn === 'eab_admin_api_sku_set').args.p, { monthly_limit: '9000' });
+  await page.screenshot({ path: `${SHOTS}/83-money-alerts-phone.png`, fullPage: true });
+  // prices: set the rate, then the estimate shows in RM
+  await page.getByTestId('mtab2-prices').click();
+  await page.getByTestId('ms-rate').fill('4.4');
+  await page.getByTestId('ms-save').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Bank rate this week');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.waitForFunction(() => document.querySelector('[data-testid="ms-save"]')?.disabled === true);
+  assert.equal(calls.find(c => c.fn === 'eab_admin_money_settings_set').args.p.usd_myr, '4.4');
+  await page.getByTestId('sku-edit-places_autocomplete').click();
+  await page.getByTestId('sku-price_per_1000').fill('2.83');
+  await page.getByTestId('sku-free_per_month').fill('10000');
+  await page.getByTestId('sku-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('From the Google bill');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('sku-table').getByText('US$ 2.83').waitFor();
+  await ctx.close();
+});
+
+test('compliance and admin read Money but cannot change it; compliance can export; viewer and regulator have no Money (phone)', async () => {
+  const c = await open({ role: 'compliance', width: 390 });
+  await c.page.getByTestId('app-money').click();
+  await c.page.getByTestId('tile-10').click();
+  await c.page.getByTestId('ledger-list').waitFor();
+  assert.equal(await c.page.getByTestId('ledger-new').count(), 0);
+  assert.equal(await c.page.getByTestId('ledger-void').count(), 0);
+  assert.equal(await c.page.getByTestId('ledger-repeat').count(), 0);
+  await c.page.getByTestId('money-readonly').waitFor();
+  assert.ok(await c.page.getByTestId('money-pdf').isEnabled(), 'compliance can export');
+  await c.page.getByTestId('mtab2-prices').click();
+  await c.page.getByTestId('sku-table').waitFor();
+  assert.ok(await c.page.getByTestId('ms-rate').isDisabled());
+  assert.equal(await c.page.getByTestId('sku-edit-dynamic_maps').count(), 0);
+  await c.ctx.close();
+  const a = await open({ role: 'admin', width: 390 });
+  await a.page.getByTestId('app-money').click();
+  await a.page.getByTestId('tile-40').click();
+  await a.page.getByTestId('alert-list').waitFor();
+  assert.equal(await a.page.getByTestId('alert-edit-dynamic_maps').count(), 0);
+  assert.equal(await a.page.getByTestId('money-pdf').count(), 0, 'admin cannot export');
+  await a.ctx.close();
+  for (const role of ['viewer', 'regulator']) {
+    const v = await open({ role, width: 390 });
+    await v.page.getByTestId(role === 'viewer' ? 'tile-54' : 'tile-my-case').waitFor();
+    if (role === 'viewer') await v.page.getByTestId('app-money').click();
+    for (const n of [2, 40, 10, 34, 33]) assert.equal(await v.page.getByTestId(`tile-${n}`).count(), 0, `${role} tile ${n}`);
+    await v.ctx.close();
+  }
 });

@@ -1,21 +1,23 @@
-// AdminBatch010: AI Buddy Biz has its own Supabase project, so the admin signs in to it separately with Google
-// (same PKCE method, its own code verifier and session). The Biz database has its own admin allow-list
-// (eab_admins / eab_admin_pending) and its own hash-chained log; nobody gets in just by having a Google account.
+// AdminBatch010: the admin signs in to AI Buddy Biz separately with Google (same PKCE method, its own code verifier and
+// session). The Biz database has its own admin allow-list (biz.eab_admins / eab_admin_pending) and its own hash-chained
+// log; nobody gets in just by having a Google account.
 //  Web:     Google returns to this page with ?biz=1&code=…
 //  Android: Google returns to <this admin's package>://biz-callback?code=…
-// The connection comes from the build (EAB_BIZ_SUPABASE_URL / EAB_BIZ_SUPABASE_ANON_KEY) or is typed once on the
-// Connect screen (kept on this device only). The public key only — a secret key is refused.
+// AdminBatch013 (Batch 2b, 9 Nov 2026): AI Buddy Biz now lives in the SAME project as Estate Agent AI Buddy
+// (EAB-QA-Test while testing), in its own schema "biz". So by default the Biz connection is Admin EAB's own connection
+// with schema "biz". A separate Biz project can still be typed on the Connect screen (kept on this device only; schema
+// "public"). The old build settings EAB_BIZ_SUPABASE_URL / _ANON_KEY pointed to the retired Biz project and are ignored.
+// The public key only — a secret key is refused.
 import { useSyncExternalStore } from 'react';
-import { Conn, configured, connProblem } from '../config';
+import { Conn, configured, connProblem, loadConn as loadMainConn } from '../config';
 import { isNative, BIZ_CALLBACK } from '../native/native';
 import { handleCallback, startGoogleSignIn } from './auth';
 import { ApiError, Session, rpc, signOutRemote } from './session';
 import { appCalls } from './apps';
 
-declare const __EAB_BIZ__: Conn | undefined;
-const built: Conn = (typeof __EAB_BIZ__ !== 'undefined' && __EAB_BIZ__) || { supabaseUrl: '', supabaseAnonKey: '' };
-
-const CONN_KEY = 'admin-biz-conn';
+export const BIZ_SCHEMA = 'biz';
+// v2: a connection typed before Batch 2b pointed to the retired Biz project, so it is not read any more
+const CONN_KEY = 'admin-biz-conn-v2';
 const SESSION_KEY = 'admin-biz-session';
 const PKCE_KEY = 'admin-biz-pkce';
 const ME_KEY = 'admin-biz-me';
@@ -28,7 +30,10 @@ const write = (k: string, v: unknown) => { try { if (v === null || v === undefin
 
 function loadConn(): Conn {
   const t = read<Partial<Conn>>(CONN_KEY) ?? {};
-  return { supabaseUrl: (t.supabaseUrl || built.supabaseUrl || '').trim().replace(/\/+$/, ''), supabaseAnonKey: (t.supabaseAnonKey || built.supabaseAnonKey || '').trim() };
+  const url = (t.supabaseUrl || '').trim().replace(/\/+$/, ''), key = (t.supabaseAnonKey || '').trim();
+  if (url && key) return { supabaseUrl: url, supabaseAnonKey: key };   // a separate Biz project (schema public)
+  const main = loadMainConn();
+  return { supabaseUrl: main.supabaseUrl, supabaseAnonKey: main.supabaseAnonKey, schema: BIZ_SCHEMA };
 }
 
 let state: BizState = { conn: loadConn(), session: read<Session>(SESSION_KEY), me: read<BizMe>(ME_KEY) };
@@ -43,7 +48,10 @@ export const bizState = () => state;
 export function useBiz(): BizState {
   return useSyncExternalStore(f => { subs.add(f); return () => { subs.delete(f); }; }, () => state);
 }
-export const bizBuiltIn = () => configured(built);
+/** True when Biz uses Admin EAB's own connection (schema biz), so no separate connection needs typing. */
+export const bizBuiltIn = () => state.conn.schema === BIZ_SCHEMA && configured(state.conn);
+/** Re-reads the connection (after the main connection was typed or changed on this device). */
+export function reloadBizConn(): void { const c = loadConn(); if (c.supabaseUrl !== state.conn.supabaseUrl || c.schema !== state.conn.schema) set({ conn: c, session: null, me: null }); else set({ conn: c }); }
 
 /** Saves a typed Biz connection after checking it (a secret key is refused). Returns the problem, if any. */
 export function setBizConn(url: string, key: string): ReturnType<typeof connProblem> {

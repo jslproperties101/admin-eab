@@ -1103,13 +1103,22 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
   });
-  // AdminBatch010: the AI Buddy Biz database (separate project). Its own admin list: only joe@example.com is on it.
-  await page.route(`${BIZ}/**`, async route => {
-    const url = route.request().url();
+  // AdminBatch010: the AI Buddy Biz database. Its own admin list: only joe@example.com is on it.
+  // AdminBatch013: Biz is schema "biz" in the SAME project, so its calls go to SB with Accept-/Content-Profile: biz.
+  // This handler is registered after the main one, so it wins for SB; anything that is not Biz falls back to the main fake.
+  const bizRoute = async (route, sameProject) => {
+    const req = route.request(); const url = req.url(); const h = req.headers();
+    const profile = h['content-profile'] ?? h['accept-profile'] ?? null;
+    if (sameProject) {
+      const body = req.postData() ?? '';
+      const isBiz = profile === 'biz' || (url.includes('/auth/v1/authorize') && /biz%3D1/.test(url))
+        || (url.includes('/auth/v1/token') && body.includes('biz-code')) || (url.includes('/auth/v1/logout') && h.authorization === 'Bearer biztok');
+      if (!isBiz) return route.fallback();
+    }
     const fn = url.split('/rpc/')[1];
     let args = {};
-    if (fn) { try { args = route.request().postDataJSON() ?? {}; } catch { args = {}; } }
-    bizCalls.push({ fn: fn ?? url, args, auth: route.request().headers().authorization });
+    if (fn) { try { args = req.postDataJSON() ?? {}; } catch { args = {}; } }
+    bizCalls.push({ fn: fn ?? url, args, auth: h.authorization, profile, host: new URL(url).host });
     if (url.includes('/auth/v1/authorize')) { const back = new URL(url).searchParams.get('redirect_to'); return route.fulfill({ status: 302, headers: { location: `${back}&code=biz-code` } }); }
     if (url.includes('/auth/v1/token')) return route.fulfill(ok({ access_token: 'biztok', refresh_token: 'bizref', expires_in: 3600, user: { id: 'bme', email: bizEmail } }));
     if (url.includes('/auth/v1/logout')) return route.fulfill({ status: 204 });
@@ -1120,7 +1129,9 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       case 'eab_admin_biz_module_set': { const m = apf.modules.find(x => x.tenant_id === args.p_tenant && x.module === args.p_module); m.enabled = args.p_enabled; return route.fulfill(ok(m)); }
       default: return route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
     }
-  });
+  };
+  await page.route(`${BIZ}/**`, route => bizRoute(route, false));   // a separate Biz project typed on the device
+  await page.route(`${SB}/**`, route => bizRoute(route, true));     // Biz inside the main project (default)
   await page.goto(base);
   return { page, ctx, calls, b8, bizCalls };
 }
@@ -2750,22 +2761,22 @@ test('viewer: On Da Way sales without names, no editing, no export; MM2H familie
   await ctx.close();
 });
 
-test('Biz: separate Google sign-in to the Biz database; refused if not on its list; then module switch with a reason (laptop)', async () => {
+test('Biz: separate Google sign-in to the Biz area ("biz" schema of the same project); refused if not on its list; then module switch with a reason (laptop)', async () => {
   // not on the Biz admin list
   {
     const { page, ctx, bizCalls } = await open({ base: BASE_ALL, width: 1366, bizEmail: 'someone@else.com' });
+    // a connection typed before AdminBatch013 pointed to the retired Biz project: it is not used any more
+    await page.evaluate(() => localStorage.setItem('admin-biz-conn', JSON.stringify({ supabaseUrl: 'https://old-biz.supabase.co', supabaseAnonKey: 'sb_publishable_old' })));
+    await page.reload();
     await page.getByTestId('app-biz').click();
     await page.getByTestId('tile-B1').click();
     await page.getByTestId('biz-connect').waitFor();
-    await page.getByTestId('biz-url').fill('https://fakebiz.supabase.co');
-    await page.getByTestId('biz-key').fill('sb_secret_nope');
-    await page.getByTestId('biz-save').click();
-    await page.getByTestId('biz-notice').getByText(/SECRET/).waitFor();
-    await page.getByTestId('biz-key').fill('sb_publishable_biz');
-    await page.getByTestId('biz-save').click();
+    assert.equal(await page.getByTestId('biz-url').count(), 0, 'nothing to type: Biz uses the Admin EAB connection');
+    assert.match(await page.getByTestId('biz-connect').innerText(), /its own area \("biz"\) in the same database/);
     await page.getByTestId('biz-google').click();
     await page.getByTestId('biz-notice').getByText(/not on the AI Buddy Biz admin list/).waitFor();
     assert.ok(bizCalls.some(c => c.fn.includes('/auth/v1/logout')), 'signed out of Biz again');
+    assert.ok(bizCalls.every(c => c.host === 'fake.supabase.co'), 'all Biz calls went to the main project, none to the old one');
     assert.equal(await page.evaluate(() => localStorage.getItem('admin-biz-session')), null);
     assert.ok(await page.getByTestId('global-search').isVisible(), 'still signed in to Admin EAB');
     await ctx.close();
@@ -2773,14 +2784,12 @@ test('Biz: separate Google sign-in to the Biz database; refused if not on its li
   const { page, ctx, calls, bizCalls } = await open({ base: BASE_ALL, width: 1366 });
   await page.getByTestId('app-biz').click();
   await page.getByTestId('tile-B2').click();
-  await page.getByTestId('biz-url').fill('https://fakebiz.supabase.co');
-  await page.getByTestId('biz-key').fill('sb_publishable_biz');
-  await page.getByTestId('biz-save').click();
   await page.getByTestId('biz-google').click();
   await page.getByTestId('biz-signed-in').waitFor();
   const auth = bizCalls.find(c => c.fn.includes('/auth/v1/authorize'));
   assert.match(auth.fn, /redirect_to=[^&]*biz%3D1/); assert.match(auth.fn, /code_challenge_method=s256/);
   assert.ok(bizCalls.find(c => c.fn === 'eab_admin_signed_in').auth.includes('biztok'), 'Biz calls use the Biz session');
+  assert.ok(bizCalls.filter(c => c.fn.startsWith('eab_admin_')).every(c => c.profile === 'biz' && c.host === 'fake.supabase.co'), 'every Biz call asks for schema biz on the main project');
   assert.ok(!calls.some(c => c.fn === 'eab_admin_signed_in'), 'the Admin EAB session is untouched');
   assert.match(await page.getByTestId('app-rows').innerText(), /Kopi Corner/);
   // to the modules list

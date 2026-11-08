@@ -66,6 +66,16 @@ In Supabase → Authentication → URL Configuration → Redirect URLs, add:
 - the web address the Admin EAB web version is opened from (e.g. `http://localhost:5174/` for local testing)
 
 ## Status
+AdminBatch013 (0.13.0, 9 Nov 2026, Batch 2b): AI Buddy Biz moved INTO the same Supabase project as Estate Agent AI
+Buddy (EAB-QA-Test while testing), in its own schema `biz` (Joe, decision D-7N-2). The Biz screens now use Admin EAB's
+own connection with schema `biz` (sent as Accept-Profile / Content-Profile); nothing to type. Biz keeps its own admin
+list and its own Google sign-in (`<package>://biz-callback`). The build settings `EAB_BIZ_SUPABASE_URL` / `_ANON_KEY`
+pointed to the retired Biz project and are no longer used. Database: `database/20261109120000_biz_admin_in_eab_qa_test.sql`
+(GENERATED from `20261030130000_biz_admin.sql` by `database/tools/to-biz-schema.mjs`; apply AFTER the Biz tables, which
+come from the ai-buddy-biz repo `supabase/eab-qa-test/20261109120000_biz_schema.sql`). Local proof:
+`database/tests/run-bizqa.sh <ai-buddy-biz checkout>`. The Biz admin file's status words were also corrected to the real
+Biz tables (sales `voided` / `refunded`, children `enrolled`, compliance `not_applicable`).
+
 AdminBatch012 (0.12.0, 9 Nov 2026): ONE admin codebase again. AdminBatch010 "Content & Maps" and AdminBatch011 "Money"
 (built on a separate line) were merged into the multi-app line (Joe's choice, 8 Nov). Placement (Joe): Moderation and
 Content insight stay in the Estate Agent AI Buddy space; Money is its own company-wide space, "Company Money", shown in

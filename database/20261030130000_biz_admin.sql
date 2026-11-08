@@ -2,6 +2,8 @@
 -- Additive only: new eab_* tables and functions. No existing Biz table is changed, except tenant_modules rows when an
 -- Owner / Admin switches a module for a business (with a reason, logged).
 -- Same function names as the Admin EAB database, so the admin app talks to both the same way.
+-- 9 Nov 2026 (Batch 2b): status words corrected to the real Biz tables (sales 'voided' / 'refunded', children 'enrolled',
+-- compliance 'not_applicable'); the first version was written against a stand-in and used 'void' / 'active'.
 
 -- ------------------------------------------------------------------------------------------- allow-list and log
 create table if not exists public.eab_admins (
@@ -288,7 +290,7 @@ begin
   elsif p_view = 'sales' then
     select jsonb_build_object('sales', count(*), 'total_rm', round(coalesce(sum(total), 0), 2), 'tax_rm', round(coalesce(sum(tax_total), 0), 2),
       'shifts_open', (select count(*) from public.shifts where closed_at is null)) into summary
-      from public.sales where sold_at::date between f and t and coalesce(status, '') <> 'void';
+      from public.sales where sold_at::date between f and t and coalesce(status, '') not in ('void', 'voided', 'refunded');
     select jsonb_agg(x) into rows from (
       select tn.name as business, s.receipt_no, s.sold_at, s.status, s.total, s.tax_total
       from public.sales s join public.tenants tn on tn.id = s.tenant_id
@@ -346,18 +348,18 @@ begin
   elsif p_view = 'legal' then
     select jsonb_build_object('contracts', count(*), 'awaiting_signature', count(*) filter (where sent_at is not null and signed_at is null),
       'ending_in_60_days', count(*) filter (where end_date between current_date and current_date + 60),
-      'compliance_overdue', (select count(*) from public.compliance_items where status <> 'done' and due_date < current_date)) into summary from public.contracts;
+      'compliance_overdue', (select count(*) from public.compliance_items where status not in ('done', 'not_applicable') and due_date < current_date)) into summary from public.contracts;
     select jsonb_agg(x) into rows from (
       select tn.name as business, 'compliance' as kind, c.title, c.authority as detail, c.due_date as date, c.status
         from public.compliance_items c join public.tenants tn on tn.id = c.tenant_id
-        where c.status <> 'done' and (q is null or c.title ilike '%' || q || '%')
+        where c.status not in ('done', 'not_applicable') and (q is null or c.title ilike '%' || q || '%')
       union all
       select tn.name, 'contract', k.title, k.number, k.end_date, k.status
         from public.contracts k join public.tenants tn on tn.id = k.tenant_id where q is null or k.title ilike '%' || q || '%'
       order by 5 nulls last limit lim) x;
   elsif p_view = 'kids' then
     -- Children's names are never shown in the admin app; counts and incident facts only.
-    select jsonb_build_object('children', (select count(*) from public.children where coalesce(status, 'active') = 'active'),
+    select jsonb_build_object('children', (select count(*) from public.children where coalesce(status, 'enrolled') in ('enrolled', 'active')),
       'incidents', count(*), 'serious', count(*) filter (where severity in ('serious', 'major', 'high')),
       'parent_not_told', count(*) filter (where parent_notified_at is null), 'open', count(*) filter (where coalesce(status, 'open') <> 'closed'),
       'medicine_given', (select count(*) from public.kids_med_given where given_at::date between f and t)) into summary

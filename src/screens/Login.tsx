@@ -3,6 +3,7 @@
 import { adminName } from '../apps';
 import { useEffect, useRef, useState } from 'react';
 import { Conn, configured, connProblem, projectHost, saveConn, loadConn, builtIn } from '../config';
+import { reloadBizConn } from '../api/biz';
 import { startGoogleSignIn, handleCallback, cleanWebAddress, canSignInHere } from '../api/auth';
 import { Session } from '../api/session';
 import { onAppUrlOpen, isNative, AUTH_CALLBACK } from '../native/native';
@@ -85,7 +86,7 @@ function ConnForm({ conn, onSaved }: { conn: Conn; onSaved: (c: Conn) => void })
   const save = () => {
     if (problem === 'secret') { setMsg('That is a SECRET / service-role key. Never put it in an app. Use the public anon (publishable) key.'); return; }
     if (problem) { setMsg(problem === 'url' ? 'The address must look like https://xxxx.supabase.co' : 'Type both the address and the public key.'); return; }
-    saveConn(url || key ? { supabaseUrl: url.trim(), supabaseAnonKey: key.trim() } : null);
+    saveConn(url || key ? { supabaseUrl: url.trim(), supabaseAnonKey: key.trim() } : null); reloadBizConn();
     const c = loadConn();
     setMsg(configured(c) ? `Saved. Connected to ${projectHost(c.supabaseUrl)}.` : 'Cleared.');
     onSaved(c);
@@ -97,7 +98,7 @@ function ConnForm({ conn, onSaved }: { conn: Conn; onSaved: (c: Conn) => void })
       <label className="field"><span>Public (anon / publishable) key</span><input type="text" value={key} onChange={e => setKey(e.target.value)} placeholder="eyJ… or sb_publishable_…" autoComplete="off" spellCheck={false} /></label>
       <div className="row">
         <button className="btn gold" onClick={save}>Save</button>
-        <button className="btn ghost" onClick={() => { saveConn(null); const c = loadConn(); setUrl(c.supabaseUrl); setKey(''); setMsg('Back to the built-in connection.'); onSaved(c); }}>Use built-in</button>
+        <button className="btn ghost" onClick={() => { saveConn(null); reloadBizConn(); const c = loadConn(); setUrl(c.supabaseUrl); setKey(''); setMsg('Back to the built-in connection.'); onSaved(c); }}>Use built-in</button>
       </div>
       {msg && <small role="status">{msg}</small>}
     </div>

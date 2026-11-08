@@ -68,3 +68,15 @@ test('list helpers: headings, nested records, values in plain words', () => {
   assert.equal(cellText({ cash: 2, card: 1 }), 'Cash: 2 · Card: 1');
   assert.deepEqual(columnsOf([{ id: 1, a: 1 }, { b: 2, tenant_id: 'x' }]), ['a', 'b']);
 });
+
+// AdminBatch013 (Batch 2b): AI Buddy Biz is schema "biz" in the same project as Estate Agent AI Buddy.
+test('database area: Biz calls ask for schema biz; Admin EAB calls stay on the default (public)', async () => {
+  const { headers } = await import('../src/api/session');
+  const main = { supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'sb_publishable_k' };
+  const h = headers(main, 'tok');
+  assert.equal(h['Accept-Profile'], undefined); assert.equal(h['Content-Profile'], undefined);
+  assert.equal(h.Authorization, 'Bearer tok');
+  const b = headers({ ...main, schema: 'biz' }, 'tok');
+  assert.equal(b['Accept-Profile'], 'biz'); assert.equal(b['Content-Profile'], 'biz');
+  assert.equal(b.apikey, 'sb_publishable_k');
+});

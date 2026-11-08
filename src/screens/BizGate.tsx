@@ -55,7 +55,9 @@ export function BizConnect() {
   return (
     <div className="card boxed stack" data-testid="biz-connect">
       <h1>Sign in to AI Buddy Biz</h1>
-      <p className="muted">AI Buddy Biz has its own database and its own admin list. Sign in with the Google account that is on it.</p>
+      <p className="muted">{bizBuiltIn()
+        ? 'AI Buddy Biz has its own area ("biz") in the same database as Estate Agent AI Buddy, and its own admin list. Sign in with the Google account that is on it.'
+        : 'AI Buddy Biz has its own database and its own admin list. Sign in with the Google account that is on it.'}</p>
       {err && <div className="notice error" role="alert" data-testid="biz-notice">{BIZ_NOTICE[err] ?? err}</div>}
       {!bizBuiltIn() && (
         <details open={!ready} className="stack">

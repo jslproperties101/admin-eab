@@ -1,6 +1,8 @@
 // Connection settings. Nothing secret is in the code: the build copies EAB_* environment variables into __EAB_CONFIG__,
 // and the sign-in screen lets an admin type the URL and public key (kept on that device only). Typed values win.
-export interface Conn { supabaseUrl: string; supabaseAnonKey: string }
+// schema: the database area to use (sent as Accept-Profile / Content-Profile). Unset = "public". AI Buddy Biz uses
+// "biz" inside the same project as Estate Agent AI Buddy since Batch 2b (9 Nov 2026).
+export interface Conn { supabaseUrl: string; supabaseAnonKey: string; schema?: string }
 declare const __EAB_CONFIG__: Conn | undefined;
 declare const __EAB_BUILD__: { sha: string; version: string; release: string; builtAt: string } | undefined;
 

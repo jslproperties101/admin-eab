@@ -20,6 +20,7 @@ export const headers = (c: Conn, token?: string): Record<string, string> => ({
   apikey: c.supabaseAnonKey,
   Authorization: `Bearer ${token ?? c.supabaseAnonKey}`,
   'Content-Type': 'application/json',
+  ...(c.schema ? { 'Accept-Profile': c.schema, 'Content-Profile': c.schema } : {}),
 });
 
 const SKEY = 'admin-eab-session';

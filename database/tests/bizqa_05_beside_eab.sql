@@ -1,5 +1,6 @@
 -- Batch 2b: the Biz install left Estate Agent AI Buddy's public objects exactly as they were, and EAB file reads still work.
 \set ON_ERROR_STOP 1
+reset search_path; -- the fingerprint text depends on it
 do $$
 declare n int; t text;
 begin

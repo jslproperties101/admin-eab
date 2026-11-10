@@ -8,6 +8,8 @@
 //   Prices      Google prices, free allowance, US$ → RM rate and a monthly spending warning
 //   Agency      AdminBatch014: agency licences sold outside the app — invoices (FPX link, card link, or marked paid by bank
 //               transfer), payments that could not be applied, and the agency prices
+//   Tokens      main-app Batch D: Ai Buddy Tokens and Oneharta lookups — spend per day, lookups that need settling, agents'
+//               balances and token history, and (Owner) adding or taking tokens with a reason
 import { ReactNode, useState } from 'react';
 import { MoneyTab, errText, useAdmin } from '../ctx';
 import { can } from '../admin/roles';
@@ -23,11 +25,12 @@ import { exportMoney } from '../export/money';
 import { AgentLink, Head, RangePicker, Stat, useLoad } from './Dashboards';
 import { Bars, HBars } from './charts';
 import { ConfirmDialog, ErrorBox, Loading } from './ui';
+import { TokensTab } from './MoneyTokens';
 
 const TABS: { k: MoneyTab; label: string }[] = [
   { k: 'ledger', label: 'Billing & expenses' }, { k: 'google', label: 'Google API' }, { k: 'alerts', label: 'Quota alerts' },
   { k: 'pnl', label: 'Profit & loss' }, { k: 'cost', label: 'Cost per user' }, { k: 'prices', label: 'Prices & settings' },
-  { k: 'agency', label: 'Agency licences' },
+  { k: 'agency', label: 'Agency licences' }, { k: 'tokens', label: 'Tokens & lookups' },
 ];
 type Confirm = null | { title: string; body: ReactNode; label: string; danger?: boolean; run: (reason: string) => Promise<void> };
 const Limit = ({ children }: { children: ReactNode }) => <p className="notice small" data-testid="limit">{children}</p>;
@@ -51,6 +54,7 @@ export function MoneyScreen({ tab: first }: { tab: MoneyTab }) {
       {tab === 'cost' && <CostTab />}
       {tab === 'prices' && <PricesTab />}
       {tab === 'agency' && <AgencyTab />}
+      {tab === 'tokens' && <TokensTab />}
       {!can(me.role, 'editMoney') && <p className="notice small" data-testid="money-readonly">Only the Owner can add or void entries and change prices or settings.</p>}
     </div>
   );

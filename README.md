@@ -128,6 +128,12 @@ monthly / daily limits and the free allowance (40), profit & loss by month (33) 
 the US$ → RM rate. Subscription revenue stays blocked until subscriptions exist in the main app. PDF / Excel for Owner /
 Compliance. Database: rebuilt in AdminBatch012 (same file). Shown as its own "Company Money" space since AdminBatch012.
 
+Main-app Batch D (10 Nov 2026): Money › **Tokens & lookups** — Ai Buddy Tokens and the Oneharta lookups agents pay with them
+(3 tokens per Oneharta credit; RM 1.25 a credit). Credits used and their cost per day, tokens sold, busiest agents, recent
+lookups, agents' balances and last 100 token changes. Owner / Admin **settle** a lookup Oneharta never answered (after checking
+Oneharta's call log); only the Owner **adds or takes tokens**. Reason required for both; logged. Database: main repo
+`supabase/proposed/20261110300000_admin_lookups_tokens.sql`.
+
 AdminBatch008: Reports — Monthly Board report (agents, licences, listings, complaints, PDPA 21-day share, problem reports,
 cases, admin actions; compared with the month before; PDF / Excel kept in the Document Vault), Annual audit bundle (Excel
 workbook with every log row and fingerprint, tamper check, backup tests, cases with packs, PDPA, complaints, holds,

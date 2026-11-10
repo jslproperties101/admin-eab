@@ -104,6 +104,24 @@ export interface AgencyProblem { id: number; provider: string; event_id: string;
 export interface NewAgencyInvoice { workspaceId: string; plan: AgencyPlan; seats: number | null; amountSen: number | null; payerEmail: string; billTo: string; note: string; reason: string }
 export interface AgencyInvoiceMade { invoice: { id: string; no: string; amount_sen: number; seats: number; days: number; plan: AgencyPlan }; fpxUrl: string | null; cardUrl: string | null; env: 'sandbox' | 'live' }
 
+// ---------- Main-app Batch D: Oneharta lookups and Ai Buddy Tokens (main repo supabase/proposed/20261110300000_admin_lookups_tokens.sql) ----------
+export type TokenEnv = 'sandbox' | 'live';
+export type LookupKind = 'infosearch' | 'ct_search' | 'company' | 'sale_search' | 'sale_unlock' | 'rental_search' | 'rental_unlock';
+export type LookupStatus = 'pending' | 'done' | 'empty' | 'failed' | 'unknown' | 'refunded';
+export interface LookupRow {
+  id: string; user_id: string; email: string | null; env: TokenEnv; kind: LookupKind; summary: string; status: LookupStatus;
+  credits_max: number; credits_charged: number | null; tokens_held: number; tokens_charged: number | null; created_at: string; finished_at: string | null; stuck: boolean;
+}
+export interface TokenBalanceRow { user_id: string; email: string | null; sandbox: number | null; live: number | null; last_change: string | null }
+export interface TokenLedgerRow { id: number; env: TokenEnv; delta: number; kind: 'purchase' | 'spend' | 'refund' | 'adjust'; pack_id: string | null; provider: string | null; ref: string | null; amount_cents: number | null; created_at: string }
+export interface LookupSpend {
+  days: number; today_credits: number;
+  by_day: { day: string; env: TokenEnv; lookups: number; credits: number; tokens: number; attention: number; credits_held: number }[];
+  tokens_sold: { day: string; env: TokenEnv; tokens: number; usd_cents: number }[];
+  today_top: { user_id: string; email: string | null; credits: number; lookups: number }[];
+}
+export interface SettleResult { result: string; tokens_charged?: number; refunded?: number; balance?: number }
+
 // ---------- AdminBatch004: System Health ----------
 export interface HealthLimits { db_limit_mb: number; storage_limit_mb: number; aws_backup: 'not_set_up' | 'set_up'; aws_note: string | null; updated_at: string; updated_by: string | null }
 export interface TableHealth {
@@ -808,6 +826,15 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   agencyInvoiceVoid: (id: string, reason: string) => call<unknown>('eab_admin_agency_invoice_void', { p_id: id, p_reason: reason, p_device: device }),
   agencyInvoiceMarkPaid: (id: string, ref: string, reason: string) => call<string>('eab_admin_agency_invoice_mark_paid', { p_id: id, p_ref: ref, p_reason: reason, p_device: device }),
   agencyInvoiceCreate: files.agencyInvoiceCreate,
+  // Main-app Batch D — Oneharta lookups and Ai Buddy Tokens
+  lookups: (status: 'attention' | LookupStatus | null = null) => call<LookupRow[]>('eab_admin_lookups', { p_status: status, p_limit: 200 }),
+  lookupSettle: (id: string, outcome: 'charged' | 'not_charged', credits: number | null, reason: string) =>
+    call<SettleResult>('eab_admin_lookup_settle', { p_id: id, p_outcome: outcome, p_credits: credits, p_reason: reason, p_device: device }),
+  tokenBalances: (q: string | null = null) => call<TokenBalanceRow[]>('eab_admin_tokens', { p_query: q, p_limit: 200 }),
+  tokenHistory: (user: string) => call<TokenLedgerRow[]>('eab_admin_token_history', { p_user: user, p_device: device }),
+  tokenAdjust: (user: string, env: TokenEnv, delta: number, reason: string) =>
+    call<{ balance: number; ref: string }>('eab_admin_token_adjust', { p_user: user, p_env: env, p_delta: delta, p_reason: reason, p_device: device }),
+  lookupSpend: (days = 30) => call<LookupSpend>('eab_admin_lookup_spend', { p_days: days }),
   // AdminBatch011 — Money
   ledger: (from: string, to: string, kind: LedgerKind | null = null, voided = false) =>
     call<Ledger>('eab_admin_ledger', { p_from: from, p_to: to, p_kind: kind, p_voided: voided, p_device: device }),

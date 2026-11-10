@@ -439,6 +439,26 @@ function contentFake() {
 
 /** AdminBatch011 fake Money: ledger (add, void, repeat), Google products and prices, usage with alerts, monthly summary. */
 // AdminBatch014: agency licences (main repo 20261110100000_agency_licences.sql + the billing function's agency_invoice)
+// Main-app Batch D: Ai Buddy Tokens and Oneharta lookups (eab_admin_lookups / _lookup_settle / _tokens / _token_history / _token_adjust / _lookup_spend)
+function tokensFake() {
+  const AG = '00000000-0000-4000-8000-0000000000a1';
+  const st = {
+    lookups: [
+      { id: 'l0000000-0000-4000-8000-000000000001', user_id: AG, email: 'siti@agency.my', env: 'sandbox', kind: 'ct_search', summary: 'Land tax lot 777, Damansara, Selangor', status: 'unknown',
+        credits_max: 3, credits_charged: null, tokens_held: 9, tokens_charged: null, created_at: '2026-11-10T02:00:00Z', finished_at: '2026-11-10T02:00:30Z', stuck: false },
+      { id: 'l0000000-0000-4000-8000-000000000002', user_id: AG, email: 'siti@agency.my', env: 'sandbox', kind: 'infosearch', summary: 'InfoSearch by name', status: 'empty',
+        credits_max: 1, credits_charged: 0, tokens_held: 3, tokens_charged: 0, created_at: '2026-11-10T01:00:00Z', finished_at: '2026-11-10T01:00:02Z', stuck: false },
+    ],
+    balances: [{ user_id: AG, email: 'siti@agency.my', sandbox: 11, live: 0, last_change: '2026-11-10T02:00:00Z' }],
+    history: [{ id: 3, env: 'sandbox', delta: -9, kind: 'spend', pack_id: null, provider: null, ref: 'lk:l1', amount_cents: null, created_at: '2026-11-10T02:00:00Z' },
+              { id: 1, env: 'sandbox', delta: 20, kind: 'purchase', pack_id: 'tokens_20', provider: 'google_play', ref: 'gp:x', amount_cents: 500, created_at: '2026-11-09T02:00:00Z' }],
+  };
+  const spend = () => ({ days: 30, today_credits: 3,
+    by_day: [{ day: '2026-11-10', env: 'sandbox', lookups: 2, credits: 0, tokens: 0, attention: st.lookups.filter(l => l.status === 'unknown').length, credits_held: st.lookups.filter(l => l.status === 'unknown').reduce((a, l) => a + l.credits_max, 0) }],
+    tokens_sold: [{ day: '2026-11-09', env: 'sandbox', tokens: 20, usd_cents: 500 }],
+    today_top: [{ user_id: AG, email: 'siti@agency.my', credits: 3, lookups: 2 }] });
+  return { st, spend, AG };
+}
 function agencyFake() {
   const st = {
     prices: [
@@ -556,6 +576,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const c10 = contentFake();
   const m11 = moneyFake();
   const ag14 = agencyFake();
+  const tk = tokensFake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
@@ -1080,6 +1101,26 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         const src = m11.st.entries.filter(e => e.recurring && !e.voided_at && e.period_month === '2026-09-01' && !m11.st.entries.some(c => c.repeat_of === e.id));
         for (const e of src) m11.st.entries.push(m11.entry({ ...e, paid_on: '2026-10-05', period_month: '2026-10-01' }, { repeat_of: e.id, repeat_ref: e.ref }));
         return route.fulfill(ok({ month: args.p_month, copied: src.length }));
+      }
+      case 'eab_admin_lookup_spend': return [...m11.view, 'viewer'].includes(role) ? route.fulfill(ok(tk.spend())) : route.fulfill(denied);
+      case 'eab_admin_lookups': {
+        if (!m11.view.includes(role)) return route.fulfill(denied);
+        return route.fulfill(ok(tk.st.lookups.filter(l => !args.p_status || (args.p_status === 'attention' ? l.status === 'unknown' || l.stuck : l.status === args.p_status))));
+      }
+      case 'eab_admin_lookup_settle': {
+        if (!['owner', 'admin'].includes(role)) return route.fulfill(denied);
+        const l = tk.st.lookups.find(x => x.id === args.p_id);
+        const charge = args.p_outcome === 'charged' ? args.p_credits * 3 : 0;
+        Object.assign(l, { status: args.p_outcome === 'charged' ? 'done' : 'failed', credits_charged: args.p_outcome === 'charged' ? args.p_credits : 0, tokens_charged: charge });
+        tk.st.balances[0].sandbox += l.tokens_held - charge;
+        return route.fulfill(ok({ result: 'ok', tokens_charged: charge, refunded: l.tokens_held - charge, balance: tk.st.balances[0].sandbox }));
+      }
+      case 'eab_admin_tokens': return m11.view.includes(role) ? route.fulfill(ok(tk.st.balances)) : route.fulfill(denied);
+      case 'eab_admin_token_history': return m11.view.includes(role) ? route.fulfill(ok(tk.st.history)) : route.fulfill(denied);
+      case 'eab_admin_token_adjust': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const b = tk.st.balances.find(x => x.user_id === args.p_user); const k = args.p_env === 'live' ? 'live' : 'sandbox';
+        b[k] = (b[k] ?? 0) + args.p_delta; return route.fulfill(ok({ balance: b[k], ref: 'adm:1' }));
       }
       case 'eab_admin_agency_prices': return m11.view.includes(role) ? route.fulfill(ok(ag14.st.prices)) : route.fulfill(denied);
       case 'eab_admin_agency_invoices': return m11.view.includes(role) ? route.fulfill(ok(ag14.st.invoices.filter(i => !args.p_status || i.status === args.p_status))) : route.fulfill(denied);
@@ -3196,4 +3237,63 @@ test('AdminBatch014 owner: agency licences — invoices, a payment that was not 
   for (const id of ['ag-raise', 'ag-mark-paid', 'ag-void']) assert.equal(await comp.page.getByTestId(id).count(), 0, id);
   assert.equal(await comp.page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, 'phone: nothing sticks out sideways');
   await comp.ctx.close();
+});
+
+test('Batch D owner: tokens and lookups — spend, settle a lookup Oneharta never answered, agent history, add tokens; admin settles but cannot add; compliance reads only', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.getByTestId('app-money').click();
+  await page.getByTestId('tile-10').click();
+  await page.getByTestId('mtab2-tokens').click();
+  await page.getByTestId('money-tokens').waitFor();
+  assert.match(await page.getByTestId('tk-stats').innerText(), /Oneharta credits today\s*3[\s\S]*RM 3\.75[\s\S]*Need settling\s*1/);
+  assert.match(await page.getByTestId('tk-attention').innerText(), /siti@agency\.my[\s\S]*Land tax[\s\S]*Land tax lot 777[\s\S]*9/);
+  assert.match(await page.getByTestId('tk-recent').innerText(), /InfoSearch[\s\S]*nothing found/);
+  // settle: the call log shows 2 credits -> the agent pays 6 tokens and gets 3 back
+  await page.getByTestId('tk-settle').click();
+  assert.equal(await page.getByTestId('tk-settle-next').isDisabled(), true, 'nothing chosen yet');
+  await page.getByTestId('tk-charged').check();
+  await page.getByTestId('tk-credits').fill('4');
+  assert.equal(await page.getByTestId('tk-settle-next').isDisabled(), true, 'more than the most');
+  await page.getByTestId('tk-credits').fill('2');
+  await page.getByTestId('tk-settle-next').click();
+  assert.match(await page.getByRole('dialog').innerText(), /charged 2 credits: the agent pays 6 tokens and gets 3 back/);
+  await page.getByPlaceholder(/At least 5 characters/).fill('Oneharta call log 10:00 shows 2 credits');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('tk-attention-none').waitFor();
+  assert.deepEqual({ ...calls.find(c => c.fn === 'eab_admin_lookup_settle').args, p_device: undefined },
+    { p_id: 'l0000000-0000-4000-8000-000000000001', p_outcome: 'charged', p_credits: 2, p_reason: 'Oneharta call log 10:00 shows 2 credits', p_device: undefined });
+  // history and add tokens
+  const row = page.getByTestId('tk-balance-row').first();
+  await row.getByTestId('tk-history').click();
+  assert.match(await page.getByTestId('tk-history-box').innerText(), /-9[\s\S]*lookup[\s\S]*\+20[\s\S]*bought tokens_20 · US\$ 5\.00/);
+  await row.getByTestId('tk-adjust').click();
+  await page.getByTestId('tk-take-mode').click();
+  await page.getByTestId('tk-amount').fill('999');
+  assert.equal(await page.getByTestId('tk-adjust-next').isDisabled(), true, 'cannot take more than they have');
+  await page.getByTestId('tk-add-mode').click();
+  await page.getByTestId('tk-amount').fill('5');
+  await page.getByTestId('tk-adjust-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Goodwill for the slow search');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('tk-msg').waitFor();
+  assert.match(await page.getByTestId('tk-msg').innerText(), /now has 19 test tokens/);
+  const adj = calls.find(c => c.fn === 'eab_admin_token_adjust').args;
+  assert.deepEqual([adj.p_env, adj.p_delta, adj.p_reason], ['sandbox', 5, 'Goodwill for the slow search']);
+  await page.screenshot({ path: `${SHOTS}/91-money-tokens-laptop.png`, fullPage: true });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  for (const [role, settle, add] of [['admin', 1, 0], ['compliance', 0, 0]]) {
+    const x = await open({ role, width: 390 });
+    await x.page.getByTestId('app-money').click();
+    await x.page.getByTestId('tile-10').click();
+    await x.page.getByTestId('mtab2-tokens').click();
+    await x.page.getByTestId('tk-balance-table').waitFor();
+    assert.equal(await x.page.getByTestId('tk-settle').count(), settle, `${role} settle`);
+    assert.equal(await x.page.getByTestId('tk-adjust').count(), add, `${role} add`);
+    assert.equal(await x.page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `${role} phone: nothing sticks out sideways`);
+    await x.ctx.close();
+  }
 });

@@ -26,7 +26,7 @@ export type Ability = 'search' | 'viewAgent' | 'export' | 'viewLogs' | 'manageAd
   | 'scorecard' | 'funnel' | 'bulkActions' | 'duplicates' | 'viewDevices' | 'removeDevice'
   | 'appView' | 'appManage' | 'appTickets' | 'appRequests' | 'appLog' | 'appAdmins'
   | 'moderate'
-  | 'viewMoney' | 'editMoney';
+  | 'viewMoney' | 'editMoney' | 'settleLookups';
 const RULES: Record<Ability, Role[]> = {
   search: ['owner', 'admin', 'compliance', 'regulator'],
   viewAgent: ['owner', 'admin', 'compliance', 'regulator'],
@@ -104,6 +104,8 @@ const RULES: Record<Ability, Role[]> = {
   // AdminBatch011 — Money: see (owner, admin, compliance); add, void, prices and settings (owner only)
   viewMoney: ['owner', 'admin', 'compliance'],
   editMoney: ['owner'],
+  // Main-app Batch D — Oneharta lookups: settle one Oneharta never answered (owner, admin); adjusting tokens is editMoney (owner)
+  settleLookups: ['owner', 'admin'],
 };
 export const can = (role: Role | null | undefined, a: Ability): boolean => !!role && RULES[a].includes(role);
 export const ALL_ROLES: Role[] = ['owner', 'admin', 'compliance', 'viewer', 'regulator'];

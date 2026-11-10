@@ -1,7 +1,7 @@
 {
   "name": "admin-eab",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "releaseLabel": "AdminBatch013",
   "type": "module",
   "scripts": {

@@ -210,18 +210,18 @@ export interface BroadcastSendResult { broadcast_id: string; sent: number; faile
  * Calls one of the AdminBatch008 server functions with the admin's own sign-in. The function asks the database, with
  * that sign-in, whether this admin may do it (eab_admin_broadcast_claim / eab_admin_report_claim). 503 = not set up yet.
  */
-export async function callFunction<T>(c: Conn, s: Session, name: 'send-broadcast' | 'weekly-report', body: unknown,
+export async function callFunction<T>(c: Conn, s: Session, name: 'send-broadcast' | 'weekly-report' | 'billing', body: unknown,
   onSession: (s: Session | null) => void, fetchFn: FetchFn = fetch): Promise<T> {
   const r = await withSession(c, s, onSession, fetchFn, token => fetchFn(`${c.supabaseUrl}/functions/v1/${name}`, {
     method: 'POST', headers: headers(c, token), body: JSON.stringify(body),
   }));
-  let data: (T & { error?: string; message?: string }) | null = null;
+  let data: (T & { error?: string; message?: string; detail?: string }) | null = null;
   try { data = await r.json(); } catch { data = null; }
   if (r.status === 403) throw new ApiError('not-allowed', data?.error ?? data?.message);
   if (r.status === 404 && !data) throw new ApiError('server', `the server function "${name}" is not deployed yet`);
   if (r.status === 503) throw new ApiError('server', data?.error === 'email not set up'
     ? 'Email is not set up on the server yet (Resend key missing).'
     : data?.error ?? 'not set up on the server yet');
-  if (!r.ok) throw new ApiError('server', data?.error ?? data?.message ?? `HTTP ${r.status}`);
+  if (!r.ok) throw new ApiError('server', data?.detail ?? data?.error ?? data?.message ?? `HTTP ${r.status}`);
   return data as T;
 }

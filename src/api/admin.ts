@@ -87,7 +87,22 @@ export interface Files {
   sendBroadcast?: (id: string) => Promise<BroadcastSendResult>;
   /** AdminBatch008: make the weekly report now (server function weekly-report). */
   runReport?: (reason: string) => Promise<{ run?: ReportRun; error?: string }>;
+  /** AdminBatch014: raise an agency invoice (main repo's billing function, action agency_invoice, with the Owner's sign-in). */
+  agencyInvoiceCreate?: (p: NewAgencyInvoice) => Promise<AgencyInvoiceMade>;
 }
+
+// ---------- AdminBatch014: agency licences (main repo supabase/proposed/20261110100000_agency_licences.sql) ----------
+export type AgencyPlan = 'agency_seat_monthly' | 'agency_seat_yearly' | 'agency_monthly' | 'agency_yearly';
+export interface AgencyPriceRow { plan: AgencyPlan; style: 'seats' | 'agency'; amount_sen: number; days: number; seats_included: number | null; active: boolean; updated_at: string }
+export interface AgencyInvoice {
+  id: string; no: string; workspace_id: string; workspace: string; origin: 'checkout' | 'invoice'; plan: AgencyPlan; seats: number;
+  amount_sen: number; list_amount_sen: number; days: number; env: 'sandbox' | 'live'; status: 'open' | 'paid' | 'void';
+  fpx_url: string | null; pay_token: string; bill_to: string | null; note: string | null; created_at: string;
+  paid_at: string | null; paid_via: 'fpx' | 'stripe' | 'manual' | null; paid_ref: string | null; voided_at: string | null; void_reason: string | null; licence_end: string | null;
+}
+export interface AgencyProblem { id: number; provider: string; event_id: string; invoice_id: string | null; amount_sen: number | null; env: string; result: string; received_at: string }
+export interface NewAgencyInvoice { workspaceId: string; plan: AgencyPlan; seats: number | null; amountSen: number | null; payerEmail: string; billTo: string; note: string; reason: string }
+export interface AgencyInvoiceMade { invoice: { id: string; no: string; amount_sen: number; seats: number; days: number; plan: AgencyPlan }; fpxUrl: string | null; cardUrl: string | null; env: 'sandbox' | 'live' }
 
 // ---------- AdminBatch004: System Health ----------
 export interface HealthLimits { db_limit_mb: number; storage_limit_mb: number; aws_backup: 'not_set_up' | 'set_up'; aws_note: string | null; updated_at: string; updated_by: string | null }
@@ -784,6 +799,15 @@ export const api = (call: Call, device: string, files: Files = { upload: async (
   agentDevices: (user: string) => call<AgentDevice[]>('eab_admin_agent_devices', { p_user: user, p_device: device }),
   deviceRemove: (user: string, deviceId: string, reason: string) =>
     call<unknown>('eab_admin_device_remove', { p_user: user, p_device_id: deviceId, p_reason: reason, p_device: device }),
+  // AdminBatch014 — agency licences
+  agencyPrices: () => call<AgencyPriceRow[]>('eab_admin_agency_prices'),
+  agencyPriceSet: (plan: AgencyPlan, amountSen: number | null, seatsIncluded: number | null, active: boolean | null, reason: string) =>
+    call<AgencyPriceRow>('eab_admin_agency_price_set', { p_plan: plan, p_amount_sen: amountSen, p_seats_included: seatsIncluded, p_active: active, p_reason: reason, p_device: device }),
+  agencyInvoices: (status: 'open' | 'paid' | 'void' | null = null) => call<AgencyInvoice[]>('eab_admin_agency_invoices', { p_status: status, p_limit: 200 }),
+  agencyProblems: () => call<AgencyProblem[]>('eab_admin_agency_problems'),
+  agencyInvoiceVoid: (id: string, reason: string) => call<unknown>('eab_admin_agency_invoice_void', { p_id: id, p_reason: reason, p_device: device }),
+  agencyInvoiceMarkPaid: (id: string, ref: string, reason: string) => call<string>('eab_admin_agency_invoice_mark_paid', { p_id: id, p_ref: ref, p_reason: reason, p_device: device }),
+  agencyInvoiceCreate: files.agencyInvoiceCreate,
   // AdminBatch011 — Money
   ledger: (from: string, to: string, kind: LedgerKind | null = null, voided = false) =>
     call<Ledger>('eab_admin_ledger', { p_from: from, p_to: to, p_kind: kind, p_voided: voided, p_device: device }),

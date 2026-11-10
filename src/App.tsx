@@ -34,6 +34,7 @@ export default function App() {
     photo: async (path: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return photoDownload(conn, s, path, ns => setSession(ns)); },
     sendPush: async (itemId: string | null) => { const s = session.current; if (!s) throw new ApiError('expired'); return sendPush(conn, s, itemId, ns => setSession(ns)); },
     sendBroadcast: async (id: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return callFunction<BroadcastSendResult>(conn, s, 'send-broadcast', { broadcast_id: id }, ns => setSession(ns)); },
+    agencyInvoiceCreate: async (p: import('./api/admin').NewAgencyInvoice) => { const s = session.current; if (!s) throw new ApiError('expired'); return callFunction<import('./api/admin').AgencyInvoiceMade>(conn, s, 'billing', { action: 'agency_invoice', ...p, device }, ns => setSession(ns)); },
     runReport: async (reason: string) => { const s = session.current; if (!s) throw new ApiError('expired'); return callFunction<{ run?: import('./api/admin').ReportRun }>(conn, s, 'weekly-report', { reason }, ns => setSession(ns)); },
   }), [conn, setSession]);
   const api = useMemo(() => makeApi(call, device, files), [call, device, files]);

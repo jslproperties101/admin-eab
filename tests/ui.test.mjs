@@ -438,6 +438,34 @@ function contentFake() {
 }
 
 /** AdminBatch011 fake Money: ledger (add, void, repeat), Google products and prices, usage with alerts, monthly summary. */
+// AdminBatch014: agency licences (main repo 20261110100000_agency_licences.sql + the billing function's agency_invoice)
+function agencyFake() {
+  const st = {
+    prices: [
+      { plan: 'agency_monthly', style: 'agency', amount_sen: 39900, days: 30, seats_included: 15, active: true, updated_at: '2026-11-10T00:00:00Z' },
+      { plan: 'agency_seat_monthly', style: 'seats', amount_sen: 4900, days: 30, seats_included: null, active: true, updated_at: '2026-11-10T00:00:00Z' },
+      { plan: 'agency_seat_yearly', style: 'seats', amount_sen: 49000, days: 365, seats_included: null, active: true, updated_at: '2026-11-10T00:00:00Z' },
+      { plan: 'agency_yearly', style: 'agency', amount_sen: 399000, days: 365, seats_included: 15, active: true, updated_at: '2026-11-10T00:00:00Z' },
+    ],
+    invoices: [{ id: 'a0000000-0000-4000-8000-000000000001', no: 'AGI-00001', workspace_id: 'w1', workspace: 'Tan Realty', origin: 'checkout', plan: 'agency_seat_monthly', seats: 2,
+      amount_sen: 9800, list_amount_sen: 9800, days: 30, env: 'sandbox', status: 'paid', fpx_url: null, pay_token: 'ab'.repeat(32), bill_to: null, note: null,
+      created_at: '2026-11-01T02:00:00Z', paid_at: '2026-11-01T02:05:00Z', paid_via: 'fpx', paid_ref: 'bill1', voided_at: null, void_reason: null, licence_end: '2026-12-01T02:05:00Z' }],
+    problems: [{ id: 1, provider: 'stripe', event_id: 'stripe:cs_late', invoice_id: null, amount_sen: 9800, env: 'sandbox', result: 'already-paid', received_at: '2026-11-02T00:00:00Z' }],
+  };
+  let n = 1;
+  const make = (body) => {
+    const p = st.prices.find(x => x.plan === body.plan);
+    const seats = p.style === 'agency' ? p.seats_included : body.seats;
+    const list = p.style === 'seats' ? p.amount_sen * seats : p.amount_sen;
+    const inv = { id: `a0000000-0000-4000-8000-00000000000${++n}`, no: `AGI-0000${n}`, workspace_id: body.workspaceId, workspace: 'Tan Realty', origin: 'invoice', plan: body.plan, seats,
+      amount_sen: body.amountSen ?? list, list_amount_sen: list, days: p.days, env: 'sandbox', status: 'open', fpx_url: `https://www.billplz-sandbox.com/bills/b${n}`, pay_token: 'cd'.repeat(32),
+      bill_to: body.billTo || null, note: body.note || null, created_at: '2026-11-10T03:00:00Z', paid_at: null, paid_via: null, paid_ref: null, voided_at: null, void_reason: null, licence_end: null };
+    st.invoices.unshift(inv);
+    return { invoice: { id: inv.id, no: inv.no, amount_sen: inv.amount_sen, seats, days: p.days, plan: body.plan }, fpxUrl: inv.fpx_url, cardUrl: `https://x.supabase.co/functions/v1/billing-webhook?p=pay&i=${inv.id}&t=${inv.pay_token}`, env: 'sandbox' };
+  };
+  return { st, make };
+}
+
 function moneyFake() {
   let n = 0, seq = 0; const now = '2026-10-30T03:00:00Z';
   const view = ['owner', 'admin', 'compliance'];
@@ -527,6 +555,7 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
   const bizCalls = [];
   const c10 = contentFake();
   const m11 = moneyFake();
+  const ag14 = agencyFake();
   settings = { ...settings, min_version: null, min_version_mode: 'soft', update_url: null, maintenance_on: false, maintenance_message_en: null, maintenance_message_bm: null, maintenance_message_zh: null, maintenance_back_at: null };
   const ok = body => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   const denied = { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'not allowed' }) };
@@ -576,6 +605,13 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
       }
       bc.status = 'done'; bc.finished_at = b8.now;
       return route.fulfill(ok({ broadcast_id: bc.id, sent, failed, status: 'done', more: false }));
+    }
+    if (url.includes('/functions/v1/billing')) {
+      const body = JSON.parse(route.request().postData() || '{}');
+      calls.push({ fn: 'billing', args: body });
+      if (body.action !== 'agency_invoice') return route.fulfill({ status: 400, contentType: 'application/json', body: '{"error":"bad request"}' });
+      if (role !== 'owner') return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'not-allowed' }) });
+      return route.fulfill(ok(ag14.make(body)));
     }
     if (url.includes('/functions/v1/weekly-report')) {
       if (!['owner', 'compliance'].includes(role)) return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'not allowed' }) });
@@ -1044,6 +1080,24 @@ async function open({ role = 'owner', width = 390, signedIn = true, lastUsedAgoM
         const src = m11.st.entries.filter(e => e.recurring && !e.voided_at && e.period_month === '2026-09-01' && !m11.st.entries.some(c => c.repeat_of === e.id));
         for (const e of src) m11.st.entries.push(m11.entry({ ...e, paid_on: '2026-10-05', period_month: '2026-10-01' }, { repeat_of: e.id, repeat_ref: e.ref }));
         return route.fulfill(ok({ month: args.p_month, copied: src.length }));
+      }
+      case 'eab_admin_agency_prices': return m11.view.includes(role) ? route.fulfill(ok(ag14.st.prices)) : route.fulfill(denied);
+      case 'eab_admin_agency_invoices': return m11.view.includes(role) ? route.fulfill(ok(ag14.st.invoices.filter(i => !args.p_status || i.status === args.p_status))) : route.fulfill(denied);
+      case 'eab_admin_agency_problems': return m11.view.includes(role) ? route.fulfill(ok(ag14.st.problems)) : route.fulfill(denied);
+      case 'eab_admin_agency_invoice_mark_paid': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const i = ag14.st.invoices.find(x => x.id === args.p_id); Object.assign(i, { status: 'paid', paid_via: 'manual', paid_ref: args.p_ref, paid_at: '2026-11-10T04:00:00Z' });
+        return route.fulfill(ok('applied'));
+      }
+      case 'eab_admin_agency_invoice_void': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const i = ag14.st.invoices.find(x => x.id === args.p_id); Object.assign(i, { status: 'void', void_reason: args.p_reason });
+        return route.fulfill(ok(i));
+      }
+      case 'eab_admin_agency_price_set': {
+        if (role !== 'owner') return route.fulfill(denied);
+        const pr = ag14.st.prices.find(x => x.plan === args.p_plan); pr.amount_sen = args.p_amount_sen ?? pr.amount_sen; if (args.p_seats_included) pr.seats_included = args.p_seats_included; if (args.p_active !== null) pr.active = args.p_active;
+        return route.fulfill(ok(pr));
       }
       case 'eab_admin_money_settings': return m11.view.includes(role) ? route.fulfill(ok({ settings: m11.st.settings, skus: m11.st.skus })) : route.fulfill(denied);
       case 'eab_admin_money_settings_set': {
@@ -3089,4 +3143,57 @@ test('compliance and admin read Money but cannot change it; compliance can expor
     for (const n of [2, 40, 10, 34, 33]) assert.equal(await v.page.getByTestId(`tile-${n}`).count(), 0, `${role} tile ${n}`);
     await v.ctx.close();
   }
+});
+
+test('AdminBatch014 owner: agency licences — invoices, a payment that was not applied, raise an invoice with its links, mark one paid; compliance reads only', async () => {
+  const { page, ctx, calls } = await open({ role: 'owner', width: 1366 });
+  const errors = []; page.on('pageerror', e => errors.push(String(e)));
+  await page.getByTestId('app-money').click();
+  await page.getByTestId('tile-10').click();
+  await page.getByTestId('mtab2-agency').click();
+  await page.getByTestId('ag-invoices').waitFor();
+  assert.match(await page.getByTestId('ag-invoices').innerText(), /AGI-00001[\s\S]*website checkout · sandbox[\s\S]*Per agent, monthly · 2 agents · 30 days[\s\S]*paid[\s\S]*FPX bill1/);
+  assert.match(await page.getByTestId('ag-problems').innerText(), /stripe:cs_late[\s\S]*invoice was already paid/);
+  assert.match(await page.getByTestId('ag-prices').innerText(), /Whole agency, monthly[\s\S]*up to 15 agents/);
+  // raise: Siti's agency, 3 agents per seat, own amount RM 99
+  await page.getByTestId('ag-raise').click();
+  await page.getByTestId('ag-ws-q').fill('Siti');
+  await page.getByTestId('ag-ws-search').click();
+  await page.getByTestId('ag-ws-pick').first().click();
+  await page.getByTestId('ag-plan').selectOption('agency_seat_monthly');
+  await page.getByTestId('ag-seats').fill('3');
+  assert.match(await page.getByTestId('ag-raise-dialog').innerText(), /List price: RM 147\.00 for 30 days/);
+  await page.getByTestId('ag-amount').fill('99');
+  assert.equal(await page.getByTestId('ag-next').isDisabled(), true, 'no payer email yet');
+  await page.getByTestId('ag-email').fill('accounts@siti.my');
+  await page.getByTestId('ag-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('First month at a discount');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('ag-made').waitFor();
+  assert.match(await page.getByTestId('ag-made').innerText(), /Invoice AGI-00002: RM 99\.00 · 3 agents · 30 days · sandbox[\s\S]*billplz-sandbox\.com\/bills\/b2[\s\S]*billing-webhook\?p=pay/);
+  const call = calls.find(c => c.fn === 'billing').args;
+  assert.deepEqual({ ...call, device: undefined }, { action: 'agency_invoice', workspaceId: 'w1', plan: 'agency_seat_monthly', seats: 3, amountSen: 9900, payerEmail: 'accounts@siti.my', billTo: '', note: '', reason: 'First month at a discount', device: undefined });
+  // the agency paid by bank transfer
+  const row = page.getByTestId('ag-invoice').filter({ hasText: 'AGI-00002' });
+  assert.match(await row.innerText(), /RM 99\.00[\s\S]*list RM 147\.00[\s\S]*open/);
+  await row.getByTestId('ag-mark-paid').click();
+  await page.getByTestId('ag-ref').fill('MBB 0012345');
+  await page.getByTestId('ag-paid-next').click();
+  await page.getByPlaceholder(/At least 5 characters/).fill('Money is in the Maybank account');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByTestId('confirm-final').click();
+  await page.getByTestId('ag-invoice').filter({ hasText: 'AGI-00002' }).getByText(/bank transfer MBB 0012345/).waitFor();
+  assert.equal(calls.find(c => c.fn === 'eab_admin_agency_invoice_mark_paid').args.p_ref, 'MBB 0012345');
+  await page.screenshot({ path: `${SHOTS}/90-money-agency-laptop.png`, fullPage: true });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+  const comp = await open({ role: 'compliance', width: 390 });
+  await comp.page.getByTestId('app-money').click();
+  await comp.page.getByTestId('tile-10').click();
+  await comp.page.getByTestId('mtab2-agency').click();
+  await comp.page.getByTestId('ag-invoices').waitFor();
+  for (const id of ['ag-raise', 'ag-mark-paid', 'ag-void']) assert.equal(await comp.page.getByTestId(id).count(), 0, id);
+  assert.equal(await comp.page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, 'phone: nothing sticks out sideways');
+  await comp.ctx.close();
 });
